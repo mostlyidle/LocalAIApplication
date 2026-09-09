@@ -1,0 +1,64 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import * as api from "@/lib/api";
+import type { Document } from "@/types/document";
+
+export function useDocuments() {
+  const [documents, setDocuments] = useState<Document[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchDocuments = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const data = await api.getDocuments();
+      setDocuments((data.documents ?? []) as Document[]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load documents");
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const upload = useCallback(async (file: File) => {
+    setError(null);
+    try {
+      const result = await api.uploadDocument(file);
+      await fetchDocuments();
+      return result;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Upload failed";
+      setError(msg);
+      throw err;
+    }
+  }, [fetchDocuments]);
+
+  const remove = useCallback(async (id: string) => {
+    setError(null);
+    try {
+      await api.deleteDocument(id);
+      setDocuments((prev) => prev.filter((d) => d.id !== id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Delete failed");
+    }
+  }, []);
+
+  const analyze = useCallback(async (id: string, prompt?: string) => {
+    setError(null);
+    try {
+      return await api.analyzeDocument(id, prompt);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Analysis failed";
+      setError(msg);
+      throw err;
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchDocuments();
+  }, [fetchDocuments]);
+
+  return { documents, isLoading, error, fetchDocuments, upload, remove, analyze };
+}

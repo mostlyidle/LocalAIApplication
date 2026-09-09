@@ -1,0 +1,374 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+// Must import after mocking fetch
+import {
+  sendMessage,
+  getConversations,
+  getConversation,
+  deleteConversation,
+  uploadDocument,
+  getDocuments,
+  getDocument,
+  analyzeDocument,
+  deleteDocument,
+  querySQL,
+  executeSQL,
+  getSQLSchema,
+  getSQLConnections,
+  addSQLConnection,
+  searchRAG,
+  ingestRAG,
+  getRAGCollections,
+  deleteRAGCollection,
+  getHealth,
+  getTools,
+  ApiError,
+} from "../api";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function mockFetchSuccess(body: unknown, status = 200) {
+  return vi.fn().mockResolvedValue({
+    ok: true,
+    status,
+    json: () => Promise.resolve(body),
+  });
+}
+
+function mockFetchError(body: unknown, status = 500, statusText = "Server Error") {
+  return vi.fn().mockResolvedValue({
+    ok: false,
+    status,
+    statusText,
+    json: () => Promise.resolve(body),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+describe("API Client", () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  // ---- apiFetch / generic behaviour ----------------------------------------
+
+  describe("apiFetch wrapper", () => {
+    it("sets Content-Type header to application/json", async () => {
+      const spy = mockFetchSuccess({ tools: [] });
+      globalThis.fetch = spy;
+
+      await getTools();
+
+      const [, init] = spy.mock.calls[0];
+      expect(init.headers["Content-Type"]).toBe("application/json");
+    });
+
+    it("throws ApiError with code from response body on non-200", async () => {
+      globalThis.fetch = mockFetchError(
+        { error: { code: "NOT_FOUND", message: "Not found" } },
+        404,
+        "Not Found",
+      );
+
+      await expect(getTools()).rejects.toThrow(ApiError);
+      try {
+        await getTools();
+      } catch (err) {
+        expect(err).toBeInstanceOf(ApiError);
+        expect((err as InstanceType<typeof ApiError>).code).toBe("NOT_FOUND");
+        expect((err as InstanceType<typeof ApiError>).statusCode).toBe(404);
+        expect((err as InstanceType<typeof ApiError>).message).toBe("Not found");
+      }
+    });
+
+    it("falls back to UNKNOWN_ERROR when body cannot be parsed", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        statusText: "Internal Server Error",
+        json: () => Promise.reject(new Error("bad json")),
+      });
+
+      try {
+        await getTools();
+      } catch (err) {
+        expect((err as InstanceType<typeof ApiError>).code).toBe("UNKNOWN_ERROR");
+        expect((err as InstanceType<typeof ApiError>).message).toBe("Internal Server Error");
+      }
+    });
+  });
+
+  // ---- Chat -----------------------------------------------------------------
+
+  describe("Chat endpoints", () => {
+    it("sendMessage posts to /chat with message and conversationId", async () => {
+      const spy = mockFetchSuccess({ response: "hi", conversation_id: "c1", agent_type: "chat" });
+      globalThis.fetch = spy;
+
+      const result = await sendMessage("hello", "c1");
+
+      expect(result.response).toBe("hi");
+      const [url, init] = spy.mock.calls[0];
+      expect(url).toContain("/chat");
+      expect(JSON.parse(init.body)).toEqual({ message: "hello", conversation_id: "c1" });
+    });
+
+    it("sendMessage works without conversationId", async () => {
+      const spy = mockFetchSuccess({ response: "ok", conversation_id: "c2", agent_type: "chat" });
+      globalThis.fetch = spy;
+
+      await sendMessage("test");
+
+      const body = JSON.parse(spy.mock.calls[0][1].body);
+      expect(body.message).toBe("test");
+      expect(body.conversation_id).toBeUndefined();
+    });
+
+    it("getConversations fetches conversation list", async () => {
+      const data = { conversations: [{ id: "1", title: "Test", created_at: "", updated_at: "" }] };
+      globalThis.fetch = mockFetchSuccess(data);
+
+      const result = await getConversations();
+      expect(result.conversations).toHaveLength(1);
+    });
+
+    it("getConversation fetches single conversation", async () => {
+      globalThis.fetch = mockFetchSuccess({ id: "1", title: "t", messages: [] });
+
+      const result = await getConversation("1");
+      expect(result.id).toBe("1");
+    });
+
+    it("deleteConversation sends DELETE request", async () => {
+      const spy = mockFetchSuccess({ deleted: true });
+      globalThis.fetch = spy;
+
+      const result = await deleteConversation("1");
+
+      expect(result.deleted).toBe(true);
+      expect(spy.mock.calls[0][1].method).toBe("DELETE");
+    });
+  });
+
+  // ---- Documents ------------------------------------------------------------
+
+  describe("Document endpoints", () => {
+    it("uploadDocument sends FormData without Content-Type header", async () => {
+      const spy = mockFetchSuccess({ id: "d1", filename: "test.pdf", format: "pdf", size_bytes: 100, status: "completed" });
+      globalThis.fetch = spy as unknown as typeof fetch;
+
+      const file = new File(["data"], "test.pdf", { type: "application/pdf" });
+      const result = await uploadDocument(file);
+
+      expect(result.id).toBe("d1");
+      const [, init] = spy.mock.calls[0];
+      expect(init.method).toBe("POST");
+      expect(init.body).toBeInstanceOf(FormData);
+      // Should NOT have Content-Type (browser sets it with boundary)
+      expect(init.headers).toBeUndefined();
+    });
+
+    it("uploadDocument throws ApiError on failure", async () => {
+      globalThis.fetch = mockFetchError(
+        { error: { code: "UPLOAD_ERROR", message: "Too large" } },
+        413,
+        "Payload Too Large",
+      );
+
+      await expect(uploadDocument(new File(["x"], "big.pdf"))).rejects.toThrow(ApiError);
+    });
+
+    it("uploadDocument falls back to UPLOAD_ERROR when body parse fails", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        statusText: "Error",
+        json: () => Promise.reject(new Error("bad")),
+      });
+
+      try {
+        await uploadDocument(new File(["x"], "f.pdf"));
+      } catch (err) {
+        expect((err as InstanceType<typeof ApiError>).code).toBe("UPLOAD_ERROR");
+      }
+    });
+
+    it("getDocuments fetches document list", async () => {
+      globalThis.fetch = mockFetchSuccess({ documents: [{ id: "d1" }] });
+
+      const result = await getDocuments();
+      expect(result.documents).toHaveLength(1);
+    });
+
+    it("getDocument fetches single document", async () => {
+      globalThis.fetch = mockFetchSuccess({ id: "d1", filename: "f.txt" });
+
+      const result = await getDocument("d1");
+      expect(result).toEqual({ id: "d1", filename: "f.txt" });
+    });
+
+    it("analyzeDocument posts to /documents/:id/analyze", async () => {
+      const spy = mockFetchSuccess({
+        document_id: "d1",
+        filename: "report.pdf",
+        format: "pdf",
+        text: "looks good",
+        tables: [],
+        metadata: {},
+        page_count: null,
+        word_count: 100,
+        status: "completed",
+      });
+      globalThis.fetch = spy;
+
+      const result = await analyzeDocument("d1", "summarize");
+
+      expect(result.text).toBe("looks good");
+      const body = JSON.parse(spy.mock.calls[0][1].body);
+      expect(body.prompt).toBe("summarize");
+    });
+
+    it("deleteDocument sends DELETE", async () => {
+      const spy = mockFetchSuccess({ deleted: true });
+      globalThis.fetch = spy;
+
+      await deleteDocument("d1");
+      expect(spy.mock.calls[0][1].method).toBe("DELETE");
+    });
+  });
+
+  // ---- SQL ------------------------------------------------------------------
+
+  describe("SQL endpoints", () => {
+    it("querySQL posts query and database", async () => {
+      const spy = mockFetchSuccess({ sql: "SELECT 1", explanation: "test", results: { columns: [], rows: [], row_count: 0 } });
+      globalThis.fetch = spy;
+
+      const result = await querySQL("show customers", "demo");
+
+      expect(result.sql).toBe("SELECT 1");
+      const body = JSON.parse(spy.mock.calls[0][1].body);
+      expect(body.query).toBe("show customers");
+      expect(body.database).toBe("demo");
+    });
+
+    it("executeSQL posts raw SQL", async () => {
+      const spy = mockFetchSuccess({ columns: ["id"], rows: [[1]], row_count: 1 });
+      globalThis.fetch = spy;
+
+      const result = await executeSQL("SELECT 1");
+
+      expect(result.row_count).toBe(1);
+    });
+
+    it("getSQLSchema includes database query param when provided", async () => {
+      const spy = mockFetchSuccess({ database: "demo", tables: [] });
+      globalThis.fetch = spy;
+
+      await getSQLSchema("demo");
+
+      expect(spy.mock.calls[0][0]).toContain("?database=demo");
+    });
+
+    it("getSQLSchema omits query param when no database given", async () => {
+      const spy = mockFetchSuccess({ database: "default", tables: [] });
+      globalThis.fetch = spy;
+
+      await getSQLSchema();
+
+      expect(spy.mock.calls[0][0]).not.toContain("?database=");
+    });
+
+    it("getSQLConnections returns connections", async () => {
+      globalThis.fetch = mockFetchSuccess({ connections: [{ name: "demo", url: "sqlite:///demo.db" }] });
+
+      const result = await getSQLConnections();
+      expect(result.connections).toHaveLength(1);
+    });
+
+    it("addSQLConnection posts name and url", async () => {
+      const spy = mockFetchSuccess({ name: "new", status: "connected" });
+      globalThis.fetch = spy;
+
+      const result = await addSQLConnection("new", "sqlite:///new.db");
+
+      expect(result.name).toBe("new");
+      const body = JSON.parse(spy.mock.calls[0][1].body);
+      expect(body).toEqual({ name: "new", url: "sqlite:///new.db" });
+    });
+  });
+
+  // ---- RAG ------------------------------------------------------------------
+
+  describe("RAG endpoints", () => {
+    it("searchRAG posts query with optional params", async () => {
+      const spy = mockFetchSuccess({ results: [], query: "test", collection: "default" });
+      globalThis.fetch = spy;
+
+      await searchRAG("test", "docs", 10);
+
+      const body = JSON.parse(spy.mock.calls[0][1].body);
+      expect(body).toEqual({ query: "test", collection: "docs", top_k: 10 });
+    });
+
+    it("ingestRAG posts document_id and collection", async () => {
+      const spy = mockFetchSuccess({ message: "ok", chunks: 5 });
+      globalThis.fetch = spy;
+
+      const result = await ingestRAG("doc-123", "mycol");
+
+      expect(result.chunks).toBe(5);
+      const body = JSON.parse(spy.mock.calls[0][1].body);
+      expect(body.document_id).toBe("doc-123");
+      expect(body.collection).toBe("mycol");
+    });
+
+    it("getRAGCollections returns collections", async () => {
+      globalThis.fetch = mockFetchSuccess({ collections: [{ name: "c1", count: 10 }] });
+
+      const result = await getRAGCollections();
+      expect(result.collections[0].name).toBe("c1");
+    });
+
+    it("deleteRAGCollection sends DELETE", async () => {
+      const spy = mockFetchSuccess({ deleted: true });
+      globalThis.fetch = spy;
+
+      await deleteRAGCollection("c1");
+      expect(spy.mock.calls[0][1].method).toBe("DELETE");
+      expect(spy.mock.calls[0][0]).toContain("/rag/collections/c1");
+    });
+  });
+
+  // ---- Health & Tools -------------------------------------------------------
+
+  describe("Health & Tools", () => {
+    it("getHealth returns status", async () => {
+      globalThis.fetch = mockFetchSuccess({
+        status: "healthy",
+        ollama: { status: "connected" },
+        chromadb: { status: "connected" },
+        database: { status: "connected" },
+      });
+
+      const result = await getHealth();
+      expect(result.status).toBe("healthy");
+    });
+
+    it("getTools returns tool list", async () => {
+      globalThis.fetch = mockFetchSuccess({ tools: [{ name: "calc", description: "Calculator" }] });
+
+      const result = await getTools();
+      expect(result.tools).toHaveLength(1);
+      expect(result.tools[0].name).toBe("calc");
+    });
+  });
+});
