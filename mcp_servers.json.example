@@ -1,0 +1,16 @@
+{
+    "servers": [
+        {
+            "name": "weather",
+            "command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-weather"],
+            "transport": "stdio"
+        },
+        {
+            "name": "filesystem",
+            "command": "npx",
+            "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp/data"],
+            "transport": "stdio"
+        }
+    ]
+}

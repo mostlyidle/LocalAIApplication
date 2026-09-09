@@ -1,0 +1,111 @@
+# =============================================================================
+# Docker Compose — Local AI Application
+# =============================================================================
+# Profiles:
+#   - infra:   Only infrastructure (Ollama + ChromaDB)
+#   - app:     Backend + Frontend (requires infra or native services)
+#   - full:    Everything together
+#
+# Usage:
+#   make docker-infra    # Start only Ollama + ChromaDB
+#   make docker-up       # Start all services
+#   make docker-down     # Stop all services
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # Infrastructure services
+  # ---------------------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:latest
+    container_name: local-ai-ollama
+    profiles: ["infra", "full"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    # On Apple Silicon, native Ollama is recommended for Metal acceleration.
+    # This container uses CPU-only inference.
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:11434/api/tags || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: local-ai-chromadb
+    profiles: ["infra", "full"]
+    ports:
+      - "8100:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/v1/heartbeat || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # Application services
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: local-ai-backend
+    profiles: ["app", "full"]
+    ports:
+      - "8000:8000"
+    volumes:
+      - backend_data:/app/data
+    env_file:
+      - .env.docker
+    depends_on:
+      ollama:
+        condition: service_healthy
+        required: false
+      chromadb:
+        condition: service_healthy
+        required: false
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/v1/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=http://localhost:8000
+    container_name: local-ai-frontend
+    profiles: ["app", "full"]
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+        required: false
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  ollama_data:
+  chroma_data:
+  backend_data:
