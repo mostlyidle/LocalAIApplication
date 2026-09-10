@@ -1,5 +1,4 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { DocumentUploader } from "../DocumentUploader";
 
@@ -11,7 +10,7 @@ vi.mock("lucide-react", () => ({
 }));
 
 describe("DocumentUploader", () => {
-  let onUpload: ReturnType<typeof vi.fn>;
+  let onUpload: ReturnType<typeof vi.fn<(file: File) => Promise<unknown>>>;
 
   beforeEach(() => {
     onUpload = vi.fn().mockResolvedValue({ id: "doc-1" });

@@ -108,7 +108,7 @@ export function DocumentViewer({ document: doc, onDelete, onAnalyze }: DocumentV
           <Button
             size="sm"
             onClick={handleAnalyze}
-            disabled={isAnalyzing || doc.status !== "completed"}
+            disabled={isAnalyzing || doc.status === "processing"}
             className="w-full"
           >
             {isAnalyzing ? (

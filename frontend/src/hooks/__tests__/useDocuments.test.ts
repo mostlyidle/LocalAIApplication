@@ -26,8 +26,8 @@ const mockAnalyzeDocument = api.analyzeDocument as ReturnType<typeof vi.fn>;
 
 describe("useDocuments", () => {
   const sampleDocs = [
-    { id: "d1", filename: "a.pdf", format: "pdf", sizeBytes: 100, status: "completed", wordCount: 500, createdAt: "", updatedAt: "" },
-    { id: "d2", filename: "b.csv", format: "csv", sizeBytes: 50, status: "completed", wordCount: 200, createdAt: "", updatedAt: "" },
+    { id: "d1", filename: "a.pdf", format: "pdf", size_bytes: 100, status: "completed", created_at: "" },
+    { id: "d2", filename: "b.csv", format: "csv", size_bytes: 50, status: "completed", created_at: "" },
   ];
 
   beforeEach(() => {
@@ -45,7 +45,8 @@ describe("useDocuments", () => {
       expect(result.current.isLoading).toBe(false);
     });
 
-    expect(result.current.documents).toEqual(sampleDocs);
+    expect(result.current.documents).toHaveLength(2);
+    expect(result.current.documents[0]).toMatchObject({ id: "d1", sizeBytes: 100, wordCount: 0 });
     expect(mockGetDocuments).toHaveBeenCalledTimes(1);
   });
 

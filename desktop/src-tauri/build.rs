@@ -1,4 +1,9 @@
 fn main() {
+    // Dependency build-script link arguments do not propagate to our executables/tests.
+    // Resolve Swift concurrency through the macOS runtime, including its dyld cache.
+    #[cfg(target_os = "macos")]
+    println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
+
     #[cfg(target_os = "macos")]
     cc::Build::new()
         .file("native/macos_audio_bridge.m")

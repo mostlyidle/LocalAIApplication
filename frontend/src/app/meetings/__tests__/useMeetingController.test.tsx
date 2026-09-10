@@ -41,8 +41,8 @@ describe("meeting startup cancellation", () => {
 
   it.each(["readiness", "native start"] as const)("reset during %s does not continue startup", async (blockedAt) => {
     let release!: () => void;
-    if (blockedAt === "readiness") bridge.ensureMeetingReady.mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve; }));
-    else bridge.startNativeCapture.mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve; }));
+    if (blockedAt === "readiness") bridge.ensureMeetingReady.mockImplementationOnce(() => new Promise<undefined>((resolve) => { release = () => resolve(undefined); }));
+    else bridge.startNativeCapture.mockImplementationOnce(() => new Promise<undefined>((resolve) => { release = () => resolve(undefined); }));
     const { result } = renderHook(() => useMeetingController());
     act(() => { result.current.setConsent(true); });
     let start!: Promise<void>;

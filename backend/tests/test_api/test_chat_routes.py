@@ -751,6 +751,12 @@ class TestLoadLangchainMessages:
 class TestWebSocketStream:
     """Tests for the WebSocket /chat/stream endpoint."""
 
+    @pytest.fixture(autouse=True)
+    def mock_history(self):
+        """Keep transport-only tests independent of the application database."""
+        with patch("app.api.routes.chat._load_ws_history", AsyncMock(return_value=[])):
+            yield
+
     def _make_test_client(self):
         """Build a Starlette TestClient with stream_agent mocked."""
         from starlette.testclient import TestClient
