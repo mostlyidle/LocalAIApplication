@@ -87,6 +87,37 @@ describe("useWebSocket", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("closes a timed-out connecting socket so a retry creates a new socket", async () => {
+    const onError = vi.fn();
+    const { result, unmount } = renderHook(() => useWebSocket({ onError }));
+
+    act(() => {
+      result.current.sendMessage("Hello");
+    });
+    const firstWs = MockWebSocket.instances[0];
+    firstWs.readyState = 0;
+    firstWs.onopen = null;
+
+    await act(async () => { vi.advanceTimersByTime(5000); });
+
+    expect(firstWs.close).toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining("Could not connect"));
+    expect(result.current.isStreaming).toBe(false);
+
+    act(() => {
+      result.current.sendMessage("Hello again");
+    });
+    expect(MockWebSocket.instances).toHaveLength(2);
+
+    const retryWs = MockWebSocket.instances[1];
+    await act(async () => { vi.advanceTimersByTime(1); });
+
+    expect(retryWs.send).toHaveBeenCalledWith(
+      JSON.stringify({ type: "message", content: "Hello again", attachments: [] }),
+    );
+    unmount();
+  });
+
   it("returns initial disconnected state", () => {
     const { result } = renderHook(() => useWebSocket());
 

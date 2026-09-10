@@ -149,6 +149,11 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       }
       pendingMessageRef.current = payload;
       sendTimeoutRef.current = setTimeout(() => {
+        const ws = wsRef.current;
+        if (ws?.readyState === WebSocket.CONNECTING) {
+          wsRef.current = null;
+          ws.close();
+        }
         clearPendingMessage();
         streamingRef.current = false;
         setIsStreaming(false);

@@ -5,6 +5,7 @@ Targets app/api/routes/chat.py for 46% → 80%+ coverage.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -869,8 +870,8 @@ class TestWebSocketStream:
                 assert resp["type"] == "error"
                 assert "required" in resp["content"].lower()
 
-    def test_stream_agent_error_sends_error_and_done(self):
-        """When stream_agent raises, an error event and done event are sent."""
+    def test_stream_agent_error_sends_one_terminal_error(self):
+        """When stream_agent raises, the error event is the sole terminal event."""
 
         async def mock_stream_error(**kwargs):
             raise RuntimeError("LLM connection failed")
@@ -886,8 +887,6 @@ class TestWebSocketStream:
                 r1 = ws.receive_json()
                 assert r1["type"] == "error"
                 assert "Agent error" in r1["content"]
-                r2 = ws.receive_json()
-                assert r2["type"] == "done"
 
     def test_message_with_conversation_id(self):
         """Client can provide a conversation_id."""
@@ -1044,12 +1043,88 @@ class TestWebSocketStream:
             with client.websocket_connect("/api/v1/chat/stream") as ws:
                 ws.send_json({"type": "message", "content": "hello"})
                 ws.receive_json()  # error
-                ws.receive_json()  # done
 
         # Persistence still called (empty content, no tool calls)
         mock_persist.assert_called_once()
         call_kwargs = mock_persist.call_args.kwargs
         assert call_kwargs["assistant_content"] == ""
+
+    def test_tokens_save_failure_preserves_completion(self):
+        """A save failure is completion metadata, not a second error boundary."""
+
+        async def mock_stream(**kwargs):
+            yield {"type": "token", "content": "The answer"}
+            yield {"type": "token", "content": " is ready."}
+            yield {"type": "done", "metadata": {"agent_used": "chat"}}
+
+        client, _ = self._make_test_client()
+        mock_persist = AsyncMock(return_value=False)
+        with (
+            patch("app.api.routes.chat.stream_agent", side_effect=mock_stream),
+            patch("app.api.routes.chat._persist_ws_messages", mock_persist),
+        ):
+            with client.websocket_connect("/api/v1/chat/stream") as ws:
+                ws.send_json({"type": "message", "content": "hello"})
+                events = [ws.receive_json() for _ in range(3)]
+
+        assert [event["type"] for event in events] == ["token", "token", "done"]
+        assert events[-1]["metadata"]["persistence_warning"] == (
+            "Could not save this conversation. Please retry."
+        )
+
+    def test_agent_failure_delayed_persistence_does_not_emit_late_done_for_new_turn(self):
+        """A queued new turn cannot be reset by a failed turn's delayed completion."""
+        stream_calls = 0
+
+        async def mock_stream(**kwargs):
+            nonlocal stream_calls
+            stream_calls += 1
+            if stream_calls == 1:
+                raise RuntimeError("agent failed")
+                yield  # noqa: unreachable — makes this an async generator
+            yield {"type": "token", "content": "second turn"}
+            yield {"type": "done", "metadata": {"agent_used": "chat"}}
+
+        persist_calls = 0
+
+        async def delayed_persist(**kwargs):
+            nonlocal persist_calls
+            persist_calls += 1
+            if persist_calls == 1:
+                await asyncio.sleep(0.05)
+            return True
+
+        client, _ = self._make_test_client()
+        with (
+            patch("app.api.routes.chat.stream_agent", side_effect=mock_stream),
+            patch("app.api.routes.chat._persist_ws_messages", side_effect=delayed_persist),
+        ):
+            with client.websocket_connect("/api/v1/chat/stream") as ws:
+                ws.send_json(
+                    {
+                        "type": "message",
+                        "content": "failed turn",
+                        "conversation_id": "lifecycle-conv",
+                    }
+                )
+                # Queue the next submission while the failed turn is still
+                # waiting for persistence to finish.
+                ws.send_json(
+                    {
+                        "type": "message",
+                        "content": "new turn",
+                        "conversation_id": "lifecycle-conv",
+                    }
+                )
+
+                first_terminal = ws.receive_json()
+                assert first_terminal["type"] == "error"
+                assert "Agent error" in first_terminal["content"]
+
+                next_token = ws.receive_json()
+                assert next_token == {"type": "token", "content": "second turn"}
+                next_done = ws.receive_json()
+                assert next_done["type"] == "done"
 
 
 # =============================================================================
