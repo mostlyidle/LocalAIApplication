@@ -16,6 +16,7 @@ from typing import Any
 
 import structlog
 from fastapi import APIRouter, Depends, Request, WebSocket, WebSocketDisconnect
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -25,7 +26,7 @@ from app.api.middleware.rate_limiting import limiter
 from app.config import settings
 from app.dependencies import get_db
 from app.models.db_models import Conversation, Message, ToolCallRecord
-from app.models.enums import AgentType, MessageRole
+from app.models.enums import MessageRole
 from app.models.schemas import (
     ChatMessageRequest,
     ChatMessageResponse,
@@ -161,6 +162,11 @@ async def chat_stream(websocket: WebSocket) -> None:
                 await websocket.send_json({"type": "error", "content": "Invalid JSON message."})
                 continue
 
+            if not isinstance(data, dict):
+                await websocket.send_json(
+                    {"type": "error", "content": "Expected a message object."}
+                )
+                continue
             msg_type = data.get("type", "")
             if msg_type != "message":
                 await websocket.send_json(
@@ -168,28 +174,42 @@ async def chat_stream(websocket: WebSocket) -> None:
                 )
                 continue
 
-            content = data.get("content", "").strip()
+            try:
+                body = ChatMessageRequest.model_validate(data)
+            except ValidationError:
+                await websocket.send_json(
+                    {
+                        "type": "error",
+                        "content": "Message content is required (maximum 32000 characters).",
+                    }
+                )
+                continue
+            content = body.content.strip()
             if not content:
                 await websocket.send_json(
                     {"type": "error", "content": "Message content is required."}
                 )
                 continue
 
-            conversation_id = data.get("conversation_id") or str(uuid.uuid4())
-            attachments = data.get("attachments", [])
+            conversation_id = body.conversation_id or str(uuid.uuid4())
+            attachments = body.attachments
 
             # Accumulators for persistence after streaming completes
             token_chunks: list[str] = []
             tool_calls_data: list[dict] = []
             agent_used: str | None = None
+            completion_metadata: dict[str, Any] = {}
 
             try:
+                existing_messages = await _load_ws_history(conversation_id)
                 async for event in stream_agent(
                     user_input=content,
                     conversation_id=conversation_id,
                     attachments=attachments,
+                    existing_messages=existing_messages,
                 ):
-                    await websocket.send_json(event)
+                    if event.get("type") != "done":
+                        await websocket.send_json(event)
 
                     # Accumulate data for persistence
                     evt_type = event.get("type")
@@ -213,22 +233,40 @@ async def chat_stream(websocket: WebSocket) -> None:
                     elif evt_type == "agent_switch":
                         agent_used = event.get("agent")
                     elif evt_type == "done":
+                        completion_metadata = event.get("metadata", {})
                         # Extract agent_used from done metadata if not set by agent_switch
                         if agent_used is None:
                             agent_used = event.get("metadata", {}).get("agent_used")
-            except Exception as exc:
-                logger.error("stream_error", error=str(exc))
-                await websocket.send_json({"type": "error", "content": f"Agent error: {exc}"})
-                await websocket.send_json({"type": "done", "metadata": {}})
+            except Exception:
+                logger.exception("stream_error")
+                await websocket.send_json(
+                    {
+                        "type": "error",
+                        "content": "Agent error: response failed. Check the backend and Ollama, then retry.",
+                    }
+                )
 
             # Persist user + assistant messages to database
             assistant_content = "".join(token_chunks)
-            await _persist_ws_messages(
+            saved = await _persist_ws_messages(
                 conversation_id=conversation_id,
                 user_content=content,
                 assistant_content=assistant_content,
                 agent_used=agent_used,
                 tool_calls_data=tool_calls_data,
+            )
+            if saved is False:
+                await websocket.send_json(
+                    {
+                        "type": "error",
+                        "content": "Could not save this conversation. Please retry.",
+                    }
+                )
+            await websocket.send_json(
+                {
+                    "type": "done",
+                    "metadata": {**completion_metadata, "conversation_id": conversation_id},
+                }
             )
 
     except WebSocketDisconnect:
@@ -348,19 +386,27 @@ async def delete_conversation(
 # ---------------------------------------------------------------------------
 
 
+async def _load_ws_history(conversation_id: str) -> list:
+    """Load history in a short-lived session before a streaming turn."""
+    from app.services.database import get_app_session_factory
+
+    async with get_app_session_factory()() as db:
+        return await _load_langchain_messages(db, conversation_id)
+
+
 async def _persist_ws_messages(
     conversation_id: str,
     user_content: str,
     assistant_content: str,
     agent_used: str | None,
     tool_calls_data: list[dict],
-) -> None:
+) -> bool:
     """Persist user and assistant messages from a WebSocket stream to the DB.
 
     Opens its own database session (WebSocket endpoints don't participate
     in FastAPI's ``Depends`` lifecycle). Failures are logged but never
-    propagated to the client — message persistence is best-effort so that
-    a transient DB error doesn't crash the chat stream.
+    raised so that a transient DB error doesn't crash the chat stream.
+    Returns whether saving succeeded, allowing the route to report failures.
 
     Args:
         conversation_id: The conversation to write to (created if missing).
@@ -416,12 +462,15 @@ async def _persist_ws_messages(
             agent_used=agent_used,
             tool_calls=len(tool_calls_data),
         )
+        return True
     except Exception as exc:
         logger.error(
             "ws_persistence_failed",
             conversation_id=conversation_id,
             error=str(exc),
+            exc_info=True,
         )
+        return False
 
 
 async def _get_or_create_conversation(db: AsyncSession, conversation_id: str) -> Conversation:

@@ -62,7 +62,7 @@ describe("API Client", () => {
 
   describe("apiFetch wrapper", () => {
     it("sets Content-Type header to application/json", async () => {
-      const spy = mockFetchSuccess({ tools: [] });
+      const spy = mockFetchSuccess([]);
       globalThis.fetch = spy;
 
       await getTools();
@@ -110,30 +110,30 @@ describe("API Client", () => {
 
   describe("Chat endpoints", () => {
     it("sendMessage posts to /chat with message and conversationId", async () => {
-      const spy = mockFetchSuccess({ response: "hi", conversation_id: "c1", agent_type: "chat" });
+      const spy = mockFetchSuccess({ content: "hi", conversation_id: "c1", agent_used: "chat" });
       globalThis.fetch = spy;
 
       const result = await sendMessage("hello", "c1");
 
-      expect(result.response).toBe("hi");
+      expect(result.content).toBe("hi");
       const [url, init] = spy.mock.calls[0];
       expect(url).toContain("/chat");
-      expect(JSON.parse(init.body)).toEqual({ message: "hello", conversation_id: "c1" });
+      expect(JSON.parse(init.body)).toEqual({ content: "hello", conversation_id: "c1" });
     });
 
     it("sendMessage works without conversationId", async () => {
-      const spy = mockFetchSuccess({ response: "ok", conversation_id: "c2", agent_type: "chat" });
+      const spy = mockFetchSuccess({ content: "ok", conversation_id: "c2", agent_used: "chat" });
       globalThis.fetch = spy;
 
       await sendMessage("test");
 
       const body = JSON.parse(spy.mock.calls[0][1].body);
-      expect(body.message).toBe("test");
+      expect(body.content).toBe("test");
       expect(body.conversation_id).toBeUndefined();
     });
 
     it("getConversations fetches conversation list", async () => {
-      const data = { conversations: [{ id: "1", title: "Test", created_at: "", updated_at: "" }] };
+      const data = [{ id: "1", title: "Test", created_at: "", last_message_at: "", message_count: 2 }];
       globalThis.fetch = mockFetchSuccess(data);
 
       const result = await getConversations();
@@ -202,7 +202,7 @@ describe("API Client", () => {
     });
 
     it("getDocuments fetches document list", async () => {
-      globalThis.fetch = mockFetchSuccess({ documents: [{ id: "d1" }] });
+      globalThis.fetch = mockFetchSuccess([{ id: "d1", filename: "f.txt", format: "txt", size_bytes: 1, status: "pending", created_at: "" }]);
 
       const result = await getDocuments();
       expect(result.documents).toHaveLength(1);
@@ -249,19 +249,19 @@ describe("API Client", () => {
 
   describe("SQL endpoints", () => {
     it("querySQL posts query and database", async () => {
-      const spy = mockFetchSuccess({ sql: "SELECT 1", explanation: "test", results: { columns: [], rows: [], row_count: 0 } });
+      const spy = mockFetchSuccess({ generated_sql: "SELECT 1", explanation: "test", columns: [], rows: [], row_count: 0 });
       globalThis.fetch = spy;
 
       const result = await querySQL("show customers", "demo");
 
       expect(result.sql).toBe("SELECT 1");
       const body = JSON.parse(spy.mock.calls[0][1].body);
-      expect(body.query).toBe("show customers");
+      expect(body.question).toBe("show customers");
       expect(body.database).toBe("demo");
     });
 
     it("executeSQL posts raw SQL", async () => {
-      const spy = mockFetchSuccess({ columns: ["id"], rows: [[1]], row_count: 1 });
+      const spy = mockFetchSuccess({ sql: "SELECT 1", result: { columns: ["id"], rows: [[1]], row_count: 1 } });
       globalThis.fetch = spy;
 
       const result = await executeSQL("SELECT 1");
@@ -288,7 +288,7 @@ describe("API Client", () => {
     });
 
     it("getSQLConnections returns connections", async () => {
-      globalThis.fetch = mockFetchSuccess({ connections: [{ name: "demo", url: "sqlite:///demo.db" }] });
+      globalThis.fetch = mockFetchSuccess([{ name: "demo", url: "sqlite:///demo.db" }]);
 
       const result = await getSQLConnections();
       expect(result.connections).toHaveLength(1);
@@ -310,7 +310,7 @@ describe("API Client", () => {
 
   describe("RAG endpoints", () => {
     it("searchRAG posts query with optional params", async () => {
-      const spy = mockFetchSuccess({ results: [], query: "test", collection: "default" });
+      const spy = mockFetchSuccess({ results: [], query: "test", total_results: 0 });
       globalThis.fetch = spy;
 
       await searchRAG("test", "docs", 10);
@@ -320,7 +320,7 @@ describe("API Client", () => {
     });
 
     it("ingestRAG posts document_id and collection", async () => {
-      const spy = mockFetchSuccess({ message: "ok", chunks: 5 });
+      const spy = mockFetchSuccess({ document_id: "doc-123", collection: "mycol", chunks_ingested: 5 });
       globalThis.fetch = spy;
 
       const result = await ingestRAG("doc-123", "mycol");
@@ -332,7 +332,7 @@ describe("API Client", () => {
     });
 
     it("getRAGCollections returns collections", async () => {
-      globalThis.fetch = mockFetchSuccess({ collections: [{ name: "c1", count: 10 }] });
+      globalThis.fetch = mockFetchSuccess([{ name: "c1", document_count: 10 }]);
 
       const result = await getRAGCollections();
       expect(result.collections[0].name).toBe("c1");
@@ -354,9 +354,12 @@ describe("API Client", () => {
     it("getHealth returns status", async () => {
       globalThis.fetch = mockFetchSuccess({
         status: "healthy",
-        ollama: { status: "connected" },
-        chromadb: { status: "connected" },
-        database: { status: "connected" },
+        services: [
+          { name: "ollama", healthy: true },
+          { name: "chromadb", healthy: true },
+          { name: "app_database", healthy: true },
+        ],
+        meeting_ready: true,
       });
 
       const result = await getHealth();
@@ -364,7 +367,7 @@ describe("API Client", () => {
     });
 
     it("getTools returns tool list", async () => {
-      globalThis.fetch = mockFetchSuccess({ tools: [{ name: "calc", description: "Calculator" }] });
+      globalThis.fetch = mockFetchSuccess([{ name: "calc", description: "Calculator" }]);
 
       const result = await getTools();
       expect(result.tools).toHaveLength(1);

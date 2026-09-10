@@ -24,6 +24,11 @@ from app.tools.sql_tools import (
 class TestValidateQuery:
     """Tests for SQL query validation and sanitisation."""
 
+    @pytest.mark.parametrize("sql", ["SELECT 1; SELECT 2", "SELECT * INTO copy FROM users"])
+    def test_rejects_multiple_statements_and_select_into(self, sql):
+        with pytest.raises(UnsafeQueryError):
+            validate_query(sql)
+
     # -- Safe SELECT queries -----------------------------------------------
 
     def test_simple_select(self):
@@ -193,6 +198,33 @@ class TestIntrospectSchema:
 
 class TestExecuteQuery:
     """Tests for executing SQL against the test database."""
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "SELECT * FROM users",
+            "SELECT 'LIMIT' AS label, id FROM users",
+            "SELECT * FROM users -- trailing comment",
+            "SELECT * FROM users LIMIT -1",
+            "SELECT * FROM users LIMIT 1000",
+            "SELECT * FROM users LIMIT 0, 1000",
+            "SELECT * FROM users WHERE id IN (SELECT id FROM users LIMIT 1000)",
+        ],
+    )
+    async def test_enforces_limit_at_execution_boundary(self, sql_engine, sql):
+        with (
+            patch("app.tools.sql_tools.get_sql_engine", return_value=sql_engine),
+            patch("app.tools.sql_tools.settings.sql_max_rows", 2),
+        ):
+            result = await execute_query(sql)
+        assert result["row_count"] == 2
+
+    async def test_execution_rejects_writes_without_prior_validation(self, sql_engine):
+        with (
+            patch("app.tools.sql_tools.get_sql_engine", return_value=sql_engine),
+            pytest.raises(UnsafeQueryError),
+        ):
+            await execute_query("DELETE FROM users")
 
     async def test_select_all(self, sql_engine):
         with patch("app.tools.sql_tools.get_sql_engine", return_value=sql_engine):

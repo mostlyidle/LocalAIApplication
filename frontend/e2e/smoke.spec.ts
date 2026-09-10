@@ -11,7 +11,7 @@ test.describe("Navigation smoke tests", () => {
     await page.goto("/");
     await expect(page).toHaveTitle(/Local AI/i);
     // The sidebar should be present
-    await expect(page.locator("aside")).toBeVisible();
+    await expect(page.locator('[data-sidebar="sidebar"]')).toBeVisible();
   });
 
   test("chat page loads", async ({ page }) => {
@@ -48,12 +48,11 @@ test.describe("Sidebar navigation", () => {
     await page.goto("/");
 
     // Click the Chat link in the sidebar
-    const chatLink = page.locator("aside").getByRole("link", { name: /chat/i });
-    if (await chatLink.isVisible()) {
-      await chatLink.click();
-      await expect(page).toHaveURL(/\/chat/);
-      await expect(page.locator("header")).toContainText("Chat");
-    }
+    const chatLink = page.locator('[data-sidebar="sidebar"]').getByRole("link", { name: /chat/i });
+    await expect(chatLink).toBeVisible();
+    await chatLink.click();
+    await expect(page).toHaveURL(/\/chat/);
+    await expect(page.locator("header")).toContainText("Chat");
   });
 });
 

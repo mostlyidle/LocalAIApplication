@@ -23,13 +23,13 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   const [isStreaming, setIsStreaming] = useState(false);
   const optionsRef = useRef(options);
   optionsRef.current = options;
-
   const reconnectAttemptRef = useRef(0);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sendTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingMessageRef = useRef<string | null>(null);
+  const streamingRef = useRef(false);
   const intentionalCloseRef = useRef(false);
-  const maxAttempts = options.maxReconnectAttempts ?? 5;
   const mountedRef = useRef(true);
-  const sendQueueRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const clearReconnectTimer = useCallback(() => {
     if (reconnectTimerRef.current !== null) {
@@ -38,129 +38,125 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     }
   }, []);
 
-  const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+  const clearPendingMessage = useCallback(() => {
+    if (sendTimeoutRef.current !== null) {
+      clearTimeout(sendTimeoutRef.current);
+      sendTimeoutRef.current = null;
+    }
+    pendingMessageRef.current = null;
+  }, []);
 
-    // Clean up any pending reconnect
+  const connect = useCallback(function connectSocket() {
+    if (wsRef.current?.readyState === WebSocket.OPEN ||
+        wsRef.current?.readyState === WebSocket.CONNECTING) return;
+    intentionalCloseRef.current = false;
     clearReconnectTimer();
 
     const ws = new WebSocket(WS_CHAT);
     wsRef.current = ws;
 
     ws.onopen = () => {
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || wsRef.current !== ws) return;
       setIsConnected(true);
       reconnectAttemptRef.current = 0;
+      if (pendingMessageRef.current !== null) {
+        ws.send(pendingMessageRef.current);
+        clearPendingMessage();
+      }
     };
 
     ws.onmessage = (event) => {
+      if (!mountedRef.current || wsRef.current !== ws) return;
+      let data: StreamEvent;
       try {
-        const data: StreamEvent = JSON.parse(event.data);
-        switch (data.type) {
-          case "token":
-            optionsRef.current.onToken?.(data.content ?? "");
-            break;
-          case "tool_call":
-            optionsRef.current.onToolCall?.(data.tool ?? "", data.input ?? {});
-            break;
-          case "tool_result":
-            optionsRef.current.onToolResult?.(data.tool ?? "", data.output ?? "");
-            break;
-          case "done":
-            optionsRef.current.onDone?.(data.metadata ?? {});
-            setIsStreaming(false);
-            break;
-          case "error":
-            optionsRef.current.onError?.(data.error ?? "Unknown error");
-            setIsStreaming(false);
-            break;
-        }
+        data = JSON.parse(event.data);
       } catch {
-        // Non-JSON message, ignore
+        return;
+      }
+      switch (data.type) {
+        case "token":
+          optionsRef.current.onToken?.(data.content ?? "");
+          break;
+        case "tool_call":
+          optionsRef.current.onToolCall?.(data.tool ?? "", data.input ?? {});
+          break;
+        case "tool_result":
+          optionsRef.current.onToolResult?.(data.tool ?? "", data.output ?? "");
+          break;
+        case "done":
+          streamingRef.current = false;
+          setIsStreaming(false);
+          optionsRef.current.onDone?.(data.metadata ?? {});
+          break;
+        case "error":
+          streamingRef.current = false;
+          setIsStreaming(false);
+          optionsRef.current.onError?.(data.content ?? data.error ?? "Unknown error");
+          break;
       }
     };
 
     ws.onclose = () => {
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || wsRef.current !== ws) return;
+      wsRef.current = null;
       setIsConnected(false);
-      setIsStreaming(false);
-      scheduleReconnect();
+      if (streamingRef.current && pendingMessageRef.current === null) {
+        streamingRef.current = false;
+        setIsStreaming(false);
+        optionsRef.current.onError?.("Connection lost before the response completed. Please retry.");
+      }
+      if (intentionalCloseRef.current ||
+          reconnectAttemptRef.current >= (optionsRef.current.maxReconnectAttempts ?? 5)) return;
+      const delay = Math.min(
+        BASE_RECONNECT_DELAY_MS * Math.pow(2, reconnectAttemptRef.current++),
+        MAX_RECONNECT_DELAY_MS,
+      );
+      clearReconnectTimer();
+      reconnectTimerRef.current = setTimeout(() => {
+        if (mountedRef.current && !intentionalCloseRef.current) connectSocket();
+      }, delay);
     };
 
     ws.onerror = () => {
-      if (!mountedRef.current) return;
-      setIsConnected(false);
-      setIsStreaming(false);
-      // onclose will fire after onerror, which handles reconnect
+      if (mountedRef.current && wsRef.current === ws) setIsConnected(false);
+      // onclose handles failed sends and reconnects.
     };
-  }, [clearReconnectTimer]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const scheduleReconnect = useCallback(() => {
-    if (intentionalCloseRef.current) return;
-    if (!mountedRef.current) return;
-    if (reconnectAttemptRef.current >= maxAttempts) return;
-
-    const attempt = reconnectAttemptRef.current;
-    const delay = Math.min(
-      BASE_RECONNECT_DELAY_MS * Math.pow(2, attempt),
-      MAX_RECONNECT_DELAY_MS,
-    );
-    reconnectAttemptRef.current = attempt + 1;
-
-    clearReconnectTimer();
-    reconnectTimerRef.current = setTimeout(() => {
-      if (mountedRef.current && !intentionalCloseRef.current) {
-        connect();
-      }
-    }, delay);
-  }, [maxAttempts, clearReconnectTimer, connect]);
+  }, [clearReconnectTimer, clearPendingMessage]);
 
   const disconnect = useCallback(() => {
     intentionalCloseRef.current = true;
     clearReconnectTimer();
-    if (sendQueueRef.current !== null) {
-      clearInterval(sendQueueRef.current);
-      sendQueueRef.current = null;
-    }
-    wsRef.current?.close();
+    clearPendingMessage();
+    streamingRef.current = false;
+    const ws = wsRef.current;
     wsRef.current = null;
+    ws?.close();
     setIsConnected(false);
-  }, [clearReconnectTimer]);
+    setIsStreaming(false);
+  }, [clearReconnectTimer, clearPendingMessage]);
 
   const sendMessage = useCallback(
-    (content: string, attachments: string[] = []) => {
-      if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-        intentionalCloseRef.current = false;
-        connect();
-        // Wait for connection then send
-        const interval = setInterval(() => {
-          if (wsRef.current?.readyState === WebSocket.OPEN) {
-            clearInterval(interval);
-            sendQueueRef.current = null;
-            wsRef.current.send(
-              JSON.stringify({ type: "message", content, attachments })
-            );
-            setIsStreaming(true);
-          }
-        }, 50);
-        sendQueueRef.current = interval;
-        const timeout = setTimeout(() => {
-          clearInterval(interval);
-          sendQueueRef.current = null;
-        }, 5000);
-        // Store timeout ref so it can be cleaned up
-        const prevInterval = interval;
-        sendQueueRef.current = prevInterval;
-        // Clear timeout when interval resolves or component unmounts
-        void timeout;
+    (content: string, attachments: string[] = [], conversationId?: string) => {
+      const payload = JSON.stringify({
+        type: "message", content, attachments, conversation_id: conversationId,
+      });
+      if (streamingRef.current) return;
+      streamingRef.current = true;
+      setIsStreaming(true);
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(payload);
         return;
       }
-      wsRef.current.send(
-        JSON.stringify({ type: "message", content, attachments })
-      );
-      setIsStreaming(true);
+      pendingMessageRef.current = payload;
+      sendTimeoutRef.current = setTimeout(() => {
+        clearPendingMessage();
+        streamingRef.current = false;
+        setIsStreaming(false);
+        optionsRef.current.onError?.("Could not connect to the backend. Please retry.");
+      }, 5000);
+      connect();
     },
-    [connect]
+    [connect, clearPendingMessage],
   );
 
   useEffect(() => {
@@ -168,13 +164,12 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     return () => {
       mountedRef.current = false;
       clearReconnectTimer();
-      if (sendQueueRef.current !== null) {
-        clearInterval(sendQueueRef.current);
-        sendQueueRef.current = null;
-      }
-      wsRef.current?.close();
+      clearPendingMessage();
+      const ws = wsRef.current;
+      wsRef.current = null;
+      ws?.close();
     };
-  }, [clearReconnectTimer]);
+  }, [clearReconnectTimer, clearPendingMessage]);
 
   return { isConnected, isStreaming, connect, disconnect, sendMessage };
 }

@@ -10,16 +10,14 @@ from __future__ import annotations
 from typing import Any
 
 import structlog
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.agents.state import AgentState
 from app.services.llm import llm_service
 from app.tools.sql_tools import (
-    execute_query,
     format_schema_for_prompt,
     introspect_schema,
     sql_tools,
-    validate_query,
 )
 
 logger = structlog.get_logger(__name__)
@@ -60,7 +58,7 @@ async def sql_agent_node(state: AgentState) -> dict[str, Any]:
 
     # Introspect schema to include in system prompt
     try:
-        schema = await introspect_schema()
+        schema = await introspect_schema(database=state.get("database", "default"))
         schema_context = f"DATABASE SCHEMA:\n{format_schema_for_prompt(schema)}"
     except Exception as exc:
         logger.warning("schema_introspection_failed", error=str(exc))
@@ -94,7 +92,9 @@ async def sql_agent_node(state: AgentState) -> dict[str, Any]:
 
         for tc in response.tool_calls:
             tool_name = tc["name"]
-            tool_args = tc["args"]
+            tool_args = dict(tc["args"])
+            if tool_name in {"sql_query_tool", "sql_schema_tool"}:
+                tool_args["database"] = state.get("database", "default")
 
             # Find the matching tool
             tool_fn = next((t for t in sql_tools if t.name == tool_name), None)
@@ -110,7 +110,7 @@ async def sql_agent_node(state: AgentState) -> dict[str, Any]:
                 {
                     "tool_name": tool_name,
                     "tool_input": tool_args,
-                    "tool_output": str(tool_result)[:2000],
+                    "tool_output": str(tool_result),
                 }
             )
 

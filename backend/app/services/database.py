@@ -114,6 +114,11 @@ def get_sql_engine(database_url: str | None = None, name: str = "default") -> As
     if name in _sql_engines:
         return _sql_engines[name]
 
+    if database_url is None and name != "default":
+        from app.api.middleware.error_handler import DatabaseConnectionError
+
+        raise DatabaseConnectionError(f"Database connection '{name}' is not registered.")
+
     url = database_url or settings.sql_database_url
     connect_kwargs = {"timeout": 30} if "sqlite" in url else {}
     engine = create_async_engine(
