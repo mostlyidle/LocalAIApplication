@@ -309,7 +309,10 @@ async def run_agent(
 
     # Inject conversation history if provided
     if existing_messages:
-        state["messages"] = existing_messages
+        state["messages"] = list(existing_messages)
+    state["messages"].append(
+        HumanMessage(content=_build_classification_input(user_input, attachments or []))
+    )
 
     result = await orchestrator_graph.ainvoke(state)
     return result
@@ -344,7 +347,10 @@ async def stream_agent(
     )
 
     if existing_messages:
-        state["messages"] = existing_messages
+        state["messages"] = list(existing_messages)
+    state["messages"].append(
+        HumanMessage(content=_build_classification_input(user_input, attachments or []))
+    )
 
     async for event in orchestrator_graph.astream_events(state, version="v2"):
         kind = event.get("event", "")
@@ -358,7 +364,10 @@ async def stream_agent(
             }
 
         # Emit individual tokens from LLM streaming
-        if kind == "on_chat_model_stream":
+        if (
+            kind == "on_chat_model_stream"
+            and event.get("metadata", {}).get("langgraph_node") != "classify_intent"
+        ):
             chunk = data.get("chunk")
             if chunk and hasattr(chunk, "content") and chunk.content:
                 yield {

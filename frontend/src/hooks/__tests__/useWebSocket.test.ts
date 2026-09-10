@@ -57,6 +57,36 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("useWebSocket", () => {
+  it("sends the conversation ID and shows backend content errors", async () => {
+    const onError = vi.fn();
+    const { result } = renderHook(() => useWebSocket({ onError }));
+    act(() => result.current.connect());
+    await act(async () => { vi.advanceTimersByTime(1); });
+    act(() => result.current.sendMessage("Follow up", [], "conversation-1"));
+    const ws = MockWebSocket.instances[0];
+    expect(JSON.parse(ws.send.mock.calls[0][0]).conversation_id).toBe("conversation-1");
+    act(() => ws.onmessage?.({ data: JSON.stringify({ type: "error", content: "Backend unavailable" }) }));
+    expect(onError).toHaveBeenCalledWith("Backend unavailable");
+    expect(result.current.isStreaming).toBe(false);
+  });
+
+  it("reports a queued message that cannot connect instead of silently dropping it", async () => {
+    const onError = vi.fn();
+    const { result, unmount } = renderHook(() => useWebSocket({ onError }));
+    act(() => {
+      result.current.sendMessage("Hello");
+      MockWebSocket.instances[0].readyState = 0;
+      MockWebSocket.instances[0].onopen = null;
+    });
+    expect(result.current.isStreaming).toBe(true);
+    await act(async () => { vi.advanceTimersByTime(5000); });
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining("Could not connect"));
+    expect(result.current.isStreaming).toBe(false);
+    expect(MockWebSocket.instances[0].send).not.toHaveBeenCalled();
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("returns initial disconnected state", () => {
     const { result } = renderHook(() => useWebSocket());
 

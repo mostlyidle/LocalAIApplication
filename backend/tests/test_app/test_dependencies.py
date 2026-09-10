@@ -123,6 +123,8 @@ class TestModuleExports:
             "LLMService",
             "OCRService",
             "VectorStoreService",
+            "MeetingService",
+            "get_meeting_service",
         }
         assert set(__all__) == expected
 

@@ -14,7 +14,16 @@ export function useDocuments() {
     setError(null);
     try {
       const data = await api.getDocuments();
-      setDocuments((data.documents ?? []) as Document[]);
+      setDocuments(data.documents.map((doc) => ({
+        id: doc.id,
+        filename: doc.filename,
+        format: doc.format,
+        sizeBytes: doc.size_bytes,
+        status: doc.status,
+        wordCount: 0,
+        createdAt: doc.created_at,
+        updatedAt: doc.created_at,
+      })));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load documents");
     } finally {
@@ -48,7 +57,14 @@ export function useDocuments() {
   const analyze = useCallback(async (id: string, prompt?: string) => {
     setError(null);
     try {
-      return await api.analyzeDocument(id, prompt);
+      const result = await api.analyzeDocument(id, prompt);
+      setDocuments((prev) => prev.map((doc) => doc.id === id ? {
+        ...doc,
+        status: "completed",
+        pageCount: result.page_count ?? undefined,
+        wordCount: result.word_count,
+      } : doc));
+      return result;
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Analysis failed";
       setError(msg);
