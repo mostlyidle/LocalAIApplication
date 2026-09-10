@@ -1,89 +1,329 @@
-# Local AI Application -- Comprehensive Guide
+# Local AI Application — Beginner Guide
 
-A fully local, free, production-grade AI application that runs entirely on Apple Silicon Macs using open-source models via Ollama. Zero cloud dependencies. Zero API keys. Fully offline-capable.
+This guide gets a beginner from a clean Apple Silicon Mac to a working local
+development checkout. The application has a Next.js web UI, a FastAPI backend,
+optional local Ollama chat/RAG services, and a supervised Tauri desktop meeting
+workflow.
+
+> **Current status:** the meeting workflow is a **macOS source-checkout workflow**,
+> not an installed desktop application. Packaging is disabled. The instructions
+> below do not claim Windows support or a distributable release.
 
 ---
 
 ## Table of Contents
 
 1. [Prerequisites](#prerequisites)
-2. [Quick Start](#quick-start)
-3. [Manual Setup](#manual-setup)
-4. [Configuration](#configuration)
-5. [Running the Application](#running-the-application)
-6. [Features](#features)
-7. [Architecture](#architecture)
-8. [Docker Deployment](#docker-deployment)
-9. [MCP Integration](#mcp-integration)
-10. [Testing](#testing)
-11. [Development Workflow](#development-workflow)
-12. [Troubleshooting](#troubleshooting)
-13. [API Reference](#api-reference)
-14. [Desktop meeting workflow](#desktop-meeting-workflow)
+2. [Clone and first-time setup](#clone-and-first-time-setup)
+3. [Configure the environment](#configure-the-environment)
+4. [Run the web application](#run-the-web-application)
+5. [Run the macOS desktop meeting workflow](#run-the-macos-desktop-meeting-workflow)
+6. [Verify readiness](#verify-readiness)
+7. [Features](#features)
+8. [Architecture](#architecture)
+9. [Docker Deployment](#docker-deployment)
+10. [MCP Integration](#mcp-integration)
+11. [Testing](#testing)
+12. [Development Workflow](#development-workflow)
+13. [Troubleshooting](#troubleshooting)
+14. [API Reference](#api-reference)
 
 ---
 
 ## Prerequisites
 
-| Tool     | Minimum Version | Install                          |
-|----------|-----------------|----------------------------------|
-| macOS    | 13+ (Ventura)   | Apple Silicon (M1/M2/M3/M4)     |
-| Ollama   | latest          | `brew install ollama`            |
-| Python   | 3.12+           | `brew install python@3.13`       |
-| Node.js  | 18+             | `brew install node`              |
-| uv       | latest          | `brew install uv`                |
-| pnpm     | 9+              | `brew install pnpm`              |
+The supported native workflow requires an **Apple Silicon Mac (M1/M2/M3/M4)
+running macOS 13.0 or later**. Install the following software before cloning:
 
-> **Python 3.14 is NOT supported** -- ChromaDB is incompatible. Use Python 3.12 or 3.13.
+| Software | Why it is needed | Install/check |
+|---|---|---|
+| Git | Clone the checkout | Usually included with Xcode; check with `git --version` |
+| Homebrew | Install the command-line prerequisites | [brew.sh](https://brew.sh) |
+| Full Xcode app | Build the native Tauri host and link macOS frameworks | Install from the Mac App Store; Command Line Tools alone are not enough |
+| Python 3.12 or 3.13 | Run the backend | `brew install python@3.13` |
+| uv | Install and run Python dependencies | `brew install uv` |
+| Node.js 20.9+ | Run Next.js 16 | `brew install node` |
+| pnpm | Install and run frontend dependencies | `brew install pnpm` |
+| Rust stable and Cargo | Build the Tauri host | `brew install rust` |
+| Ollama | Optional chat, SQL, answer suggestions, and RAG | `brew install ollama` |
 
-### Ollama Models
+The backend declares Python `>=3.12`. Use Python 3.12 or 3.13; **Python 3.14 is
+not supported because ChromaDB is incompatible**. Next.js 16 requires Node.js
+20.9 or later.
 
-The application uses three models:
-
-| Model               | Size   | Purpose                        |
-|----------------------|--------|--------------------------------|
-| `llama3.1:8b`       | ~4.7GB | General chat & SQL generation  |
-| `nomic-embed-text`  | ~274MB | Document embeddings for RAG    |
-| `llama3.2-vision:11b` | ~7.9GB | Vision/OCR (optional)        |
-
-Pull them with:
+Install the Homebrew prerequisites in one command (after installing Homebrew):
 
 ```bash
-ollama pull llama3.1:8b
-ollama pull nomic-embed-text
-ollama pull llama3.2-vision:11b   # optional, for vision features
+brew install python@3.13 uv node pnpm rust ollama
 ```
 
----
-
-## Quick Start
-
-The fastest way to get running:
+Check the tools that the scripts use:
 
 ```bash
-# 1. Clone and enter the project
+python3 --version   # 3.12 or 3.13
+uv --version
+node --version
+pnpm --version
+rustc --version
+cargo --version
+ollama --version
+```
+
+### Select the full Xcode developer directory
+
+After installing Xcode, open it once and complete its first-launch prompts.
+Then select the **full** Xcode SDK (not `/Library/Developer/CommandLineTools`):
+
+```bash
+sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+sudo xcodebuild -license accept
+sudo xcodebuild -runFirstLaunch
+xcode-select -p
+xcodebuild -version
+```
+
+`xcode-select -p` must print
+`/Applications/Xcode.app/Contents/Developer` (or the path to your full Xcode
+installation). If Xcode is installed somewhere else, substitute that path in
+the `--switch` command. The native bridge uses AVFAudio, AVFoundation,
+CoreAudio, CoreGraphics, CoreMedia, and ScreenCaptureKit, so the full app is
+required.
+
+## Clone and first-time setup
+
+Clone the repository and enter its root:
+
+```bash
+git clone https://github.com/LipDevs/LocalAIApplication.git
 cd LocalAIApplication
-
-# 2. Run the automated setup script
-bash scripts/setup.sh
-
-# 3. Start the application
-make dev
+uv python install 3.13
+uv python pin 3.13
 ```
 
-This will:
-- Check all prerequisites are installed
-- Create `.env` and `frontend/.env.local` config files
-- Install Python and Node.js dependencies
-- Pull the required Ollama models
-- Run database migrations
-- Start the backend (port 8000) and frontend (port 3000)
+For the regular web application, the repository's setup script installs the
+locked backend/frontend dependencies, creates starter environment files,
+creates root-level data directories, pulls the configured Ollama models, and
+runs migrations:
 
-Open **http://localhost:3000** in your browser.
+```bash
+bash scripts/setup.sh
+```
+
+The script requires `ollama`, `uv`, `pnpm`, and `node`. If Ollama is not
+running, it starts `ollama serve` itself and then pulls `llama3.1:8b`,
+`nomic-embed-text`, and `llama3.2-vision:11b`. Model pulls can take a long time.
+It does **not** provision the meeting ASR model.
+
+The setup script writes `.env` at the repository root, but the Makefile starts
+the backend with `backend/` as its working directory and the backend reads
+`.env` from its current directory. Before running either web or desktop mode,
+make the backend configuration explicit:
+
+```bash
+test -f backend/.env || cp .env.example backend/.env
+mkdir -p backend/data/uploads backend/data/chroma
+```
+
+If you already have a `backend/.env`, do not overwrite your custom settings;
+edit it instead. The runtime paths in `.env.example` (`./data/...`) therefore
+resolve under `backend/` for the Makefile and desktop launcher.
+
+## Configure the environment
+
+The backend configuration belongs in `backend/.env` for all commands in this
+guide. Start from the checked-in template:
+
+```bash
+cp .env.example backend/.env
+```
+
+At minimum, review these values:
+
+```dotenv
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_CHAT_MODEL=llama3.1:8b
+OLLAMA_EMBEDDING_MODEL=nomic-embed-text
+ASR_MODEL_DIR=/absolute/path/to/small.en
+ASR_MODEL_NAME=small.en
+MEETING_ENABLE_RAG=false
+```
+
+`backend/.env` is ignored by Git. Never put API keys or other secrets in
+`GUIDE.md` or commit a personal `.env` file. The complete list of supported
+settings is in [.env.example](.env.example). In particular, relative database,
+upload, and Chroma paths are relative to `backend/` when using `make dev` or
+`make dev-desktop`.
+
+### Required meeting ASR model (provision before the meeting)
+
+Meeting transcription is local CPU/int8 `faster-whisper`. It requires a
+**complete, already-provisioned CTranslate2 model directory whose basename is
+exactly `small.en`**. This is separate from Ollama and is not an Ollama model.
+The repository does not include this model artifact.
+
+Obtain or copy the model artifact before meeting time, outside the application
+runtime. For example, if the artifact is already available at
+`/path/to/provisioned/small.en`:
+
+```bash
+mkdir -p "$HOME/Library/Application Support/LocalAIApplication/models"
+cp -R "/path/to/provisioned/small.en" \
+  "$HOME/Library/Application Support/LocalAIApplication/models/"
+```
+
+Set the resulting **absolute** path in `backend/.env` (quote paths containing
+spaces if exporting them in a shell):
+
+```dotenv
+ASR_MODEL_DIR=/Users/your-user/Library/Application Support/LocalAIApplication/models/small.en
+ASR_MODEL_NAME=small.en
+```
+
+The runtime rejects a missing path, a relative path, a parent directory, or a
+directory not named `small.en`. It loads with `local_files_only=True` and never
+downloads ASR files during startup, preflight, or a meeting. A missing or
+incomplete model makes meeting readiness fail; it does not fall back to a
+download. `make setup` and `bash scripts/setup.sh` pull Ollama models only and
+do not provision this ASR artifact.
+
+Check the path before starting anything:
+
+```bash
+ASR_MODEL_DIR="/Users/your-user/Library/Application Support/LocalAIApplication/models/small.en"
+test -d "$ASR_MODEL_DIR" && test "$(basename "$ASR_MODEL_DIR")" = "small.en" \
+  && printf 'ASR directory found: %s\n' "$ASR_MODEL_DIR"
+```
+
+### Optional Ollama models
+
+Ollama is **not required for native meeting capture or transcription**. It is
+used for local chat/SQL generation, private answer suggestions, and document
+embeddings when RAG is enabled. Start it in a separate terminal when you want
+those features:
+
+```bash
+ollama serve
+```
+
+In another terminal, pull only what you need:
+
+```bash
+ollama pull llama3.1:8b       # chat, SQL, and meeting answer suggestions
+ollama pull nomic-embed-text  # document embeddings for RAG
+ollama pull llama3.2-vision:11b  # optional image/vision features
+```
+
+Use the matching names in `OLLAMA_CHAT_MODEL`, `OLLAMA_EMBEDDING_MODEL`, and
+`OLLAMA_VISION_MODEL`. To use RAG in meetings, set
+`MEETING_ENABLE_RAG=true`; leave it `false` for the default capture-only path.
+If Ollama or RAG is unavailable, transcription can continue and the application
+reports a visible degraded state.
+
+## Run the web application
+
+This is the simplest browser workflow. From the repository root, use separate
+terminals so it is obvious which process is doing what:
+
+**Terminal 1 — optional Ollama server** (needed for chat, SQL, answer
+suggestions, or RAG):
+
+```bash
+ollama serve
+```
+
+**Terminal 2 — FastAPI backend** (API, WebSockets, database access, local ASR):
+
+```bash
+make dev-backend
+```
+
+**Terminal 3 — Next.js frontend** (browser UI on port 3000):
+
+```bash
+make dev-frontend
+```
+
+Open <http://localhost:3000>. The backend API and interactive docs are at
+<http://localhost:8000> and <http://localhost:8000/docs>. `make dev` is an
+equivalent convenience command that starts backend and frontend concurrently,
+but it does not start Ollama and its combined output is less beginner-friendly.
+
+Stop each foreground process with `Ctrl-C`. Do not run the separate backend or
+frontend commands at the same time as `make dev-desktop`; the desktop launcher
+must own those ports.
+
+## Run the macOS desktop meeting workflow
+
+This workflow is for a **source checkout only**. Complete the full Xcode setup,
+ASR provisioning, and one-time dependencies first:
+
+```bash
+test -f backend/.env || cp .env.example backend/.env
+mkdir -p backend/data/uploads backend/data/chroma
+cd backend && uv sync
+cd ../frontend && pnpm install
+cd ../
+cargo install tauri-cli --version '^2'
+```
+
+Edit `backend/.env` and replace the ASR placeholder with the absolute path to
+the complete `small.en` CTranslate2 directory. Then run exactly this command
+from the repository root:
+
+```bash
+make dev-desktop
+```
+
+The launcher runs migrations, starts the backend on `127.0.0.1:8000`, waits for
+`/api/v1/health/ready` with `meeting_ready=true`, starts the frontend on
+`127.0.0.1:3000`, and starts `cargo tauri dev`. The one foreground terminal
+shows logs from the supervised backend/frontend/Tauri session. Leave it open
+while using the desktop window; press `Ctrl-C` to stop the session. The launcher
+does not start, stop, or adopt Ollama. If Ollama is needed, keep `ollama serve`
+running in Terminal 1 and run `make dev-desktop` in Terminal 2.
+
+Do not manually start backend/frontend for this workflow. Ports 8000 and 3000
+must be free: the launcher refuses to adopt an existing listener. It also does
+not restart a child that crashes; read the diagnostic, correct the problem, and
+run `make dev-desktop` again.
+
+### macOS capture permissions and disclosure
+
+Grant the debug/signed **Local AI Application** app both **Screen Recording**
+and **Microphone** access in **System Settings → Privacy & Security**. If a
+permission request is denied, open the relevant settings pane, enable the app,
+and explicitly recheck permissions in the meeting preflight before retrying.
+
+Screen Recording supplies a display-wide system-audio mix, not Teams-only or
+per-process audio; notifications, alerts, music, and other sound may be
+included. The microphone is a separate source. Tell participants and other
+affected users what will be captured and obtain any required consent.
+
+## Verify readiness
+
+After the backend is running, check the required meeting gate:
+
+```bash
+curl -sS http://127.0.0.1:8000/api/v1/health/ready | python3 -m json.tool
+```
+
+Proceed with a meeting only when `meeting_ready` is `true` and both
+`services[].name == "local_asr"` and `services[].name == "app_database"` are
+healthy. HTTP 200 alone is not enough. For a complete status view, including
+optional Ollama and Chroma checks, use:
+
+```bash
+curl -sS http://127.0.0.1:8000/api/v1/health | python3 -m json.tool
+```
+
+The desktop launcher's readiness request has bounded timeouts and a 20-second
+polling budget. `local_asr` errors usually identify a missing, incomplete, or
+incorrectly named model directory. `ollama` and `chromadb` may be unhealthy in
+the full health response without preventing capture.
 
 ---
 
-## Desktop meeting workflow
+## Desktop meeting workflow: implementation details
 
 Phase 3 supports one supervised, source-checkout workflow on macOS. It is not a packaged
 desktop release. From the repository root, use the supported launcher:
@@ -126,7 +366,7 @@ workflow, put the settings in `backend/.env` (or export them) rather than relyin
 `.env` that is not in the backend process's working directory:
 
 ```bash
-cp .env.example backend/.env
+test -f backend/.env || cp .env.example backend/.env
 mkdir -p backend/data/uploads backend/data/chroma
 ```
 
@@ -202,19 +442,43 @@ five attempts; stop drains for at most two seconds. The backend queue defaults t
 and 2,000 ms rolling windows. Capture drops and processor backpressure are reported
 separately. These limits are protective bounds, not a guarantee of lossless capture.
 
+### Manual macOS validation scope
+
+The manual macOS check is a source-checkout check, not a release certification. On an Apple
+Silicon Mac with the full Xcode SDK selected, run:
+
+```bash
+cd desktop/src-tauri
+cargo fmt --check
+cargo check
+cargo test
+cargo build
+cargo tauri info
+cd ../..
+make test-desktop-launcher
+```
+
+For an end-to-end manual check, run `make dev-desktop`, grant Microphone and Screen Recording,
+confirm both native sources in meeting preflight, and verify that
+`/api/v1/health/ready` reports `meeting_ready=true` with the pre-provisioned `small.en` model.
+This macOS check covers the supervised launcher and macOS native build/capture path only; it
+does not validate Windows audio or packaging.
+
 Ollama and RAG are optional for the meeting workflow. Ollama supplies private answer
 suggestions for detected system-source questions; RAG is disabled by default and can be
 enabled with `MEETING_ENABLE_RAG=true` when the local Chroma store is available. If either is
 unavailable, a visible degraded event is emitted while transcription continues.
 
-### Windows and packaging gates
+### Windows limitation
 
 The macOS workflow does not certify Windows. Windows validation must run on Windows 10 2004
 or later and cover WASAPI loopback, CPAL microphone capture, WAVEFORMATEXTENSIBLE devices,
 silent WASAPI packets, and microphone privacy denial. Windows system audio is also a
 render-endpoint system mix rather than per-process Teams audio.
 
-Packaging remains disabled. A release still needs a production frontend asset strategy, a
+### Packaging limitation
+
+Packaging remains disabled (`bundle.active=false`). A release still needs a production frontend asset strategy, a
 managed/supervised FastAPI runtime and canonical meeting WebSocket, an explicit
 desktop-to-backend endpoint/lifecycle policy, Windows hardware smoke, signing, installers,
 and a packaged backend runtime.
@@ -227,14 +491,21 @@ make test-desktop-launcher
 
 ---
 
-## Manual Setup
+## Manual web setup (alternative to the setup script)
 
-If you prefer step-by-step control:
+If you prefer step-by-step control, run these commands from the repository root.
+Use a separate terminal for each foreground process. Use the desktop workflow
+above instead when you need native meeting capture:
 
-### 1. Start Ollama
+### 1. Optional: start Ollama
 
 ```bash
-ollama serve &
+ollama serve
+```
+
+In another terminal, pull the models you want:
+
+```bash
 ollama pull llama3.1:8b
 ollama pull nomic-embed-text
 ```
@@ -242,47 +513,39 @@ ollama pull nomic-embed-text
 ### 2. Backend
 
 ```bash
+mkdir -p backend/data/uploads backend/data/chroma
+test -f backend/.env || cp .env.example backend/.env
+
 cd backend
-
-# Install Python dependencies
 uv sync
-
-# Create config from template
-cp ../.env.example ../.env
-
-# Create data directories
-mkdir -p ../data/uploads ../data/chroma
-
-# Run database migrations
 uv run alembic upgrade head
-
-# Seed the demo database (optional -- creates sample data for SQL agent)
 uv run python ../scripts/seed_demo_db.py
-
-# Start the backend
 uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
+
+The seed command is optional; it creates sample data for the SQL agent in
+`backend/data/demo.db`.
 
 ### 3. Frontend
 
 ```bash
 cd frontend
-
-# Install Node.js dependencies
 pnpm install
-
-# Create local env
-echo 'NEXT_PUBLIC_API_URL=http://localhost:8000' > .env.local
-
-# Start the frontend
+printf 'NEXT_PUBLIC_API_URL=http://localhost:8000\nNEXT_PUBLIC_WS_URL=ws://localhost:8000\n' > .env.local
 pnpm dev
 ```
+
+Run the backend and frontend blocks in separate terminals if you want both
+processes in the foreground. The Ollama block is a third terminal; it is not
+needed for the backend to start, but it is needed for LLM-backed features.
 
 ---
 
 ## Configuration
 
-All configuration is via environment variables in the `.env` file (backend) and `frontend/.env.local` (frontend). The `.env.example` file documents every option.
+All backend configuration is via `backend/.env` for the commands in this guide;
+frontend browser endpoints are in `frontend/.env.local`. The checked-in
+`.env.example` documents every backend option.
 
 ### Key Settings
 
@@ -555,6 +818,10 @@ make docker-down
 
 > **Apple Silicon note**: The Docker Ollama container uses CPU-only inference. For Metal GPU acceleration, run Ollama natively (`ollama serve`) and use `docker-infra` for ChromaDB only, or `docker-app` for the application services.
 
+Docker deployment is a separate containerized web/infrastructure workflow. It
+does not start the Tauri native host or provide the macOS meeting source-checkout
+workflow; use `make dev-desktop` for that workflow.
+
 ### Docker Configuration
 
 Docker uses `.env.docker` which differs from `.env.example` in:
@@ -749,7 +1016,7 @@ frontend/src/
 | `make migrate`   | Run Alembic database migrations                  |
 | `make seed`      | Seed demo database with sample data              |
 | `make clean`     | Remove caches and build artifacts                |
-| `make clean-data`| Remove all runtime data (DB, uploads, vectors)   |
+| `make clean-data`| Remove the root `data/` directory created by Make setup |
 
 ### Code Quality
 
@@ -811,11 +1078,66 @@ Error: model "llama3.1:8b" not found
 ollama pull llama3.1:8b
 ```
 
+### Meeting readiness is false / local ASR is unhealthy
+
+The meeting gate requires the local `small.en` CTranslate2 model and the
+application database. Inspect the required-only response:
+
+```bash
+curl -sS http://127.0.0.1:8000/api/v1/health/ready | python3 -m json.tool
+```
+
+Check that `backend/.env` contains `ASR_MODEL_NAME=small.en` and that
+`ASR_MODEL_DIR` is an existing **absolute** directory named `small.en`. It must
+be the complete CTranslate2 artifact, not a model name or its parent folder.
+Provision/copy it before the meeting; the application intentionally does not
+download ASR files during startup or a meeting. Also make sure the backend was
+started from this checkout so it reads `backend/.env`.
+
+### Full Xcode is not selected / Tauri build fails
+
+If Cargo cannot find the macOS SDK or AVFoundation/ScreenCaptureKit frameworks,
+check the selected developer directory:
+
+```bash
+xcode-select -p
+xcodebuild -version
+sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
+sudo xcodebuild -runFirstLaunch
+```
+
+The path must point to the full Xcode app, not
+`/Library/Developer/CommandLineTools`. Then retry `make dev-desktop`.
+
+### Microphone or system audio permission denied
+
+In the Tauri window, use meeting preflight to request permissions or open
+settings. In **System Settings → Privacy & Security**, enable **Microphone**
+and **Screen Recording** for the debug/signed Local AI Application app. Return
+to the app and use **recheck**; do not assume a previous request changed the
+state. Screen Recording is required for the display-wide system-audio mix.
+
+### Desktop launcher reports a port is already in use
+
+The launcher intentionally refuses to adopt an unknown service on port 8000 or
+3000. Inspect both ports, stop the process you recognize (usually with
+`Ctrl-C` in its owning terminal), and retry:
+
+```bash
+lsof -nP -iTCP:8000 -sTCP:LISTEN
+lsof -nP -iTCP:3000 -sTCP:LISTEN
+```
+
+Do not run `make dev` or manually start backend/frontend alongside
+`make dev-desktop`. The launcher only stops process groups that it started.
+
 ### SQLite "Database is Locked"
 
-This can happen with concurrent access. The application uses WAL mode and busy_timeout to mitigate this. If you still see errors:
+This can happen with concurrent access. The application uses WAL mode and
+busy_timeout to mitigate this. If you still see errors:
 
-**Fix**: Ensure only one backend process is running. Check for stale `.db-wal` and `.db-shm` files in `data/`.
+**Fix**: Ensure only one backend process is running. Check for stale `.db-wal`
+and `.db-shm` files in `backend/data/`.
 
 ### ChromaDB Connection Failed (Docker)
 
@@ -858,16 +1180,17 @@ uv sync
 Error: Address already in use (port 8000)
 ```
 
-**Fix**: Kill the existing process:
+**Fix**: Inspect the existing process and stop it from its owning terminal:
 ```bash
-lsof -ti:8000 | xargs kill -9
+lsof -nP -iTCP:8000 -sTCP:LISTEN
+lsof -nP -iTCP:3000 -sTCP:LISTEN
 ```
 
 ### RAG Search Returns No Results
 
 If searches return empty despite having ingested documents:
 
-- Check `RAG_SCORE_THRESHOLD` in `.env` -- the default is `0.4`. Lower it (e.g., `0.2`) for more lenient matching
+- Check `RAG_SCORE_THRESHOLD` in `backend/.env` -- the default is `0.4`. Lower it (e.g., `0.2`) for more lenient matching
 - Verify documents were ingested: check the collection count on the RAG page
 - Try broader search queries
 
@@ -881,7 +1204,7 @@ The API has rate limits to prevent resource exhaustion:
 | LLM-bound     | 10/minute      |
 | File upload   | 20/minute      |
 
-Adjust limits in `.env` if needed for development.
+Adjust limits in `backend/.env` if needed for development.
 
 ---
 
@@ -955,6 +1278,7 @@ Server -> Client (streaming):
 
 | Method | Endpoint              | Description                        |
 |--------|-----------------------|------------------------------------|
+| GET    | `/api/v1/health/ready`| Required meeting readiness check   |
 | GET    | `/api/v1/health`      | System health check                |
 | GET    | `/api/v1/tools`       | List all available tools           |
 
@@ -1007,9 +1331,9 @@ LocalAIApplication/
       lib/                 # API client, utilities
       types/               # TypeScript type definitions
     (264 frontend tests colocated with source)
-  data/                   # Runtime data (gitignored)
-    app.db                # Chat history database
-    demo.db               # SQL agent target database
-    uploads/              # Uploaded documents
-    chroma/               # Vector store
+  backend/data/            # Runtime data used by local backend commands (gitignored)
+    app.db                 # Chat history database
+    demo.db                # SQL agent target database
+    uploads/               # Uploaded documents
+    chroma/                # Vector store
 ```
