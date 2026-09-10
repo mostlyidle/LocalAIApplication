@@ -78,6 +78,7 @@ async def sql_agent_node(state: AgentState) -> dict[str, Any]:
     # Run the agent loop (tool calling)
     tool_calls_record: list[dict[str, Any]] = []
     max_iterations = 5
+    selected_database = state.get("database")
 
     for iteration in range(max_iterations):
         response = await llm_with_tools.ainvoke(messages)
@@ -93,8 +94,8 @@ async def sql_agent_node(state: AgentState) -> dict[str, Any]:
         for tc in response.tool_calls:
             tool_name = tc["name"]
             tool_args = dict(tc["args"])
-            if tool_name in {"sql_query_tool", "sql_schema_tool"}:
-                tool_args["database"] = state.get("database", "default")
+            if tool_name in {"sql_query_tool", "sql_schema_tool"} and selected_database is not None:
+                tool_args["database"] = selected_database
 
             # Find the matching tool
             tool_fn = next((t for t in sql_tools if t.name == tool_name), None)

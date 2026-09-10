@@ -145,6 +145,12 @@ async def chat_stream(websocket: WebSocket) -> None:
         Client sends: {"type": "message", "content": "...", "conversation_id": "...", "attachments": [...]}
         Server sends: {"type": "token"|"tool_call"|"tool_result"|"agent_switch"|"error"|"done", ...}
 
+    A successful turn has one terminal ``done`` event. An agent failure has one
+    terminal ``error`` event after persistence has finished; it never sends a
+    subsequent ``done`` event. Persistence warnings for otherwise successful
+    turns are carried in terminal ``done.metadata`` so they cannot replace the
+    generated answer in the client.
+
     Persistence:
         After streaming completes, both the user message and the assembled
         assistant response are persisted to the application database, along
@@ -199,6 +205,8 @@ async def chat_stream(websocket: WebSocket) -> None:
             tool_calls_data: list[dict] = []
             agent_used: str | None = None
             completion_metadata: dict[str, Any] = {}
+            stream_failed = False
+            stream_error = "Agent error: response failed. Check the backend and Ollama, then retry."
 
             try:
                 existing_messages = await _load_ws_history(conversation_id)
@@ -239,12 +247,10 @@ async def chat_stream(websocket: WebSocket) -> None:
                             agent_used = event.get("metadata", {}).get("agent_used")
             except Exception:
                 logger.exception("stream_error")
-                await websocket.send_json(
-                    {
-                        "type": "error",
-                        "content": "Agent error: response failed. Check the backend and Ollama, then retry.",
-                    }
-                )
+                # Keep the terminal error behind persistence. Sending it first
+                # lets the client start another turn before the delayed
+                # completion below, which can then reset that newer turn.
+                stream_failed = True
 
             # Persist user + assistant messages to database
             assistant_content = "".join(token_chunks)
@@ -255,19 +261,25 @@ async def chat_stream(websocket: WebSocket) -> None:
                 agent_used=agent_used,
                 tool_calls_data=tool_calls_data,
             )
-            if saved is False:
+            if stream_failed:
+                # An agent failure has exactly one terminal event. In
+                # particular, never follow this error with a done event.
+                await websocket.send_json({"type": "error", "content": stream_error})
+            else:
+                if saved is False:
+                    # The answer was generated successfully, so report the
+                    # persistence problem as completion metadata rather than a
+                    # second terminal error that would clear the answer.
+                    completion_metadata = {
+                        **completion_metadata,
+                        "persistence_warning": "Could not save this conversation. Please retry.",
+                    }
                 await websocket.send_json(
                     {
-                        "type": "error",
-                        "content": "Could not save this conversation. Please retry.",
+                        "type": "done",
+                        "metadata": {**completion_metadata, "conversation_id": conversation_id},
                     }
                 )
-            await websocket.send_json(
-                {
-                    "type": "done",
-                    "metadata": {**completion_metadata, "conversation_id": conversation_id},
-                }
-            )
 
     except WebSocketDisconnect:
         logger.info("websocket_disconnected")
