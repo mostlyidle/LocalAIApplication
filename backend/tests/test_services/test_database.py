@@ -96,6 +96,13 @@ class TestDocumentCRUD:
 class TestDatabaseModule:
     """Test the database.py module-level functions with isolation."""
 
+    def test_unknown_connection_does_not_fall_back_to_default(self):
+        from app.api.middleware.error_handler import DatabaseConnectionError
+        from app.services.database import get_sql_engine
+
+        with pytest.raises(DatabaseConnectionError, match="not registered"):
+            get_sql_engine(name="unregistered-connection")
+
     async def test_get_sql_engine_caching(self):
         """Verify get_sql_engine caches engines by name."""
         from app.services.database import _sql_engines, get_sql_engine

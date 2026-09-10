@@ -10,7 +10,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "format": "next lint --fix",
+    "format": "eslint --fix",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui"
   },

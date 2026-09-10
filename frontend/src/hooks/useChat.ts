@@ -10,55 +10,55 @@ export function useChat() {
   const [activeToolCalls, setActiveToolCalls] = useState<Partial<ToolCall>[]>([]);
   const [conversationId, setConversationId] = useState<string | undefined>();
   const activeToolCallsRef = useRef<Partial<ToolCall>[]>([]);
+  const streamingContentRef = useRef("");
+  const conversationIdRef = useRef<string | undefined>(undefined);
 
   const handleToken = useCallback((token: string) => {
-    setStreamingContent((prev) => prev + token);
+    streamingContentRef.current += token;
+    setStreamingContent(streamingContentRef.current);
   }, []);
 
   const handleToolCall = useCallback((tool: string, input: Record<string, unknown>) => {
-    setActiveToolCalls((prev) => {
-      const next = [
-        ...prev,
-        { toolName: tool, toolInput: JSON.stringify(input) },
-      ];
-      activeToolCallsRef.current = next;
-      return next;
-    });
+    activeToolCallsRef.current = [
+      ...activeToolCallsRef.current,
+      { toolName: tool, toolInput: JSON.stringify(input) },
+    ];
+    setActiveToolCalls(activeToolCallsRef.current);
   }, []);
 
   const handleToolResult = useCallback((tool: string, output: string) => {
-    setActiveToolCalls((prev) => {
-      const next = prev.map((tc) =>
-        tc.toolName === tool && !tc.toolOutput
-          ? { ...tc, toolOutput: output }
-          : tc
-      );
-      activeToolCallsRef.current = next;
-      return next;
-    });
+    const index = activeToolCallsRef.current.findLastIndex(
+      (tc) => tc.toolName === tool && tc.toolOutput === undefined,
+    );
+    activeToolCallsRef.current = activeToolCallsRef.current.map((tc, i) =>
+      i === index ? { ...tc, toolOutput: output } : tc,
+    );
+    setActiveToolCalls(activeToolCallsRef.current);
   }, []);
 
   const handleDone = useCallback(
     (metadata: Record<string, unknown>) => {
-      setStreamingContent((prev) => {
-        if (prev) {
-          const assistantMsg: ChatMessage = {
-            id: crypto.randomUUID(),
-            role: "assistant",
-            content: prev,
-            agentType: metadata.agents_invoked
+      if (streamingContentRef.current) {
+        const assistantMsg: ChatMessage = {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: streamingContentRef.current,
+          agentType: metadata.agent_used
+            ? String(metadata.agent_used)
+            : metadata.agents_invoked
               ? String((metadata.agents_invoked as string[])[0])
               : undefined,
-            toolCalls: activeToolCallsRef.current as ToolCall[],
-            timestamp: new Date().toISOString(),
-          };
-          setMessages((msgs) => [...msgs, assistantMsg]);
-        }
-        return "";
-      });
+          toolCalls: activeToolCallsRef.current as ToolCall[],
+          timestamp: new Date().toISOString(),
+        };
+        setMessages((msgs) => [...msgs, assistantMsg]);
+      }
+      streamingContentRef.current = "";
+      setStreamingContent("");
       setActiveToolCalls([]);
       activeToolCallsRef.current = [];
       if (metadata.conversation_id) {
+        conversationIdRef.current = String(metadata.conversation_id);
         setConversationId(String(metadata.conversation_id));
       }
     },
@@ -74,6 +74,7 @@ export function useChat() {
     };
     setMessages((prev) => [...prev, errorMsg]);
     setStreamingContent("");
+    streamingContentRef.current = "";
     setActiveToolCalls([]);
     activeToolCallsRef.current = [];
   }, []);
@@ -98,9 +99,10 @@ export function useChat() {
       };
       setMessages((prev) => [...prev, userMsg]);
       setStreamingContent("");
+      streamingContentRef.current = "";
       setActiveToolCalls([]);
       activeToolCallsRef.current = [];
-      wsSend(content, attachments);
+      wsSend(content, attachments, conversationIdRef.current);
     },
     [wsSend]
   );
@@ -108,14 +110,17 @@ export function useChat() {
   const clearMessages = useCallback(() => {
     setMessages([]);
     setStreamingContent("");
+    streamingContentRef.current = "";
     setActiveToolCalls([]);
     activeToolCallsRef.current = [];
     setConversationId(undefined);
+    conversationIdRef.current = undefined;
   }, []);
 
   const loadConversation = useCallback((msgs: ChatMessage[], convId: string) => {
     setMessages(msgs);
     setConversationId(convId);
+    conversationIdRef.current = convId;
   }, []);
 
   return {

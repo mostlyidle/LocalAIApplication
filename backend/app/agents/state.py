@@ -6,8 +6,7 @@ graph. Uses TypedDict for LangGraph compatibility.
 
 from __future__ import annotations
 
-import operator
-from typing import Annotated, Any
+from typing import Annotated, Any, NotRequired
 
 from langchain_core.messages import AnyMessage
 from langgraph.graph import add_messages
@@ -39,6 +38,7 @@ class AgentState(TypedDict):
     tool_calls: list[dict[str, Any]]
     metadata: dict[str, Any]
     error: str | None
+    database: NotRequired[str]
 
 
 def create_initial_state(

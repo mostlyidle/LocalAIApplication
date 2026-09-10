@@ -7,6 +7,7 @@ and automatically append LIMIT clauses to prevent unbounded result sets.
 
 from __future__ import annotations
 
+import json
 import time
 from typing import Any
 
@@ -35,6 +36,7 @@ FORBIDDEN_KEYWORDS: set[str] = {
     "REVOKE",
     "REPLACE",
     "MERGE",
+    "INTO",
 }
 
 
@@ -52,11 +54,13 @@ def validate_query(sql: str, allow_writes: bool | None = None) -> str:
         UnsafeQueryError: If the query contains forbidden keywords in read-only mode.
     """
     writes_allowed = allow_writes if allow_writes is not None else settings.sql_allow_writes
-    cleaned = sql.strip().rstrip(";")
+    cleaned = sqlparse.format(sql, strip_comments=True).strip().rstrip(";").strip()
 
     parsed = sqlparse.parse(cleaned)
     if not parsed:
         raise UnsafeQueryError("Empty or unparsable SQL query.")
+    if len(parsed) != 1:
+        raise UnsafeQueryError("Only one SQL statement is allowed per query.")
 
     for statement in parsed:
         stmt_type = statement.get_type()
@@ -74,10 +78,29 @@ def validate_query(sql: str, allow_writes: bool | None = None) -> str:
                         f"Query contains forbidden keyword: {token.value.upper()}"
                     )
 
-    # Auto-append LIMIT if not present
-    upper = cleaned.upper()
-    if "LIMIT" not in upper and "SELECT" in upper:
-        cleaned = f"{cleaned} LIMIT {settings.sql_max_rows}"
+    # Inspect the outer statement, not strings, comments, or nested queries.
+    statement = parsed[0]
+    if statement.get_type() == "SELECT":
+        limit_index = next(
+            (
+                index
+                for index, token in enumerate(statement.tokens)
+                if token.ttype in sqlparse.tokens.Keyword and token.normalized == "LIMIT"
+            ),
+            None,
+        )
+        if limit_index is None:
+            cleaned = f"{cleaned} LIMIT {settings.sql_max_rows}"
+        else:
+            _, count = statement.token_next(limit_index)
+            if not (
+                count is not None
+                and count.ttype in sqlparse.tokens.Number.Integer
+                and 0 <= int(count.value) <= settings.sql_max_rows
+            ):
+                cleaned = (
+                    f"SELECT * FROM ({cleaned}\n) AS limited_query LIMIT {settings.sql_max_rows}"
+                )
 
     return cleaned + ";"
 
@@ -142,6 +165,7 @@ async def execute_query(
     Raises:
         SQLExecutionError: If the query fails at the DB level.
     """
+    sql = validate_query(sql)
     engine = get_sql_engine(name=database)
     start = time.perf_counter()
 
@@ -149,7 +173,11 @@ async def execute_query(
         async with AsyncSession(engine, expire_on_commit=False) as session:
             result = await session.execute(text(sql))
             columns = list(result.keys()) if result.returns_rows else []
-            rows = [list(row) for row in result.fetchall()] if result.returns_rows else []
+            rows = (
+                [list(row) for row in result.fetchmany(settings.sql_max_rows)]
+                if result.returns_rows
+                else []
+            )
             duration_ms = (time.perf_counter() - start) * 1000
 
             logger.info(
@@ -202,23 +230,12 @@ async def sql_query_tool(
         database: The database connection name (default: "default").
 
     Returns:
-        Formatted query results as a string.
+        JSON containing columns, typed rows, row count, and execution time.
     """
     validated = validate_query(sql)
     result = await execute_query(validated, database)
 
-    if not result["rows"]:
-        return "Query returned no results."
-
-    # Format as a readable table
-    header = " | ".join(str(c) for c in result["columns"])
-    separator = "-" * len(header)
-    rows_str = "\n".join(
-        " | ".join(str(v) for v in row)
-        for row in result["rows"][:50]  # cap display
-    )
-    truncated = f"\n... ({result['row_count']} total rows)" if result["row_count"] > 50 else ""
-    return f"{header}\n{separator}\n{rows_str}{truncated}"
+    return json.dumps(result, default=str)
 
 
 @tool

@@ -10,13 +10,16 @@ Provides:
 
 from __future__ import annotations
 
+import json
 import time
+import uuid
 from typing import Any
 
 import structlog
 from fastapi import APIRouter, Request
 
-from app.agents.orchestrator import run_agent
+from app.agents.sql_agent import sql_agent_node
+from app.agents.state import create_initial_state
 from app.api.middleware.error_handler import InputValidationError
 from app.api.middleware.rate_limiting import limiter
 from app.config import settings
@@ -29,7 +32,6 @@ from app.models.schemas import (
 )
 from app.tools.sql_tools import (
     execute_query,
-    format_schema_for_prompt,
     introspect_schema,
     validate_query,
 )
@@ -51,15 +53,17 @@ async def natural_language_query(
 ) -> SQLQueryResult:
     """Convert a natural language question to SQL, execute, and return results.
 
-    Uses the orchestrator with forced SQL agent routing for explicit SQL requests.
+    Invokes the SQL specialist directly with the selected database connection.
     """
     start_time = time.perf_counter()
 
-    # Run the orchestrator — the question will be classified as SQL
-    result = await run_agent(
+    # This endpoint is explicitly SQL; the user's selected connection is authoritative.
+    state = create_initial_state(
         user_input=body.question,
-        conversation_id=f"sql-{int(time.time())}",
+        conversation_id=f"sql-{uuid.uuid4()}",
     )
+    state["database"] = body.database
+    result = await sql_agent_node(state)
 
     # Extract response and tool calls
     response_content = ""
@@ -77,7 +81,7 @@ async def natural_language_query(
 
     for tc in tool_calls:
         if tc.get("tool_name") == "sql_query_tool":
-            generated_sql = tc.get("tool_input", {}).get("query", "")
+            generated_sql = tc.get("tool_input", {}).get("sql", "")
             # Parse the tool output for results
             output = tc.get("tool_output", "")
             parsed = _parse_query_output(output)
@@ -117,14 +121,14 @@ async def execute_raw_query(
     try:
         validated_sql = validate_query(body.sql)
     except Exception as exc:
-        raise InputValidationError(str(exc))
+        raise InputValidationError(str(exc)) from exc
 
     try:
-        result = await execute_query(validated_sql)
+        result = await execute_query(validated_sql, database=body.database)
     except Exception as exc:
         from app.api.middleware.error_handler import SQLExecutionError
 
-        raise SQLExecutionError(str(exc))
+        raise SQLExecutionError(str(exc)) from exc
 
     elapsed_ms = (time.perf_counter() - start_time) * 1000
 
@@ -146,11 +150,11 @@ async def get_schema(
 ) -> DatabaseSchema:
     """Get the schema of the target database including tables, columns, and types."""
     try:
-        schema = await introspect_schema()
+        schema = await introspect_schema(database=database)
     except Exception as exc:
         from app.api.middleware.error_handler import DatabaseConnectionError
 
-        raise DatabaseConnectionError(str(exc))
+        raise DatabaseConnectionError(str(exc)) from exc
 
     # Convert to response model
     from app.models.schemas import ColumnInfo, TableInfo
@@ -193,7 +197,7 @@ async def register_connection(
     except Exception as exc:
         from app.api.middleware.error_handler import DatabaseConnectionError
 
-        raise DatabaseConnectionError(str(exc))
+        raise DatabaseConnectionError(str(exc)) from exc
 
     logger.info("sql_connection_registered", name=request.name)
     return {"status": "connected", "name": request.name}
@@ -221,28 +225,11 @@ async def list_connections() -> list[dict[str, str]]:
 
 
 def _parse_query_output(output: str) -> dict[str, Any]:
-    """Best-effort parsing of tool output to extract columns and rows.
-
-    The sql_query_tool returns a formatted string. We attempt to parse
-    it into structured data.
-    """
-    lines = output.strip().split("\n")
-    if not lines:
+    """Read structured query output without losing nulls, types, or delimiters."""
+    try:
+        result = json.loads(output)
+    except (json.JSONDecodeError, TypeError):
         return {"columns": [], "rows": []}
-
-    # Try to detect a table-like format (pipe-separated)
-    for i, line in enumerate(lines):
-        if "|" in line and not line.strip().startswith("-"):
-            headers = [h.strip() for h in line.split("|") if h.strip()]
-            data_rows = []
-            for data_line in lines[i + 1 :]:
-                if data_line.strip().startswith("-"):
-                    continue
-                if "|" in data_line:
-                    row = [c.strip() for c in data_line.split("|") if c.strip()]
-                    if row:
-                        data_rows.append(row)
-            if headers:
-                return {"columns": headers, "rows": data_rows}
-
+    if isinstance(result, dict):
+        return {"columns": result.get("columns", []), "rows": result.get("rows", [])}
     return {"columns": [], "rows": []}

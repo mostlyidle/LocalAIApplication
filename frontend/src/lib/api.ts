@@ -8,7 +8,7 @@ import {
   analysisResultSchema,
   documentListSchema,
   sqlQueryResponseSchema,
-  sqlResultSetSchema,
+  sqlExecuteResponseSchema,
   sqlSchemaResponseSchema,
   sqlConnectionsSchema,
   sqlAddConnectionSchema,
@@ -65,7 +65,7 @@ async function apiFetch<T>(
 export async function sendMessage(message: string, conversationId?: string) {
   return apiFetch("/chat", {
     method: "POST",
-    body: JSON.stringify({ message, conversation_id: conversationId }),
+    body: JSON.stringify({ content: message, conversation_id: conversationId }),
   }, chatResponseSchema);
 }
 
@@ -121,7 +121,7 @@ export async function deleteDocument(id: string) {
 export async function querySQL(query: string, database?: string) {
   return apiFetch("/sql/query", {
     method: "POST",
-    body: JSON.stringify({ query, database }),
+    body: JSON.stringify({ question: query, database }),
   }, sqlQueryResponseSchema);
 }
 
@@ -129,11 +129,11 @@ export async function executeSQL(sql: string, database?: string) {
   return apiFetch("/sql/execute", {
     method: "POST",
     body: JSON.stringify({ sql, database }),
-  }, sqlResultSetSchema);
+  }, sqlExecuteResponseSchema);
 }
 
 export async function getSQLSchema(database?: string) {
-  const params = database ? `?database=${database}` : "";
+  const params = database ? `?database=${encodeURIComponent(database)}` : "";
   return apiFetch(`/sql/schema${params}`, undefined, sqlSchemaResponseSchema);
 }
 

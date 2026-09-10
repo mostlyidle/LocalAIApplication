@@ -46,6 +46,20 @@ describe("useChat", () => {
     expect(result.current.isConnected).toBe(true);
   });
 
+  it("reuses the completed conversation and clears it for a new chat", () => {
+    const { result } = renderHook(() => useChat());
+    act(() => {
+      capturedOptions.onToken?.("Hello Ada");
+      capturedOptions.onDone?.({ conversation_id: "conversation-1", agent_used: "chat" });
+    });
+    expect(result.current.messages).toHaveLength(1);
+    act(() => result.current.sendMessage("What is my name?"));
+    expect(mockWsSend).toHaveBeenLastCalledWith("What is my name?", [], "conversation-1");
+    act(() => result.current.clearMessages());
+    act(() => result.current.sendMessage("New topic"));
+    expect(mockWsSend).toHaveBeenLastCalledWith("New topic", [], undefined);
+  });
+
   it("sendMessage adds user message and calls wsSend", () => {
     const { result } = renderHook(() => useChat());
 
@@ -57,7 +71,7 @@ describe("useChat", () => {
     expect(result.current.messages[0].role).toBe("user");
     expect(result.current.messages[0].content).toBe("Hello world");
     expect(result.current.messages[0].attachments).toBeUndefined();
-    expect(mockWsSend).toHaveBeenCalledWith("Hello world", []);
+    expect(mockWsSend).toHaveBeenCalledWith("Hello world", [], undefined);
   });
 
   it("sendMessage forwards attachments to wsSend", () => {
@@ -70,7 +84,7 @@ describe("useChat", () => {
     expect(result.current.messages).toHaveLength(1);
     expect(result.current.messages[0].content).toBe("Analyze this");
     expect(result.current.messages[0].attachments).toEqual(["doc-1", "doc-2"]);
-    expect(mockWsSend).toHaveBeenCalledWith("Analyze this", ["doc-1", "doc-2"]);
+    expect(mockWsSend).toHaveBeenCalledWith("Analyze this", ["doc-1", "doc-2"], undefined);
   });
 
   it("handleToken appends to streamingContent", () => {

@@ -1,4 +1,5 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import userEvent from "@testing-library/user-event";
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { DocumentViewer } from "../DocumentViewer";
@@ -25,8 +26,8 @@ const baseDoc: Document = {
 };
 
 describe("DocumentViewer", () => {
-  let onDelete: ReturnType<typeof vi.fn>;
-  let onAnalyze: ReturnType<typeof vi.fn>;
+  let onDelete: ReturnType<typeof vi.fn<ComponentProps<typeof DocumentViewer>["onDelete"]>>;
+  let onAnalyze: ReturnType<typeof vi.fn<ComponentProps<typeof DocumentViewer>["onAnalyze"]>>;
 
   beforeEach(() => {
     onDelete = vi.fn();
@@ -107,16 +108,16 @@ describe("DocumentViewer", () => {
     });
   });
 
-  it("disables Analyze button when not completed", () => {
+  it("allows newly uploaded documents to be analyzed", () => {
     const pendingDoc = { ...baseDoc, status: "pending" as const };
     render(
       <DocumentViewer document={pendingDoc} onDelete={onDelete} onAnalyze={onAnalyze} />
     );
-    expect(screen.getByRole("button", { name: /Analyze/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Analyze/i })).not.toBeDisabled();
   });
 
   it("disables Analyze button during analysis", async () => {
-    let resolveAnalyze: (v: unknown) => void;
+    let resolveAnalyze: (v: Awaited<ReturnType<ComponentProps<typeof DocumentViewer>["onAnalyze"]>>) => void;
     onAnalyze.mockReturnValue(new Promise((r) => { resolveAnalyze = r; }));
 
     render(
