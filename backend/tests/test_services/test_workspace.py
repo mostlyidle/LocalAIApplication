@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import pytest
@@ -61,3 +62,18 @@ def test_workspace_reader_rejects_explicit_excluded_subdirectory(tmp_path: Path)
     (tmp_path / ".git").mkdir()
     with pytest.raises(WorkspaceInputError, match="excluded"):
         read_workspace(tmp_path, ".git")
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="Named pipes require POSIX")
+def test_workspace_reader_does_not_open_named_pipes(tmp_path: Path, monkeypatch) -> None:
+    os.mkfifo(tmp_path / "stream.txt")
+    (tmp_path / "safe.py").write_text("safe", encoding="utf-8")
+    original_open = Path.open
+
+    def open_regular_file(path, *args, **kwargs):
+        assert path.is_file(), "Workspace reader attempted a blocking named-pipe read"
+        return original_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", open_regular_file)
+    content, sources = read_workspace(tmp_path, None)
+    assert sources == ["safe.py"] and "safe" in content
