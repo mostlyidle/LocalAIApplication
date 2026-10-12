@@ -10,7 +10,14 @@ from getpass import getpass
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
-from app.models.db_models import Account, AccountSession
+from app.models.db_models import (
+    LEGACY_ACCOUNT_ID,
+    Account,
+    AccountSession,
+    Conversation,
+    Document,
+    Meeting,
+)
 from app.services.accounts import hash_password, normalize_username
 from app.services.database import close_app_db, get_app_session_factory
 
@@ -51,6 +58,68 @@ async def _reset_password(username: str, password: str) -> None:
         await session.commit()
 
 
+async def _assign_legacy_records(
+    username: str,
+    *,
+    conversations: list[str] | None = None,
+    documents: list[str] | None = None,
+    meetings: list[str] | None = None,
+    apply: bool = False,
+) -> dict[str, dict[str, int]]:
+    """Preview or explicitly assign selected quarantined records to an account."""
+    selections = {
+        "conversations": (Conversation, conversations or []),
+        "documents": (Document, documents or []),
+        "meetings": (Meeting, meetings or []),
+    }
+    if not any(ids for _, ids in selections.values()):
+        raise ValueError("Select at least one conversation, document, or meeting ID.")
+
+    factory = get_app_session_factory()
+    async with factory() as session:
+        account = await session.scalar(
+            select(Account).where(Account.username == username, Account.is_enabled.is_(True))
+        )
+        if account is None:
+            raise ValueError("Enabled account not found.")
+
+        summary: dict[str, dict[str, int]] = {}
+        updates = []
+        for label, (model, ids) in selections.items():
+            unique_ids = list(dict.fromkeys(ids))
+            if not unique_ids:
+                continue
+            records = list(
+                (await session.scalars(select(model).where(model.id.in_(unique_ids)))).all()
+            )
+            by_id = {record.id: record for record in records}
+            if any(record_id not in by_id for record_id in unique_ids):
+                raise ValueError(f"One or more selected {label} do not exist.")
+            if any(
+                by_id[record_id].owner_id not in {LEGACY_ACCOUNT_ID, account.id}
+                for record_id in unique_ids
+            ):
+                raise ValueError(f"One or more selected {label} belong to another account.")
+
+            pending = [
+                by_id[record_id]
+                for record_id in unique_ids
+                if by_id[record_id].owner_id == LEGACY_ACCOUNT_ID
+            ]
+            summary[label] = {
+                "selected": len(unique_ids),
+                "to_assign": len(pending),
+                "already_assigned": len(unique_ids) - len(pending),
+            }
+            updates.extend(pending)
+
+        if apply:
+            for record in updates:
+                record.owner_id = account.id
+            await session.commit()
+        return summary
+
+
 def main() -> None:
     """Run the account administration command-line interface."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -60,9 +129,36 @@ def main() -> None:
     create.add_argument("--display-name", required=True)
     reset = commands.add_parser("reset-password", help="reset an account password")
     reset.add_argument("username")
+    assign = commands.add_parser(
+        "assign-legacy", help="preview or assign explicitly selected quarantined records"
+    )
+    assign.add_argument("--username", required=True)
+    assign.add_argument("--conversation", dest="conversations", action="append", default=[])
+    assign.add_argument("--document", dest="documents", action="append", default=[])
+    assign.add_argument("--meeting", dest="meetings", action="append", default=[])
+    assign.add_argument("--apply", action="store_true", help="apply the assignment after review")
     args = parser.parse_args()
 
     try:
+        if args.command == "assign-legacy":
+            username = normalize_username(args.username)
+            summary = asyncio.run(
+                _assign_legacy_records(
+                    username,
+                    conversations=args.conversations,
+                    documents=args.documents,
+                    meetings=args.meetings,
+                    apply=args.apply,
+                )
+            )
+            for kind, counts in summary.items():
+                print(
+                    f"{kind}: selected={counts['selected']}, to_assign={counts['to_assign']}, "
+                    f"already_assigned={counts['already_assigned']}"
+                )
+            print("Assignment applied." if args.apply else "Dry run only; pass --apply to assign.")
+            return
+
         username = normalize_username(args.username)
         if args.command == "create" and not args.display_name.strip():
             raise ValueError("Display name cannot be empty.")
