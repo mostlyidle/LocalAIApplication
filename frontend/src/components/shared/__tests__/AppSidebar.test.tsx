@@ -26,6 +26,7 @@ vi.mock("lucide-react", () => {
     Search: icon,
     Settings: icon,
     Brain: icon,
+    BrainCircuit: icon,
     Activity: icon,
   };
 });
@@ -74,6 +75,7 @@ describe("AppSidebar", () => {
     expect(screen.getByText("Documents")).toBeDefined();
     expect(screen.getByText("SQL Agent")).toBeDefined();
     expect(screen.getByText("RAG Search")).toBeDefined();
+    expect(screen.getByText("Memory")).toBeDefined();
     expect(screen.getByText("Settings")).toBeDefined();
   });
 
@@ -86,6 +88,7 @@ describe("AppSidebar", () => {
     expect(hrefs).toContain("/documents");
     expect(hrefs).toContain("/sql");
     expect(hrefs).toContain("/rag");
+    expect(hrefs).toContain("/memory");
     expect(hrefs).toContain("/settings");
   });
 
