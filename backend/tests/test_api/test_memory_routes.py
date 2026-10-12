@@ -1,0 +1,156 @@
+"""Tests for account-owned explicit memory records and controls."""
+
+from __future__ import annotations
+
+import pytest
+from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.db_models import Account, Conversation, LEGACY_ACCOUNT_ID, Memory, Message
+
+
+async def _ensure_account(db: AsyncSession) -> Account:
+    account = await db.get(Account, LEGACY_ACCOUNT_ID)
+    if account is None:
+        account = Account(
+            id=LEGACY_ACCOUNT_ID,
+            username="memory-test-account",
+            display_name="Memory Test",
+            password_hash="!test!",
+            memory_epoch=0,
+        )
+        db.add(account)
+        await db.commit()
+    return account
+
+
+@pytest.mark.asyncio
+async def test_create_list_and_search_memories(client: AsyncClient, db_session: AsyncSession):
+    response = await client.post(
+        "/api/v1/memory",
+        json={"kind": "preference", "content": "  Use concise answers  ", "project_scope": "Work"},
+        headers={"X-CSRF-Token": "test-csrf-token"},
+    )
+
+    assert response.status_code == 201
+    created = response.json()
+    assert created["content"] == "Use concise answers"
+    assert created["project_scope"] == "Work"
+    assert created["revision"] == 1
+
+    listed = await client.get("/api/v1/memory?q=concise")
+    assert listed.status_code == 200
+    assert listed.json()["total"] == 1
+    assert listed.json()["memories"][0]["id"] == created["id"]
+    assert (await client.get("/api/v1/memory?q=missing")).json()["total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_memory_source_must_belong_to_signed_in_account(
+    client: AsyncClient, db_session: AsyncSession
+):
+    db_session.add_all(
+        [
+            Account(
+                id="other-account",
+                username="other-memory-account",
+                display_name="Other Account",
+                password_hash="!test!",
+            ),
+            Conversation(id="owned-memory-source", owner_id=LEGACY_ACCOUNT_ID),
+            Conversation(id="foreign-memory-source", owner_id="other-account"),
+        ]
+    )
+    db_session.add_all(
+        [
+            Message(id="owned-memory-message", conversation_id="owned-memory-source", role="user", content="A preference"),
+            Message(id="foreign-memory-message", conversation_id="foreign-memory-source", role="user", content="Private"),
+        ]
+    )
+    await db_session.commit()
+
+    allowed = await client.post(
+        "/api/v1/memory",
+        json={"content": "Keep reports short", "source_message_id": "owned-memory-message"},
+        headers={"X-CSRF-Token": "test-csrf-token"},
+    )
+    denied = await client.post(
+        "/api/v1/memory",
+        json={"content": "Keep reports short", "source_message_id": "foreign-memory-message"},
+        headers={"X-CSRF-Token": "test-csrf-token"},
+    )
+    assert allowed.status_code == 201
+    assert allowed.json()["source_conversation_id"] == "owned-memory-source"
+    assert denied.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_update_requires_matching_revision_and_delete_hides_memory(
+    client: AsyncClient,
+):
+    created = await client.post(
+        "/api/v1/memory",
+        json={"content": "Use blue", "kind": "preference"},
+        headers={"X-CSRF-Token": "test-csrf-token"},
+    )
+    memory_id = created.json()["id"]
+    updated = await client.patch(
+        f"/api/v1/memory/{memory_id}",
+        json={"revision": 1, "content": "Use cobalt blue"},
+        headers={"X-CSRF-Token": "test-csrf-token"},
+    )
+    stale = await client.patch(
+        f"/api/v1/memory/{memory_id}",
+        json={"revision": 1, "content": "Use green"},
+        headers={"X-CSRF-Token": "test-csrf-token"},
+    )
+    deleted = await client.delete(
+        f"/api/v1/memory/{memory_id}?revision=2",
+        headers={"X-CSRF-Token": "test-csrf-token"},
+    )
+    listed = await client.get("/api/v1/memory")
+
+    assert updated.status_code == 200
+    assert updated.json()["revision"] == 2
+    assert updated.json()["content"] == "Use cobalt blue"
+    assert stale.status_code == 409
+    assert deleted.status_code == 204
+    assert listed.json()["total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_settings_are_independent_and_delete_all_advances_epoch(
+    client: AsyncClient, db_session: AsyncSession
+):
+    account = await _ensure_account(db_session)
+    created = await client.post(
+        "/api/v1/memory",
+        json={"content": "A saved preference"},
+        headers={"X-CSRF-Token": "test-csrf-token"},
+    )
+    enabled = await client.patch(
+        "/api/v1/memory/settings",
+        json={"memory_enabled": True},
+        headers={"X-CSRF-Token": "test-csrf-token"},
+    )
+    assert enabled.json() == {"memory_enabled": True, "past_chat_recall_enabled": False}
+    await client.patch(
+        "/api/v1/memory/settings",
+        json={"past_chat_recall_enabled": True},
+        headers={"X-CSRF-Token": "test-csrf-token"},
+    )
+
+    cleared = await client.delete(
+        "/api/v1/memory", headers={"X-CSRF-Token": "test-csrf-token"}
+    )
+    current = await db_session.scalar(select(Account).where(Account.id == account.id))
+    await db_session.refresh(current)
+    assert created.status_code == 201
+    assert cleared.json() == {
+        "deleted_count": 1,
+        "memory_epoch": 1,
+        "past_chat_recall_enabled": False,
+    }
+    assert current.memory_epoch == 1
+    assert (await client.get("/api/v1/memory")).json()["total"] == 0
