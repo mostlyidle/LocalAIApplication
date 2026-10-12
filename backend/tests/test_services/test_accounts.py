@@ -48,7 +48,10 @@ async def test_operator_password_reset_revokes_sessions(async_engine, monkeypatc
         assert account is not None
         session.add(
             AccountSession(
-                account_id=account.id, token_hash="a" * 64, expires_at=account.created_at
+                account_id=account.id,
+                token_hash="a" * 64,
+                csrf_token_hash="b" * 64,
+                expires_at=account.created_at,
             )
         )
         await session.commit()

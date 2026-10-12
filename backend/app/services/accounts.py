@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 
 from pwdlib import PasswordHash
 from pwdlib.exceptions import UnknownHashError
@@ -32,3 +33,9 @@ def verify_password(password: str, password_hash: str) -> bool:
         return _password_hash.verify(password, password_hash)
     except (TypeError, ValueError, UnknownHashError):
         return False
+
+
+@lru_cache(maxsize=1)
+def dummy_password_hash() -> str:
+    """Return one process-local hash to make unknown-account login costly too."""
+    return _password_hash.hash("dummy-password-for-timing-equalization")
