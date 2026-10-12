@@ -121,6 +121,10 @@ export function useChat() {
 
   const loadConversation = useCallback((msgs: ChatMessage[], convId: string) => {
     setMessages(msgs);
+    setStreamingContent("");
+    streamingContentRef.current = "";
+    setActiveToolCalls([]);
+    activeToolCallsRef.current = [];
     setConversationId(convId);
     conversationIdRef.current = convId;
   }, []);

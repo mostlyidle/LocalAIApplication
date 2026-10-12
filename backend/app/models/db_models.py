@@ -118,7 +118,7 @@ class Conversation(Base):
         "Message",
         back_populates="conversation",
         cascade="all, delete-orphan",
-        order_by="Message.created_at",
+        order_by=lambda: (Message.created_at, Message.id),
     )
 
 

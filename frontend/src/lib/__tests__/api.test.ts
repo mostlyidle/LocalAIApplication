@@ -167,10 +167,29 @@ describe("API Client", () => {
     });
 
     it("getConversation fetches single conversation", async () => {
-      globalThis.fetch = mockFetchSuccess({ id: "1", title: "t", messages: [] });
+      globalThis.fetch = mockFetchSuccess({
+        id: "1",
+        title: "t",
+        messages: [{
+          id: "message-1",
+          role: "assistant",
+          content: "Answer",
+          agent_type: "chat",
+          execution: null,
+          created_at: "2026-10-12T10:00:00Z",
+          tool_calls: [{
+            id: "tool-1",
+            tool_name: "search",
+            tool_input: { query: "topic" },
+            tool_output: "result",
+            duration_ms: 5,
+          }],
+        }],
+      });
 
       const result = await getConversation("1");
       expect(result.id).toBe("1");
+      expect(result.messages[0].tool_calls[0].tool_name).toBe("search");
     });
 
     it("deleteConversation sends DELETE request", async () => {

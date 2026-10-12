@@ -1,15 +1,16 @@
 "use client";
 
 import { useRef, useEffect, useState, type FormEvent, type ChangeEvent } from "react";
-import { Send, Plus, Loader2, Paperclip, X, Image as ImageIcon } from "lucide-react";
+import { Send, Plus, Loader2, Paperclip, X, Image as ImageIcon, History } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { useChat } from "@/hooks/useChat";
-import { getAgentCatalog, uploadDocument } from "@/lib/api";
-import { ACCEPTED_FILE_TYPES, MAX_FILE_SIZE } from "@/lib/constants";
-import type { AgentCapability, ChatTaskOptions } from "@/types/chat";
+import { getAgentCatalog, getConversation, getConversations, uploadDocument } from "@/lib/api";
+import { ACCEPTED_FILE_TYPES, ACTIVE_CONVERSATION_STORAGE_PREFIX, MAX_FILE_SIZE } from "@/lib/constants";
+import type { AgentCapability, ChatMessage, ChatTaskOptions } from "@/types/chat";
+import { useAuth } from "@/components/shared/AuthProvider";
 import { MessageBubble } from "./MessageBubble";
 import { StreamingText } from "./StreamingText";
 import { ToolCallDisplay } from "./ToolCallDisplay";
@@ -24,7 +25,26 @@ interface PendingAttachment {
 
 const IMAGE_TYPES = [".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".webp"];
 
+function restoreMessages(conversation: Awaited<ReturnType<typeof getConversation>>): ChatMessage[] {
+  return conversation.messages.map((message) => ({
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    agentType: message.agent_type ?? undefined,
+    execution: message.execution as ChatMessage["execution"],
+    timestamp: message.created_at,
+    toolCalls: message.tool_calls.map((toolCall) => ({
+      id: toolCall.id,
+      toolName: toolCall.tool_name,
+      toolInput: JSON.stringify(toolCall.tool_input ?? {}),
+      toolOutput: toolCall.tool_output ?? undefined,
+      durationMs: toolCall.duration_ms ?? undefined,
+    })),
+  }));
+}
+
 export function ChatWindow() {
+  const { account } = useAuth();
   const {
     messages,
     streamingContent,
@@ -34,6 +54,8 @@ export function ChatWindow() {
     connect,
     sendMessage,
     clearMessages,
+    conversationId,
+    loadConversation,
   } = useChat();
 
   const [input, setInput] = useState("");
@@ -48,10 +70,96 @@ export function ChatWindow() {
   const [temperature, setTemperature] = useState(0.1);
   const [profileError, setProfileError] = useState("");
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [conversationError, setConversationError] = useState("");
+  const [conversations, setConversations] = useState<Awaited<ReturnType<typeof getConversations>>["conversations"]>([]);
+  const [restoringConversation, setRestoringConversation] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const selectedProfile = agents.find((agent) => agent.name === selectedAgent);
+  const conversationStorageKey = account
+    ? `${ACTIVE_CONVERSATION_STORAGE_PREFIX}${account.id}`
+    : undefined;
+
+  useEffect(() => {
+    if (!conversationStorageKey) return;
+    const savedConversationId = window.localStorage.getItem(conversationStorageKey);
+    if (!savedConversationId) return;
+
+    let active = true;
+    setRestoringConversation(true);
+    getConversation(savedConversationId)
+      .then((conversation) => {
+        if (active) loadConversation(restoreMessages(conversation), conversation.id);
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        setConversationError("Could not restore your last conversation. Choose one from history or start a new chat.");
+        if ((error as { statusCode?: number })?.statusCode === 404) {
+          window.localStorage.removeItem(conversationStorageKey);
+        }
+      })
+      .finally(() => {
+        if (active) setRestoringConversation(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [conversationStorageKey, loadConversation]);
+
+  useEffect(() => {
+    if (conversationId && conversationStorageKey) {
+      window.localStorage.setItem(conversationStorageKey, conversationId);
+    }
+  }, [conversationId, conversationStorageKey]);
+
+  useEffect(() => {
+    if (!historyOpen) return;
+    let active = true;
+    setHistoryLoading(true);
+    getConversations()
+      .then((result) => {
+        if (active) {
+          setConversations(result.conversations);
+          setConversationError("");
+        }
+      })
+      .catch(() => {
+        if (active) setConversationError("Could not load your saved conversations.");
+      })
+      .finally(() => {
+        if (active) setHistoryLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [historyOpen, conversationId]);
+
+  const startNewConversation = () => {
+    clearMessages();
+    setConversationError("");
+    if (conversationStorageKey) window.localStorage.removeItem(conversationStorageKey);
+  };
+
+  const selectConversation = async (id: string) => {
+    setRestoringConversation(true);
+    setConversationError("");
+    try {
+      const conversation = await getConversation(id);
+      loadConversation(restoreMessages(conversation), conversation.id);
+      if (conversationStorageKey) {
+        window.localStorage.setItem(conversationStorageKey, conversation.id);
+      }
+      setHistoryOpen(false);
+    } catch {
+      setConversationError("Could not open that conversation. Refresh the list and try again.");
+    } finally {
+      setRestoringConversation(false);
+    }
+  };
 
   useEffect(() => {
     getAgentCatalog()
@@ -241,6 +349,49 @@ export function ChatWindow() {
 
   return (
     <div className="flex h-full flex-col">
+      <div className="flex items-center justify-between border-b px-4 py-2">
+        <span className="text-sm font-medium">{conversationId ? "Saved conversation" : "New conversation"}</span>
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setHistoryOpen((open) => !open)}
+            disabled={restoringConversation}
+            aria-expanded={historyOpen}
+          >
+            <History className="mr-2 h-4 w-4" />
+            History
+          </Button>
+          <Button type="button" variant="outline" size="sm" onClick={startNewConversation} disabled={isStreaming || restoringConversation}>
+            <Plus className="mr-2 h-4 w-4" />
+            New chat
+          </Button>
+        </div>
+      </div>
+      {historyOpen && (
+        <div aria-label="Conversation history" className="max-h-48 space-y-1 overflow-y-auto border-b p-2">
+          {historyLoading && <p className="px-2 py-1 text-xs text-muted-foreground">Loading conversations…</p>}
+          {!historyLoading && conversations.length === 0 && !conversationError && (
+            <p className="px-2 py-1 text-xs text-muted-foreground">No saved conversations yet.</p>
+          )}
+          {conversations.map((conversation) => (
+            <button
+              key={conversation.id}
+              type="button"
+              onClick={() => void selectConversation(conversation.id)}
+              disabled={restoringConversation || isStreaming}
+              className={`flex w-full items-center justify-between gap-3 rounded-md px-2 py-2 text-left text-sm hover:bg-muted disabled:opacity-50 ${conversation.id === conversationId ? "bg-muted" : ""}`}
+            >
+              <span className="truncate">{conversation.title || "Untitled conversation"}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {conversation.message_count} · {new Date(conversation.last_message_at).toLocaleDateString()}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+      {conversationError && <p role="alert" className="border-b px-4 py-2 text-xs text-destructive">{conversationError}</p>}
       {/* Messages area */}
       <ScrollArea ref={scrollRef} className="flex-1 p-4">
         <div className="mx-auto max-w-3xl space-y-4">
@@ -411,8 +562,8 @@ export function ChatWindow() {
             variant="ghost"
             size="icon"
             className="h-10 w-10 shrink-0"
-            onClick={clearMessages}
-            disabled={isStreaming}
+            onClick={startNewConversation}
+            disabled={isStreaming || restoringConversation}
             title="New conversation"
           >
             <Plus className="h-4 w-4" />

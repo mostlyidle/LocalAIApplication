@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -898,6 +898,62 @@ class TestLoadLangchainMessages:
         result = await _load_langchain_messages(db_session, "tool-conv", LEGACY_ACCOUNT_ID)
         # Tool message should be skipped
         assert len(result) == 2
+
+    async def test_context_includes_only_the_most_recent_messages(self, db_session: AsyncSession):
+        from app.api.routes.chat import MAX_CONTEXT_MESSAGES, _load_langchain_messages
+
+        conv = Conversation(owner_id=LEGACY_ACCOUNT_ID, id="bounded-conv", title="Bounded")
+        start = datetime(2026, 1, 1, tzinfo=UTC)
+        db_session.add(conv)
+        db_session.add_all(
+            Message(
+                id=f"message-{index:03}",
+                conversation_id=conv.id,
+                role=MessageRole.USER,
+                content=f"message {index}",
+                created_at=start + timedelta(seconds=index),
+            )
+            for index in range(MAX_CONTEXT_MESSAGES + 5)
+        )
+        await db_session.commit()
+
+        result = await _load_langchain_messages(db_session, conv.id, LEGACY_ACCOUNT_ID)
+
+        assert len(result) == MAX_CONTEXT_MESSAGES
+        assert result[0].content == "message 5"
+        assert result[-1].content == f"message {MAX_CONTEXT_MESSAGES + 4}"
+
+    async def test_context_stops_at_character_budget(self, db_session: AsyncSession):
+        from app.api.routes.chat import MAX_CONTEXT_CHARACTERS, _load_langchain_messages
+
+        conv = Conversation(owner_id=LEGACY_ACCOUNT_ID, id="bounded-size-conv", title="Bounded")
+        start = datetime(2026, 1, 1, tzinfo=UTC)
+        db_session.add(conv)
+        db_session.add_all(
+            [
+                Message(
+                    id="older",
+                    conversation_id=conv.id,
+                    role=MessageRole.USER,
+                    content="o" * (MAX_CONTEXT_CHARACTERS - 1),
+                    created_at=start,
+                ),
+                Message(
+                    id="newer",
+                    conversation_id=conv.id,
+                    role=MessageRole.ASSISTANT,
+                    content="latest answer",
+                    created_at=start + timedelta(seconds=1),
+                ),
+            ]
+        )
+        await db_session.commit()
+
+        result = await _load_langchain_messages(db_session, conv.id, LEGACY_ACCOUNT_ID)
+
+        assert len(result) == 1
+        assert result[0].content == "latest answer"
+        assert sum(len(message.content) for message in result) <= MAX_CONTEXT_CHARACTERS
 
 
 # =============================================================================
