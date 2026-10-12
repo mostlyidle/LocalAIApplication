@@ -85,7 +85,14 @@ def test_upgrade_quarantines_existing_records(
             column[1] for column in connection.execute(text("PRAGMA table_info(conversations)"))
         }
         outbox_columns = {
-            column[1] for column in connection.execute(text("PRAGMA table_info(memory_outbox_jobs)"))
+            column[1]
+            for column in connection.execute(text("PRAGMA table_info(memory_outbox_jobs)"))
+        }
+        recall_summary_columns = {
+            column[1]
+            for column in connection.execute(
+                text("PRAGMA table_info(conversation_recall_summaries)")
+            )
         }
         recall_excluded = connection.execute(
             text("SELECT exclude_from_memory FROM conversations WHERE id = 'legacy-chat'")
@@ -117,3 +124,11 @@ def test_upgrade_quarantines_existing_records(
         "available_at",
         "lease_until",
     } <= outbox_columns
+    assert {
+        "owner_id",
+        "conversation_id",
+        "source_message_id",
+        "memory_epoch",
+        "revision",
+        "content",
+    } <= recall_summary_columns

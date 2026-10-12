@@ -5,12 +5,19 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: TC002
 
 from app.api.middleware.error_handler import NotFoundError
 from app.dependencies import get_authenticated_session, get_db
-from app.models.db_models import Account, Conversation, Memory, Message
+from app.models.db_models import (
+    Account,
+    Conversation,
+    ConversationRecallSummary,
+    Memory,
+    MemoryOutboxJob,
+    Message,
+)
 from app.models.memory_schemas import (
     ConversationMemorySettingsUpdate,
     MemoryCreate,
@@ -265,6 +272,10 @@ async def delete_all_memories(
         .where(Memory.owner_id == account.id, Memory.deleted_at.is_(None))
         .values(deleted_at=now, updated_at=now, revision=Memory.revision + 1)
     )
+    await db.execute(
+        delete(ConversationRecallSummary).where(ConversationRecallSummary.owner_id == account.id)
+    )
+    await db.execute(delete(MemoryOutboxJob).where(MemoryOutboxJob.owner_id == account.id))
     account.memory_epoch += 1
     account.past_chat_recall_enabled = False
     await db.commit()
