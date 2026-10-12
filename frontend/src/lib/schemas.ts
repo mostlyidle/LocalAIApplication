@@ -6,7 +6,11 @@ import { z } from "zod";
 
 export const healthSchema = z.object({
   status: z.string(),
-  services: z.array(z.object({ name: z.string(), healthy: z.boolean() })),
+  services: z.array(z.object({
+    name: z.string(),
+    healthy: z.boolean(),
+    message: z.string().optional(),
+  })),
   meeting_ready: z.boolean(),
 }).transform((data) => {
   const serviceStatus = (name: string) => ({

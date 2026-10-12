@@ -63,12 +63,6 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:6333/healthz || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 10s
 
   prometheus:
     image: prom/prometheus:v2.54.1
@@ -126,7 +120,7 @@ services:
         condition: service_healthy
         required: false
       qdrant:
-        condition: service_healthy
+        condition: service_started
         required: false
     restart: unless-stopped
     healthcheck:
