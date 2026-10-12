@@ -1,4 +1,4 @@
-.PHONY: setup dev dev-backend dev-frontend dev-desktop test-desktop-launcher test test-backend test-frontend lint format migrate seed clean help docker-up docker-down docker-infra docker-app docker-build docker-logs docker-clean
+.PHONY: setup dev dev-backend dev-frontend dev-desktop test-desktop-launcher test test-backend test-frontend lint format migrate seed clean help docker-up docker-down docker-infra docker-app docker-build docker-test docker-observability docker-logs docker-clean
 
 # =============================================================================
 # Local AI Application — Makefile
@@ -153,6 +153,14 @@ docker-app: ## Start backend + frontend + Qdrant — assumes Ollama is running n
 docker-build: ## Build Docker images without starting
 	docker compose --profile full build
 	@echo "==> Images built."
+
+docker-test: ## Build and run backend tests in the isolated test image target
+	docker build --target test -t local-ai-backend:test ./backend
+	docker run --rm local-ai-backend:test
+
+docker-observability: ## Start the app with optional Prometheus and Grafana
+	docker compose --profile app --profile observability up -d --build
+	@echo "==> App and observability services starting."
 
 docker-logs: ## Follow logs from all running services
 	docker compose --profile full logs -f

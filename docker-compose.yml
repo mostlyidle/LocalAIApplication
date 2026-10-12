@@ -2,9 +2,10 @@
 # Docker Compose — Local AI Application
 # =============================================================================
 # Profiles:
-#   - infra:   Only infrastructure (Ollama + Qdrant + ChromaDB)
+#   - infra:   Infrastructure (Ollama + Qdrant + Chroma migration source)
 #   - app:     Backend + Frontend (requires infra or native services)
 #   - full:    Everything together
+#   - observability: Optional Prometheus + Grafana
 #
 # Usage:
 #   make docker-infra    # Start only Ollama + ChromaDB
@@ -69,6 +70,33 @@ services:
       retries: 5
       start_period: 10s
 
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: local-ai-prometheus
+    profiles: ["observability"]
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.2.2
+    container_name: local-ai-grafana
+    profiles: ["observability"]
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-change-this-before-production}
+    ports:
+      - "127.0.0.1:3001:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
   # ---------------------------------------------------------------------------
   # Application services
   # ---------------------------------------------------------------------------
@@ -80,13 +108,16 @@ services:
     profiles: ["app", "full"]
     ports:
       - "8000:8000"
-    volumes:
-      - backend_data:/app/data
     env_file:
       - .env.docker
     environment:
       QDRANT_URL: http://qdrant:6333
       FASTEMBED_CACHE_PATH: /app/data/fastembed
+      AGENT_WORKSPACE_ROOT: /workspace
+      COMFYUI_URL: ${COMFYUI_URL:-http://host.docker.internal:8188}
+    volumes:
+      - backend_data:/app/data
+      - ${AGENT_WORKSPACE_HOST_PATH:-./workspace}:/workspace:ro
     depends_on:
       ollama:
         condition: service_healthy
@@ -132,3 +163,5 @@ volumes:
   chroma_data:
   qdrant_data:
   backend_data:
+  prometheus_data:
+  grafana_data:
