@@ -14,7 +14,7 @@ from app.services.fastembed_queries import (
     LOADER_EMBEDDING_REVISION,
     FastEmbedQueries,
 )
-from app.services.rag_store import RagSearchResult, RagStore
+from app.services.rag_store import CollectionCapabilities, RagSearchResult, RagStore
 from app.services.vector_store import VectorStoreService
 
 if TYPE_CHECKING:
@@ -36,6 +36,10 @@ class HybridVectorStoreService(VectorStoreService):
 
     async def close(self) -> None:
         await self._rag.close()
+
+    async def collection_capabilities(self, collection: str) -> CollectionCapabilities | None:
+        """Return schema and loader ownership for a named collection."""
+        return await self._rag.capabilities(collection)
 
     async def add_documents(
         self,
