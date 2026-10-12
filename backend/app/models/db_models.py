@@ -69,6 +69,18 @@ class RagCollection(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
 
+class SqlConnection(Base):
+    """Account owner for process-local SQL connections registered through the API."""
+
+    __tablename__ = "sql_connections"
+
+    name: Mapped[str] = mapped_column(String(100), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("accounts.id", ondelete="RESTRICT"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
 class Conversation(Base):
     """A chat conversation containing multiple messages."""
 

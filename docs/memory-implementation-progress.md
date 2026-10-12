@@ -8,7 +8,7 @@ Use this file to resume the approved implementation without repeating completed 
 - Stage: 1 of 5, identity and ownership
 - Branch: `feature/account-memory-stage1`
 - Status: in progress; do not expose this checkpoint as a shared-account deployment yet
-- Pushed checkpoints: `9ed6362` (account schema and legacy quarantine), `5863058` (operator-managed credentials), `221f466` (plan and resume notes), `14c6f91` (session endpoints), `c2caa64` (chat/document ownership and stable CSRF), `2bc4743` (meeting ownership), `5852d9d` (WebSocket revalidation), `f63bbbe` (agent API authentication)
+- Pushed checkpoints: `9ed6362` (account schema and legacy quarantine), `5863058` (operator-managed credentials), `221f466` (plan and resume notes), `14c6f91` (session endpoints), `c2caa64` (chat/document ownership and stable CSRF), `2bc4743` (meeting ownership), `5852d9d` (WebSocket revalidation), `f63bbbe` (agent API authentication), `1e9def0` (account-owned RAG collections)
 
 ## Completed checkpoint
 
@@ -32,23 +32,22 @@ Use this file to resume the approved implementation without repeating completed 
 - Added authenticated-session requirements to agent discovery, tasks, direct tool execution, SQL, and RAG endpoints (health checks remain public). Task asset lookup and RAG ingestion now require document ownership. The focused API checks pass 57 tests with Ruff and format checks clean (three unrelated existing Ruff rules excluded in legacy tool/health code).
 - Added a RAG collection ownership registry. New application collections are reserved to the uploading account before vector writes; foreign and unregistered legacy collections are hidden and rejected. Validated collection names are bounded to Qdrant's 63-character limit. Dataloader-owned collections remain shared and read-only. These checks cover RAG search/list/delete/ingest, the direct RAG search tool, selected and automatic RAG agents, and task execution; direct RAG list/ingest tools now require the scoped API routes. A migration leaves pre-existing unregistered collections quarantined rather than assigning them to an account.
 - Verified the combined account/chat/document/meeting/RAG/task/SQL/tool/migration set: 183 tests pass. Ruff passes with existing unrelated typing/style rules excluded; focused formatting checks pass on new/clean files. The Qdrant client warning remains because no Qdrant server is running.
+- Added a SQL connection ownership registry. Named connections registered through the API are account-owned; foreign and pre-existing unregistered names are hidden/rejected by SQL APIs and direct SQL tools. The configured `default` database remains a shared application resource. Registered connection URLs remain process-local as before; after a backend restart, the owner must re-register the connection before querying it. The combined focused suite passes 185 tests.
 - The first `uv run` attempt could not reach PyPI to build the project environment. Reused the repository's existing `.venv` directly for the successful checks.
 - The implementation time estimate in the plan is explicitly non-binding and does not limit the scope or completion criteria.
 
 ## Not implemented yet
 
-- Per-account SQL connection registry and authorization. Registered SQL connections and raw SQL access remain shared among signed-in accounts.
-- Per-account workspace roots and isolation for non-RAG direct tools; direct MCP process/resource access remains outside the HTTP account session boundary.
+- Per-account workspace roots and isolation for non-RAG direct tools; direct MCP process/resource access remains outside the HTTP account session boundary, including SQL and RAG MCP tools.
 - Dry-run and explicit legacy data assignment/import command.
 - Frontend sign-in and shared-deployment network boundary.
 
 ## Resume here
 
-1. Enforce per-account SQL connection ownership and decide whether configured SQL connections are intentionally shared.
-2. Review direct MCP process/resource access, scope remaining direct tools, and define per-account workspace roots.
-3. Add dry-run and explicit assignment for quarantined legacy records.
-4. Add frontend sign-in and the shared-deployment network boundary.
-5. Replace the temporary legacy-owner defaults after every creation path supplies the authenticated account.
+1. Review direct MCP process/resource access, scope remaining direct tools, and define per-account workspace roots. The API's configured `default` SQL connection is explicitly shared; custom connections are private.
+2. Add dry-run and explicit assignment for quarantined legacy records.
+3. Add frontend sign-in and the shared-deployment network boundary.
+4. Replace the temporary legacy-owner defaults after every creation path supplies the authenticated account.
 
 ## Important safety decision
 
