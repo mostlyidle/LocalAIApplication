@@ -53,6 +53,20 @@ class TestValidatePath:
             with pytest.raises(PermissionError, match="Access denied"):
                 _validate_path(str(outside))
 
+    def test_rejects_sibling_path_with_allowed_directory_prefix(self, tmp_path: Path) -> None:
+        allowed = tmp_path / "data"
+        allowed.mkdir()
+        sibling = tmp_path / "data-private"
+        sibling.mkdir()
+        secret = sibling / "secret.txt"
+        secret.write_text("secret")
+
+        with patch("app.tools.filesystem_tools._get_allowed_dirs", return_value=[allowed]):
+            from app.tools.filesystem_tools import _validate_path
+
+            with pytest.raises(PermissionError, match="Access denied"):
+                _validate_path(str(secret))
+
     def test_rejects_path_traversal_with_dotdot(self, tmp_path: Path) -> None:
         allowed = tmp_path / "allowed"
         allowed.mkdir()
