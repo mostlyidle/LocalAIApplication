@@ -17,8 +17,14 @@ from tests.test_services.test_task_runner_images import _runner
 
 
 @pytest.mark.parametrize("profile", ["chat", "sql", "web"])
-def test_selected_graph_profile_streams_tokens_and_persists_final_state(profile: str) -> None:
+def test_selected_graph_profile_streams_tokens_and_persists_final_state(
+    profile: str, authenticated_test_session
+) -> None:
     app = create_app()
+    from app.dependencies import get_websocket_session, websocket_session_is_active
+
+    app.dependency_overrides[get_websocket_session] = lambda: authenticated_test_session
+    app.dependency_overrides[websocket_session_is_active] = lambda: True
     directory = Path(__file__).resolve().parents[2] / "app" / "prompts"
     app.state.agent_registry = AgentRegistry(directory, PromptStore(directory))
     persist = AsyncMock(return_value=True)
@@ -35,7 +41,9 @@ def test_selected_graph_profile_streams_tokens_and_persists_final_state(profile:
         patch("app.api.routes.chat._load_ws_history", AsyncMock(return_value=[])),
         patch("app.api.routes.chat._persist_ws_messages", persist),
     ):
-        with TestClient(app).websocket_connect("/api/v1/chat/stream") as ws:
+        with TestClient(app).websocket_connect(
+            "/api/v1/chat/stream", headers={"origin": "http://localhost:3000"}
+        ) as ws:
             ws.send_json({"type": "message", "content": "Hi", "agent_name": profile})
             assert ws.receive_json() == {"type": "token", "content": "Hello"}
             assert ws.receive_json() == {"type": "token", "content": " world"}
@@ -72,7 +80,9 @@ async def test_auto_rag_execution_survives_rest_history_reload(client) -> None:
     assert history.json()["messages"][-1]["execution"] == execution
 
 
-def test_auto_rag_stream_persists_terminal_citation_metadata() -> None:
+def test_auto_rag_stream_persists_terminal_citation_metadata(
+    authenticated_test_session,
+) -> None:
     execution = {"agent": "rag", "artifacts": {"citations": [{"asset_id": "guide", "chunk_index": 0}]}}
     async def stream(**kwargs):
         yield {"type": "token", "content": "Friday"}
@@ -83,7 +93,14 @@ def test_auto_rag_stream_persists_terminal_citation_metadata() -> None:
         patch("app.api.routes.chat._load_ws_history", AsyncMock(return_value=[])),
         patch("app.api.routes.chat._persist_ws_messages", persist),
     ):
-        with TestClient(create_app()).websocket_connect("/api/v1/chat/stream") as ws:
+        app = create_app()
+        from app.dependencies import get_websocket_session, websocket_session_is_active
+
+        app.dependency_overrides[get_websocket_session] = lambda: authenticated_test_session
+        app.dependency_overrides[websocket_session_is_active] = lambda: True
+        with TestClient(app).websocket_connect(
+            "/api/v1/chat/stream", headers={"origin": "http://localhost:3000"}
+        ) as ws:
             ws.send_json({"type": "message", "content": "Search documents"})
             assert ws.receive_json()["type"] == "token"
             assert ws.receive_json()["metadata"]["execution"] == execution
