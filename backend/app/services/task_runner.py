@@ -51,6 +51,7 @@ class TaskRunner:
         *,
         request_id: str,
         document: Document | None = None,
+        history: list[str] | None = None,
     ) -> AgentResult:
         execution = self._resolve_execution(request, document)
         target = execution.profile.target
@@ -61,7 +62,7 @@ class TaskRunner:
         elif target == "document":
             result = await self._document_analysis(request, execution, document)
         elif target == "rag":
-            result = await self._rag_answer(request, execution)
+            result = await self._rag_answer(request, execution, history=history)
         elif target == "stock_research":
             result = await self._stock_research(request, execution, document)
         elif target == "image_generation":
@@ -199,66 +200,20 @@ class TaskRunner:
         return AgentResult(agent=execution.profile.name, answer=answer, artifacts=artifacts)
 
     async def _rag_answer(
-        self, request: TaskRequest, execution: AgentExecution
+        self, request: TaskRequest, execution: AgentExecution, *, history: list[str] | None = None
     ) -> AgentResult:
-        from app.services.hybrid_vector_store import hybrid_vector_store_service
+        from app.services.rag_context import prepare_rag_context
 
-        try:
-            search = await hybrid_vector_store_service.search_with_provenance(
-                query=request.prompt,
-                collection=request.collection,
-                top_k=settings.rag_top_k,
-                agent_name=execution.profile.name,
-            )
-        except (ValueError, RuntimeError) as exc:
-            raise HTTPException(status_code=503, detail=f"Hybrid retrieval failed: {exc}") from exc
-        passages = search.passages
-        if not passages:
-            return AgentResult(
-                agent=execution.profile.name,
-                answer="I could not find relevant evidence in the selected collection.",
-                artifacts={"citations": [], "retrieval": search.retrieval},
-                limitations=["No supporting passages were retrieved."],
-            )
-        citation_rows = []
-        prompt_rows = []
-        for passage in passages:
-            metadata = passage.get("metadata", {})
-            citation = {
-                key: metadata.get(key)
-                for key in (
-                    "filename",
-                    "source",
-                    "page",
-                    "page_start",
-                    "page_end",
-                    "section",
-                    "document_id",
-                    "source_chunk_id",
-                )
-                if metadata.get(key) is not None
-            }
-            citation["asset_id"] = metadata.get("asset_id", passage.get("asset_id"))
-            citation["chunk_index"] = metadata.get("chunk_index", passage.get("chunk_index"))
-            citation["score"] = passage.get("score")
-            citation["score_type"] = passage.get("score_type")
-            citation_rows.append(citation)
-            source = citation.get("filename") or citation.get("source") or citation.get("document_id") or "Unknown"
-            location = f", Page {citation['page']}" if citation.get("page") is not None else ""
-            asset_id = citation.get("asset_id")
-            chunk_index = citation.get("chunk_index")
-            prompt_rows.append(
-                f"[{asset_id}:{chunk_index}] [Source: {source}{location}]\n"
-                f"{passage.get('content', '')}"
-            )
-        answer = await self._answer(
-            execution,
-            prompt_values={"prompt": request.prompt, "passages": "\n\n".join(prompt_rows)},
+        context = await prepare_rag_context(request, execution, self._prompts, history=history)
+        answer = (
+            await self._answer(execution, prompt_values=context.prompt_values)
+            if context.citations
+            else "I could not find relevant evidence in the selected collection."
         )
         return AgentResult(
-            agent=execution.profile.name,
-            answer=answer,
-            artifacts={"citations": citation_rows, "retrieval": search.retrieval},
+            agent=execution.profile.name, answer=answer,
+            artifacts={"citations": context.citations, "retrieval": context.retrieval},
+            limitations=context.limitations,
         )
 
     async def _stock_research(

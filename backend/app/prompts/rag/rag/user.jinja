@@ -1,4 +1,8 @@
 Question: {{ prompt }}
+{% if history %}
+Prior conversation:
+{{ history }}
+{% endif %}
 
 Retrieved passages:
 {{ passages }}

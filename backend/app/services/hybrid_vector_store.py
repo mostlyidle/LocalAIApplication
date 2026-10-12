@@ -82,6 +82,7 @@ class HybridVectorStoreService(VectorStoreService):
         top_k: int | None = None,
         score_threshold: float | None = None,
         agent_name: str = "rag",
+        rewrite_model: str | None = None,
     ) -> list[dict[str, Any]]:
         result = await self.search_with_provenance(
             query=query,
@@ -89,6 +90,7 @@ class HybridVectorStoreService(VectorStoreService):
             top_k=top_k or settings.rag_top_k,
             score_threshold=score_threshold,
             agent_name=agent_name,
+            rewrite_model=rewrite_model,
         )
         return result.passages
 
@@ -100,6 +102,7 @@ class HybridVectorStoreService(VectorStoreService):
         top_k: int,
         score_threshold: float | None = None,
         agent_name: str = "rag",
+        rewrite_model: str | None = None,
     ) -> RagSearchResult:
         profile = self._profile_registry().get(agent_name)
         if profile is None or profile.target != "rag" or profile.retrieval is None:
@@ -113,6 +116,7 @@ class HybridVectorStoreService(VectorStoreService):
                 profile.name,
                 retrieval.query_rewrite.count,
                 retrieval.query_rewrite.max_output_tokens,
+                model=rewrite_model,
             )
 
         capabilities = await self._rag.capabilities(collection)
@@ -121,6 +125,7 @@ class HybridVectorStoreService(VectorStoreService):
                 passages=[],
                 retrieval={"mode": "missing_collection", "strategy": "none"},
             )
+        recorded_identity_only = False
         if (
             capabilities.loader_owned
             and capabilities.dense_model == LOADER_EMBEDDING_MODEL
@@ -135,6 +140,18 @@ class HybridVectorStoreService(VectorStoreService):
             dense_model = identity["embedding_model"]
             embedding_revision = self._embedding_revision(identity)
             expected_dimension = settings.ollama_embedding_dimension
+            # Older API collections recorded model/revision, but no weight digest.
+            if (
+                capabilities.mode == "hybrid"
+                and not capabilities.loader_owned
+                and capabilities.embedding_revision == settings.ollama_embedding_revision
+                and capabilities.dense_model is not None
+                and (capabilities.dense_model if ":" in capabilities.dense_model else capabilities.dense_model + ":latest") == identity["embedding_model"]
+                and identity["embedding_profile"] == "plain-v1"
+            ):
+                dense_model = capabilities.dense_model
+                embedding_revision = capabilities.embedding_revision
+                recorded_identity_only = True
             embeddings = [await embedding_service.embed_text(text) for text in [query, *rewrites]]
             if await embedding_service.get_identity() != identity:
                 raise ValueError(
@@ -179,11 +196,13 @@ class HybridVectorStoreService(VectorStoreService):
             **result.retrieval,
             "agent_name": profile.name,
             "rewrite_failure": rewrite_failure,
+            "recorded_identity_only": recorded_identity_only,
         }
         return RagSearchResult(passages=passages, retrieval=metadata)
 
     async def _rewrite_queries(
-        self, query: str, agent_name: str, count: int, max_output_tokens: int
+        self, query: str, agent_name: str, count: int, max_output_tokens: int,
+        *, model: str | None = None,
     ) -> tuple[list[str], str | None]:
         from pydantic import BaseModel, Field, ValidationError
 
@@ -203,7 +222,7 @@ class HybridVectorStoreService(VectorStoreService):
             {"prompt": query, "rewrite_count": count},
         )
         llm = self._chat_model(
-            model=profile.inference.default_model,
+            model=model or profile.inference.default_model,
             temperature=0,
             max_output_tokens=max_output_tokens,
             context_window=2048,
