@@ -19,8 +19,10 @@ describe("constants", () => {
     expect(API_V1).toContain("/api/v1");
   });
 
-  it("WS_BASE defaults to backend WebSocket address", () => {
-    expect(WS_BASE).toBe("ws://localhost:8000");
+  it("WS_BASE defaults to the current page origin", () => {
+    expect(WS_BASE).toBe(
+      `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}`,
+    );
   });
 
   it("WS_CHAT includes chat stream path", () => {

@@ -41,19 +41,20 @@ Use this file to resume the approved implementation without repeating completed 
 - Added a native meeting stream-ticket endpoint for Tauri: ticket hashes are stored server-side, each ticket is tied to its meeting and parent login session, and socket revalidation checks that session by ID. Tauri requests the ticket through the authenticated UI before opening its WebSocket; a handshake test verifies the ticket header. The migration test verifies the new ticket table.
 - Verified frontend: 297 tests pass, TypeScript passes, and targeted ESLint has no errors. Verified Rust transport: `cargo fmt --check` and 19 Rust tests pass. Verified focused backend meeting/auth/migration suite: 17 tests pass. Qdrant emits its existing compatibility warning because no server is running; Rust emits existing native deprecation/dead-code warnings.
 - Bound Ollama, ChromaDB, Qdrant, backend, and frontend Compose host ports to `127.0.0.1`; internal Compose service networking is unchanged. README states local-only defaults and the TLS/API/WebSocket configuration needed for remote use.
+- Made frontend API, WebSocket, and server-side backend URLs build-configurable. Same-origin browser mode now derives `ws://` or `wss://` from the page origin; README documents HTTP API rewrite versus direct WebSocket proxying and the origin/cookie settings. `docker compose config --quiet`, the production frontend Docker build, and the focused same-origin constants test (8 tests) pass.
 - The first `uv run` attempt could not reach PyPI to build the project environment. Reused the repository's existing `.venv` directly for the successful checks.
 - The implementation time estimate in the plan is explicitly non-binding and does not limit the scope or completion criteria.
 
 ## Not implemented yet
 
 - Direct MCP process/resource access remains outside the HTTP account session boundary, including SQL and RAG MCP tools. Path-based direct HTTP tool execution is now blocked, but MCP server process access still needs an explicit trust boundary.
-- Remote shared-deployment boundary: Compose ports are loopback-only, but public HTTPS reverse-proxy configuration and matching browser API/WebSocket URLs/CORS are deployment-specific and still need verification.
+- Remote shared-deployment boundary: frontend can now be built for same-origin HTTPS/WSS proxying, but deployment still needs an operator-supplied hostname, TLS reverse proxy, and matching CORS/WebSocket origin configuration. No real remote hostname is available to verify.
 
 ## Resume here
 
-1. Define the local MCP trust boundary. HTTP direct calls to path-based document/filesystem tools are blocked; MCP servers run separately and are not protected by the app's account session. The API's configured `default` SQL connection is explicitly shared; custom connections are private.
-2. Verify Docker Compose after loopback binding, then complete remote reverse-proxy/API/WebSocket configuration for the actual shared hostname; frontend sign-in and native meeting ticket auth are implemented.
-3. Replace the temporary legacy-owner defaults after every creation path supplies the authenticated account.
+1. Define and enforce the local MCP trust boundary. HTTP direct calls to path-based document/filesystem tools are blocked; MCP servers run separately and are not protected by the app's account session. The API's configured `default` SQL connection is explicitly shared; custom connections are private.
+2. Audit every creation path and replace temporary legacy-owner defaults once each caller supplies the authenticated account.
+3. For an actual shared deployment, configure the operator's hostname, TLS reverse proxy, and matching CORS/WebSocket origins; frontend same-origin URL support and native meeting ticket auth are implemented.
 
 ## Important safety decision
 
