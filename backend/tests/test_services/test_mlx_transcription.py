@@ -62,6 +62,16 @@ def test_requires_provisioned_local_model(mlx_model: Path) -> None:
         MLXWhisperTranscriptionEngine(mlx_model.parent)
 
 
+@pytest.mark.parametrize("filename", ["weights.npz", "weights.safetensors", "model.safetensors"])
+def test_validates_supported_weight_filenames(mlx_model: Path, filename: str) -> None:
+    (mlx_model / "weights.npz").rename(mlx_model / filename)
+    if filename == "model.safetensors":
+        with pytest.raises(ValueError, match="weights.safetensors or weights.npz"):
+            MLXWhisperTranscriptionEngine(mlx_model)
+    else:
+        assert MLXWhisperTranscriptionEngine(mlx_model).model_dir == mlx_model
+
+
 def test_older_macos_has_actionable_cpu_fallback(
     mlx_model: Path,
     monkeypatch: pytest.MonkeyPatch,
