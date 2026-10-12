@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING
 
 import pytest
@@ -89,6 +90,24 @@ async def test_chat_and_document_routes_require_a_session(client: AsyncClient) -
             },
         )
     ).status_code == 401
+
+
+async def test_agent_and_resource_routes_require_a_session(client: AsyncClient) -> None:
+    from app.dependencies import get_authenticated_session
+
+    client._transport.app.dependency_overrides.pop(get_authenticated_session)
+    requests = [
+        client.get("/api/v1/agents"),
+        client.get("/api/v1/tools"),
+        client.post("/api/v1/tasks", json={"prompt": "hello"}),
+        client.get("/api/v1/sql/connections"),
+        client.get("/api/v1/sql/schema"),
+        client.get("/api/v1/rag/collections"),
+        client.post("/api/v1/rag/search", json={"query": "hello"}),
+        client.post("/api/v1/rag/ingest", json={"document_id": "private-doc"}),
+    ]
+    responses = await asyncio.gather(*requests)
+    assert [response.status_code for response in responses] == [401] * len(requests)
 
 
 def test_chat_websocket_rejects_untrusted_origin() -> None:
