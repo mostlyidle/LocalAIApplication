@@ -90,7 +90,7 @@ export default function SQLPage() {
           <select
             value={selectedDb}
             onChange={(e) => setSelectedDb(e.target.value)}
-            className="ml-auto min-h-11 max-w-full rounded-xl border border-input bg-card px-3 py-1.5 text-sm"
+            className="ml-auto min-h-11 max-w-full rounded-xl border border-input bg-card px-3 py-1.5 text-base sm:text-sm"
             aria-label="Database connection"
           >
             <option value="default">default</option>

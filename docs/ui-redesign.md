@@ -25,6 +25,25 @@ did not fit this application and was not used.
    targeted ESLint (no errors), and focused specialist/scroll/contrast tests.
 3. Acceptance: frontend regression suite, production build, theme contrast,
    desktop/mobile visual checks, and navigation/interaction smoke tests.
+   Complete: 323 frontend tests pass; the final typography changes pass 80 focused
+   chat/RAG/SQL tests; TypeScript and the webpack production build pass. Targeted
+   ESLint has no errors. Existing React test `act(...)` warnings and the attachment
+   preview's `<img>` lint warning remain.
+
+## Visual acceptance
+
+Safari checks used an isolated local API/WebSocket fixture server, with no real
+credentials, accounts, memories, or model calls. Desktop screenshots and exact
+375 × 812 and 812 × 375 iframe viewports verified the light/dark styling, chat
+greeting, message rendering, editable starter prompt, keyboard dialog dismissal
+and focus return, mobile drawer dismissal, landscape composer reachability,
+Documents, RAG Search, Memory, and Settings. Both temporary servers were stopped
+and the preview tab was closed afterward.
+
+Real-device mobile testing, automated Playwright execution, native meeting
+capture, and live model inference were not rerun for this frontend redesign.
+Reduced-motion support is defined in the shared stylesheet; OS preference
+emulation was not exercised in Safari.
 
 ## Browser findings addressed
 
