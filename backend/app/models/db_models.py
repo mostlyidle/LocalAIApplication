@@ -160,6 +160,35 @@ class Message(Base):
     )
 
 
+class Memory(Base):
+    """An explicitly approved, account-owned fact or preference."""
+
+    __tablename__ = "memories"
+    __table_args__ = (
+        Index("ix_memories_owner_deleted", "owner_id", "deleted_at"),
+        Index("ix_memories_owner_kind", "owner_id", "kind"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
+    owner_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("accounts.id", ondelete="RESTRICT"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(32))
+    content: Mapped[str] = mapped_column(Text)
+    project_scope: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    source_conversation_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    source_message_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    origin_agent: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    approved: Mapped[bool] = mapped_column(default=True, server_default="1")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 class ToolCallRecord(Base):
     """Record of a tool invocation made during message generation."""
 
