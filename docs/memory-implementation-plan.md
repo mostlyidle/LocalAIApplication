@@ -1,6 +1,6 @@
 # Persistent memory implementation plan
 
-Status: approved for implementation; Stages 1–3 complete, Stage 4 in progress.
+Status: implementation and Stage 5 local verification complete. External-provider and remote-deployment checks remain environment-dependent.
 
 Deployment decision: separate sign-in accounts for a shared application, confirmed by the user. Memory remains on the deployment host; it is private to the signed-in account, not automatically shared between people.
 
@@ -225,7 +225,7 @@ Use controlled LLM responses for summary/extraction tests so assertions are repr
 4. Exercise every profile through both applicable chat and direct-task routes. Verify deterministic image checks/workflow execution, RAG citations, SQL authorization, and current external data semantics remain correct.
 5. Interrupt Ollama, Qdrant, a worker job, and a WebSocket. Verify honest availability/error reporting, retry recovery, durable completion ordering, and acceptable latency with Docker's memory limits.
 
-Provision the Playwright browser before browser testing; the previous agent test run could not start those tests because Chromium was absent. Successful Finnhub and ComfyUI scenarios require a real configured key/service; test their error paths regardless and do not count error-path tests as successful provider integration.
+The Alice/Bob account switch and recalled-source navigation passed in Safari. Stopping Ollama and Qdrant individually made `/health` report degraded and each service unavailable; restarting restored both. Expired summary/vector cleanup leases and WebSocket session handling are covered by deterministic tests. Playwright's 13 browser tests could not launch because Chromium's framework bundle is missing and the installer stalls after downloading its archive; this tooling limitation is recorded rather than treated as an application failure. Successful Finnhub and ComfyUI scenarios require a real configured key/service; their error paths are tested and are not counted as successful provider integration. Load latency under Docker memory limits was not benchmarked; a prior cold summary attempt timed out safely and succeeded on retry after model warm-up.
 
 The release passes only when each account can recall its own saved facts and relevant past discussions across sessions, another account cannot read them, forgetting prevents future recall, and existing agent functionality still passes its checks.
 
