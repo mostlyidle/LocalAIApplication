@@ -74,6 +74,12 @@ class MemorySettingsUpdate(BaseModel):
         return self
 
 
+class ConversationMemorySettingsUpdate(BaseModel):
+    """Conversation-specific opt-out from future cross-chat memory use."""
+
+    exclude_from_memory: bool
+
+
 class MemoryResponse(BaseModel):
     """Memory fields safe to return to its owning account."""
 

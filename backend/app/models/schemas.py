@@ -84,6 +84,7 @@ class ConversationSummary(BaseModel):
     message_count: int
     last_message_at: datetime
     created_at: datetime
+    exclude_from_memory: bool = False
 
 
 # =============================================================================

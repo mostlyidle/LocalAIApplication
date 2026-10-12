@@ -163,6 +163,42 @@ async def test_memory_client_turn_source_is_owner_scoped(
 
 
 @pytest.mark.asyncio
+async def test_conversation_can_opt_out_of_memory_and_only_by_its_owner(
+    client: AsyncClient, db_session: AsyncSession
+):
+    db_session.add_all(
+        [
+            Account(
+                id="recall-foreign-owner",
+                username="recall-foreign-owner",
+                display_name="Recall Foreign Owner",
+                password_hash="!test!",
+            ),
+            Conversation(id="recall-owned-conversation", owner_id=LEGACY_ACCOUNT_ID),
+            Conversation(id="recall-foreign-conversation", owner_id="recall-foreign-owner"),
+        ]
+    )
+    await db_session.commit()
+
+    allowed = await client.patch(
+        "/api/v1/memory/conversations/recall-owned-conversation/settings",
+        json={"exclude_from_memory": True},
+        headers={"X-CSRF-Token": "test-csrf-token"},
+    )
+    forbidden = await client.patch(
+        "/api/v1/memory/conversations/recall-foreign-conversation/settings",
+        json={"exclude_from_memory": True},
+        headers={"X-CSRF-Token": "test-csrf-token"},
+    )
+    detail = await client.get("/api/v1/chat/conversations/recall-owned-conversation")
+
+    assert allowed.status_code == 200
+    assert allowed.json() == {"exclude_from_memory": True}
+    assert forbidden.status_code == 404
+    assert detail.json()["exclude_from_memory"] is True
+
+
+@pytest.mark.asyncio
 async def test_update_requires_matching_revision_and_delete_hides_memory(
     client: AsyncClient,
 ):

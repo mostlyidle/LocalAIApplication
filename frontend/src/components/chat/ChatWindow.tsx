@@ -7,7 +7,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { useChat } from "@/hooks/useChat";
-import { createMemory, getAgentCatalog, getConversation, getConversations, uploadDocument } from "@/lib/api";
+import {
+  createMemory,
+  getAgentCatalog,
+  getConversation,
+  getConversations,
+  updateConversationMemorySettings,
+  uploadDocument,
+} from "@/lib/api";
 import { ACCEPTED_FILE_TYPES, ACTIVE_CONVERSATION_STORAGE_PREFIX, MAX_FILE_SIZE } from "@/lib/constants";
 import type { AgentCapability, ChatMessage, ChatTaskOptions } from "@/types/chat";
 import type { MemoryRecord } from "@/lib/schemas";
@@ -77,6 +84,8 @@ export function ChatWindow() {
   const [conversationError, setConversationError] = useState("");
   const [conversations, setConversations] = useState<Awaited<ReturnType<typeof getConversations>>["conversations"]>([]);
   const [restoringConversation, setRestoringConversation] = useState(false);
+  const [excludeFromMemory, setExcludeFromMemory] = useState(false);
+  const [recallSettingError, setRecallSettingError] = useState("");
   const [memoryDraft, setMemoryDraft] = useState<{
     message: ChatMessage;
     content: string;
@@ -102,7 +111,10 @@ export function ChatWindow() {
     setRestoringConversation(true);
     getConversation(savedConversationId)
       .then((conversation) => {
-        if (active) loadConversation(restoreMessages(conversation), conversation.id);
+        if (active) {
+          loadConversation(restoreMessages(conversation), conversation.id);
+          setExcludeFromMemory(conversation.exclude_from_memory);
+        }
       })
       .catch((error: unknown) => {
         if (!active) return;
@@ -150,8 +162,23 @@ export function ChatWindow() {
 
   const startNewConversation = () => {
     clearMessages();
+    setExcludeFromMemory(false);
+    setRecallSettingError("");
     setConversationError("");
     if (conversationStorageKey) window.localStorage.removeItem(conversationStorageKey);
+  };
+
+  const handleRecallExclusionChange = async (exclude: boolean) => {
+    if (!conversationId) return;
+    const previous = excludeFromMemory;
+    setExcludeFromMemory(exclude);
+    setRecallSettingError("");
+    try {
+      await updateConversationMemorySettings(conversationId, { exclude_from_memory: exclude });
+    } catch (cause) {
+      setExcludeFromMemory(previous);
+      setRecallSettingError(cause instanceof Error ? cause.message : "Could not update recall settings.");
+    }
   };
 
   const rememberMessage = (message: ChatMessage) => {
@@ -188,6 +215,8 @@ export function ChatWindow() {
     try {
       const conversation = await getConversation(id);
       loadConversation(restoreMessages(conversation), conversation.id);
+      setExcludeFromMemory(conversation.exclude_from_memory);
+      setRecallSettingError("");
       if (conversationStorageKey) {
         window.localStorage.setItem(conversationStorageKey, conversation.id);
       }
@@ -388,7 +417,22 @@ export function ChatWindow() {
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b px-4 py-2">
-        <span className="text-sm font-medium">{conversationId ? "Saved conversation" : "New conversation"}</span>
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-medium">{conversationId ? "Saved conversation" : "New conversation"}</span>
+          {conversationId && (
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground" title="This affects cross-chat recall, not the saved transcript or memories you choose to save manually.">
+              <input
+                type="checkbox"
+                aria-label="Exclude this chat from past-chat recall"
+                checked={excludeFromMemory}
+                onChange={(event) => void handleRecallExclusionChange(event.target.checked)}
+                disabled={isStreaming || restoringConversation}
+                className="h-3.5 w-3.5 accent-primary"
+              />
+              Exclude from past-chat recall
+            </label>
+          )}
+        </div>
         <div className="flex gap-2">
           <Button
             type="button"
@@ -407,6 +451,7 @@ export function ChatWindow() {
           </Button>
         </div>
       </div>
+      {recallSettingError && <p role="alert" className="border-b px-4 py-2 text-xs text-destructive">{recallSettingError}</p>}
       {historyOpen && (
         <div aria-label="Conversation history" className="max-h-48 space-y-1 overflow-y-auto border-b p-2">
           {historyLoading && <p className="px-2 py-1 text-xs text-muted-foreground">Loading conversations…</p>}

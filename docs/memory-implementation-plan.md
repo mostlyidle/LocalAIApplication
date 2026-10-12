@@ -1,6 +1,6 @@
 # Persistent memory implementation plan
 
-Status: proposed for review; no application changes implemented.
+Status: approved for implementation; Stages 1–3 complete, Stage 4 in progress.
 
 Deployment decision: separate sign-in accounts for a shared application, confirmed by the user. Memory remains on the deployment host; it is private to the signed-in account, not automatically shared between people.
 
