@@ -542,6 +542,7 @@ async def _execute_selected_profile(
             ),
         )
 
+    prior_turns = []
     if body.conversation_id:
         history = (
             await _load_langchain_messages(db, body.conversation_id)
@@ -553,7 +554,7 @@ async def _execute_selected_profile(
             for message in history[-8:]
             if getattr(message, "content", None)
         ]
-        if prior_turns:
+        if prior_turns and profile.target != "rag":
             history_header = "Prior conversation:\n"
             current_request = "\n\nCurrent request:\n" + body.content
             history_limit = max(0, 32_000 - len(history_header) - len(current_request) - 1)
@@ -570,10 +571,9 @@ async def _execute_selected_profile(
         document = documents.get(task.asset_id)
         if document is None:
             raise HTTPException(status_code=404, detail="Uploaded asset was not found.")
+    kwargs = {"history": prior_turns} if profile.target == "rag" else {}
     return await app.state.task_runner.run(
-        task,
-        request_id=str(uuid.uuid4()),
-        document=document,
+        task, request_id=str(uuid.uuid4()), document=document, **kwargs,
     )
 
 
