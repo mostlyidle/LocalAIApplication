@@ -59,7 +59,7 @@ def read_workspace(root: Path, requested: str | None) -> tuple[str, list[str]]:
         )
         for name in sorted(filenames):
             path = Path(directory) / name
-            if name.lower() not in EXCLUDED_NAMES and path.suffix.lower() in ALLOWED_SUFFIXES:
+            if name.lower() not in EXCLUDED_NAMES and path.suffix.lower() in ALLOWED_SUFFIXES and path.is_file():
                 files.append(path)
                 if len(files) == MAX_FILES:
                     break
@@ -70,7 +70,7 @@ def read_workspace(root: Path, requested: str | None) -> tuple[str, list[str]]:
     total = 0
     for path in files[:MAX_FILES]:
         resolved = path.resolve()
-        if not resolved.is_relative_to(root):
+        if not resolved.is_relative_to(root) or not resolved.is_file():
             continue
         if (
             resolved.name.lower() in EXCLUDED_NAMES
