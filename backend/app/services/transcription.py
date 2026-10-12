@@ -36,6 +36,10 @@ class TranscriptionChunk:
 class TranscriptionEngine(ABC):
     """Provider-neutral offline transcription interface."""
 
+    async def load(self) -> None:
+        """Prepare local resources; artifact-free engines need no setup."""
+        return None
+
     @abstractmethod
     async def transcribe(
         self,
@@ -177,6 +181,12 @@ class MLXWhisperTranscriptionEngine(TranscriptionEngine):
     def __init__(self, model_dir: str | Path | None = None) -> None:
         if platform.system() != "Darwin" or platform.machine().lower() != "arm64":
             raise ValueError("MLX Whisper requires an Apple Silicon Mac")
+        version = platform.mac_ver()[0]
+        if not version or int(version.split(".")[0]) < 26:
+            raise ValueError(
+                "The locked MLX runtime requires macOS 26 or later; "
+                "use faster-whisper on older macOS"
+            )
         configured = model_dir if model_dir is not None else settings.asr_model_dir
         if configured is None:
             raise ValueError("ASR_MODEL_DIR must point to an absolute local MLX model directory")
@@ -198,11 +208,9 @@ class MLXWhisperTranscriptionEngine(TranscriptionEngine):
             return
         if self._load_task is None:
             self._load_task = asyncio.create_task(asyncio.to_thread(self._load_model))
-        try:
-            await asyncio.shield(self._load_task)
-        except Exception:
-            self._load_task = None
-            raise
+        # A failed native MLX import can leave partially initialized extension state.
+        # Cache the failed task until restart rather than repeatedly initializing Metal.
+        await asyncio.shield(self._load_task)
 
     def _load_model(self) -> None:
         with self._model_lock:
