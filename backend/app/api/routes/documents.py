@@ -17,7 +17,7 @@ from typing import Any
 import structlog
 from fastapi import APIRouter, Depends, Request, UploadFile
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession  # noqa: TC002
 
 from app.api.middleware.error_handler import (
     DocumentTooLargeError,
@@ -28,6 +28,7 @@ from app.api.middleware.rate_limiting import limiter
 from app.config import settings
 from app.dependencies import (
     DocumentParserService,
+    get_authenticated_session,
     get_db,
     get_document_parser,
 )
@@ -39,6 +40,7 @@ from app.models.schemas import (
     DocumentUploadResponse,
     ExtractedTable,
 )
+from app.services.auth import AuthenticatedSession  # noqa: TC001
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()
@@ -54,7 +56,8 @@ router = APIRouter()
 async def upload_document(
     request: Request,
     file: UploadFile,
-    db: AsyncSession = Depends(get_db),
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> DocumentUploadResponse:
     """Upload a document for later analysis.
 
@@ -77,8 +80,8 @@ async def upload_document(
     # Determine format
     try:
         doc_format = DocumentFormat.from_extension(extension)
-    except ValueError:
-        raise UnsupportedFormatError(extension)
+    except ValueError as exc:
+        raise UnsupportedFormatError(extension) from exc
 
     # Save to disk
     doc_id = str(uuid.uuid4())
@@ -89,6 +92,7 @@ async def upload_document(
     # Create DB record
     doc = Document(
         id=doc_id,
+        owner_id=authenticated.account.id,
         filename=filename,
         format=doc_format.value,
         size_bytes=size_bytes,
@@ -123,8 +127,9 @@ async def upload_document(
 @router.post("/documents/{document_id}/analyze", response_model=DocumentAnalysisResult)
 async def analyze_document(
     document_id: str,
-    db: AsyncSession = Depends(get_db),
-    parser: DocumentParserService = Depends(get_document_parser),
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    parser: DocumentParserService = Depends(get_document_parser),  # noqa: B008
 ) -> DocumentAnalysisResult:
     """Parse and analyze a previously uploaded document.
 
@@ -132,7 +137,9 @@ async def analyze_document(
     Updates the document status to 'completed' or 'failed'.
     """
     # Fetch document record
-    stmt = select(Document).where(Document.id == document_id)
+    stmt = select(Document).where(
+        Document.id == document_id, Document.owner_id == authenticated.account.id
+    )
     result = await db.execute(stmt)
     doc = result.scalar_one_or_none()
 
@@ -198,10 +205,15 @@ async def analyze_document(
 
 @router.get("/documents", response_model=list[DocumentListItem])
 async def list_documents(
-    db: AsyncSession = Depends(get_db),
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> list[DocumentListItem]:
     """List all uploaded documents ordered by creation date."""
-    stmt = select(Document).order_by(Document.created_at.desc())
+    stmt = (
+        select(Document)
+        .where(Document.owner_id == authenticated.account.id)
+        .order_by(Document.created_at.desc())
+    )
     result = await db.execute(stmt)
     docs = result.scalars().all()
 
@@ -226,10 +238,13 @@ async def list_documents(
 @router.get("/documents/{document_id}")
 async def get_document(
     document_id: str,
-    db: AsyncSession = Depends(get_db),
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> dict[str, Any]:
     """Get detailed information about a specific document."""
-    stmt = select(Document).where(Document.id == document_id)
+    stmt = select(Document).where(
+        Document.id == document_id, Document.owner_id == authenticated.account.id
+    )
     result = await db.execute(stmt)
     doc = result.scalar_one_or_none()
 
@@ -259,10 +274,13 @@ async def get_document(
 @router.delete("/documents/{document_id}")
 async def delete_document(
     document_id: str,
-    db: AsyncSession = Depends(get_db),
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> dict[str, str]:
     """Delete a document and its file from disk."""
-    stmt = select(Document).where(Document.id == document_id)
+    stmt = select(Document).where(
+        Document.id == document_id, Document.owner_id == authenticated.account.id
+    )
     result = await db.execute(stmt)
     doc = result.scalar_one_or_none()
 

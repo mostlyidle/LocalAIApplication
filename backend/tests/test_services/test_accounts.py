@@ -50,7 +50,7 @@ async def test_operator_password_reset_revokes_sessions(async_engine, monkeypatc
             AccountSession(
                 account_id=account.id,
                 token_hash="a" * 64,
-                csrf_token_hash="b" * 64,
+                csrf_token="test-csrf-token",
                 expires_at=account.created_at,
             )
         )

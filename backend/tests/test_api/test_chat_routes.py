@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -17,8 +18,37 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request as StarletteRequest
 
-from app.models.db_models import Conversation, Document, Message, ToolCallRecord
-from app.models.enums import AgentType, MessageRole
+from app.models.db_models import (
+    LEGACY_ACCOUNT_ID,
+    Account,
+    AccountSession,
+    Conversation,
+    Document,
+    Message,
+    ToolCallRecord,
+)
+from app.models.enums import MessageRole
+from app.services.auth import AuthenticatedSession
+
+
+def _authenticated_principal() -> AuthenticatedSession:
+    """Build the test account used by direct calls to authenticated handlers."""
+    return AuthenticatedSession(
+        account=Account(
+            id=LEGACY_ACCOUNT_ID,
+            username="test-account",
+            display_name="Test Account",
+            password_hash="!test!",
+        ),
+        session=AccountSession(
+            id="direct-test-session",
+            account_id=LEGACY_ACCOUNT_ID,
+            token_hash="0" * 64,
+            csrf_token="test-csrf-token",
+            expires_at=datetime.now(UTC),
+        ),
+    )
+
 
 # =============================================================================
 # Helper: create a mock agent result
@@ -99,14 +129,20 @@ class TestSendMessage:
         assert response.status_code == 200
         assert response.json()["execution"]["artifacts"]["prompt_id"] == "job-1"
         runner.run.assert_awaited_once()
-        reloaded = await client.get(f"/api/v1/chat/conversations/{response.json()['conversation_id']}")
+        reloaded = await client.get(
+            f"/api/v1/chat/conversations/{response.json()['conversation_id']}"
+        )
         assert reloaded.status_code == 200
         assert reloaded.json()["messages"][-1]["execution"]["artifacts"]["prompt_id"] == "job-1"
         messages = (
-            await db_session.execute(
-                select(Message).where(Message.agent_type == "image_generation")
+            (
+                await db_session.execute(
+                    select(Message).where(Message.agent_type == "image_generation")
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert len(messages) == 1
         assert json.loads(messages[0].execution_metadata)["artifacts"]["prompt_id"] == "job-1"
 
@@ -128,11 +164,13 @@ class TestSendMessage:
         )
         await db_session.commit()
 
-        assert await _resolve_uploaded_paths(["uploaded-note"], db=db_session) == [str(document_path)]
+        assert await _resolve_uploaded_paths(
+            ["uploaded-note"], LEGACY_ACCOUNT_ID, db=db_session
+        ) == [str(document_path)]
         from fastapi import HTTPException
 
         with pytest.raises(HTTPException) as error:
-            await _resolve_uploaded_paths([str(document_path)], db=db_session)
+            await _resolve_uploaded_paths([str(document_path)], LEGACY_ACCOUNT_ID, db=db_session)
         assert error.value.status_code == 404
 
     async def test_reuses_existing_conversation(
@@ -262,7 +300,12 @@ class TestSendMessageDirect:
         body = ChatMessageRequest(content="Direct test message")
 
         with patch("app.api.routes.chat.run_agent", new_callable=AsyncMock, return_value=result):
-            response = await send_message(request=self._mock_request(), body=body, db=db_session)
+            response = await send_message(
+                request=self._mock_request(),
+                body=body,
+                authenticated=_authenticated_principal(),
+                db=db_session,
+            )
 
         assert response.content == "Direct response"
         assert response.agent_used == "chat"
@@ -290,7 +333,12 @@ class TestSendMessageDirect:
         body = ChatMessageRequest(content="Search and calculate")
 
         with patch("app.api.routes.chat.run_agent", new_callable=AsyncMock, return_value=result):
-            response = await send_message(request=self._mock_request(), body=body, db=db_session)
+            response = await send_message(
+                request=self._mock_request(),
+                body=body,
+                authenticated=_authenticated_principal(),
+                db=db_session,
+            )
 
         assert response.content == "Combined result"
         assert response.agent_used == "web"
@@ -316,7 +364,12 @@ class TestSendMessageDirect:
             conversation_id=conv_id,
         )
         with patch("app.api.routes.chat.run_agent", new_callable=AsyncMock, return_value=result):
-            response = await send_message(request=self._mock_request(), body=body, db=db_session)
+            response = await send_message(
+                request=self._mock_request(),
+                body=body,
+                authenticated=_authenticated_principal(),
+                db=db_session,
+            )
 
         assert response.conversation_id == conv_id
         # Verify conversation title was updated
@@ -341,7 +394,12 @@ class TestSendMessageDirect:
 
         body = ChatMessageRequest(content="Follow up", conversation_id=conv_id)
         with patch("app.api.routes.chat.run_agent", new_callable=AsyncMock, return_value=result):
-            response = await send_message(request=self._mock_request(), body=body, db=db_session)
+            await send_message(
+                request=self._mock_request(),
+                body=body,
+                authenticated=_authenticated_principal(),
+                db=db_session,
+            )
 
         from sqlalchemy import select
 
@@ -359,7 +417,12 @@ class TestSendMessageDirect:
         body = ChatMessageRequest(content="Persist me")
 
         with patch("app.api.routes.chat.run_agent", new_callable=AsyncMock, return_value=result):
-            response = await send_message(request=self._mock_request(), body=body, db=db_session)
+            response = await send_message(
+                request=self._mock_request(),
+                body=body,
+                authenticated=_authenticated_principal(),
+                db=db_session,
+            )
 
         from sqlalchemy import select
 
@@ -391,7 +454,12 @@ class TestSendMessageDirect:
 
         mock_run = AsyncMock(return_value=result)
         with patch("app.api.routes.chat.run_agent", mock_run):
-            await send_message(request=self._mock_request(), body=body, db=db_session)
+            await send_message(
+                request=self._mock_request(),
+                body=body,
+                authenticated=_authenticated_principal(),
+                db=db_session,
+            )
 
         # Verify run_agent was called with existing_messages containing 2 prior messages
         call_kwargs = mock_run.call_args
@@ -444,7 +512,7 @@ class TestListConversationsDirect:
         db_session.add(Message(conversation_id="list-conv-1", role=MessageRole.USER, content="Hi"))
         await db_session.flush()
 
-        result = await list_conversations(db=db_session)
+        result = await list_conversations(authenticated=_authenticated_principal(), db=db_session)
         assert len(result) >= 1
         assert result[0].id == "list-conv-1"
         assert result[0].title == "Listed Chat"
@@ -458,7 +526,7 @@ class TestListConversationsDirect:
         db_session.add(conv)
         await db_session.flush()
 
-        result = await list_conversations(db=db_session)
+        result = await list_conversations(authenticated=_authenticated_principal(), db=db_session)
         assert len(result) == 1
         assert result[0].message_count == 0
         assert result[0].last_message_at == conv.created_at
@@ -474,7 +542,7 @@ class TestListConversationsDirect:
         db_session.add(c2)
         await db_session.flush()
 
-        result = await list_conversations(db=db_session)
+        result = await list_conversations(authenticated=_authenticated_principal(), db=db_session)
         assert len(result) == 2
         # Most recently created/updated should be first
         assert result[0].id == "ord-2"
@@ -543,7 +611,9 @@ class TestGetConversationDirect:
         db_session.add(tc)
         await db_session.flush()
 
-        result = await get_conversation(conversation_id="detail-tc", db=db_session)
+        result = await get_conversation(
+            conversation_id="detail-tc", authenticated=_authenticated_principal(), db=db_session
+        )
         assert result["id"] == "detail-tc"
         assert len(result["messages"]) == 1
         msg_data = result["messages"][0]
@@ -574,7 +644,9 @@ class TestGetConversationDirect:
         db_session.add(tc)
         await db_session.flush()
 
-        result = await get_conversation(conversation_id="null-ti", db=db_session)
+        result = await get_conversation(
+            conversation_id="null-ti", authenticated=_authenticated_principal(), db=db_session
+        )
         tc_data = result["messages"][0]["tool_calls"][0]
         assert tc_data["tool_output"] is None
 
@@ -584,7 +656,9 @@ class TestGetConversationDirect:
         from app.api.routes.chat import get_conversation
 
         with pytest.raises(NotFoundError):
-            await get_conversation(conversation_id="nope", db=db_session)
+            await get_conversation(
+                conversation_id="nope", authenticated=_authenticated_principal(), db=db_session
+            )
 
     async def test_get_conversation_timestamps(self, db_session: AsyncSession):
         """Verify created_at and updated_at are ISO-formatted strings."""
@@ -594,7 +668,9 @@ class TestGetConversationDirect:
         db_session.add(conv)
         await db_session.flush()
 
-        result = await get_conversation(conversation_id="ts-conv", db=db_session)
+        result = await get_conversation(
+            conversation_id="ts-conv", authenticated=_authenticated_principal(), db=db_session
+        )
         assert "T" in result["created_at"]  # ISO format
         assert "T" in result["updated_at"]
 
@@ -635,7 +711,9 @@ class TestDeleteConversationDirect:
         db_session.add(conv)
         await db_session.flush()
 
-        result = await delete_conversation(conversation_id="direct-del", db=db_session)
+        result = await delete_conversation(
+            conversation_id="direct-del", authenticated=_authenticated_principal(), db=db_session
+        )
         assert result["status"] == "deleted"
         assert result["conversation_id"] == "direct-del"
 
@@ -655,7 +733,9 @@ class TestDeleteConversationDirect:
         db_session.add(Message(conversation_id="cascade-del", role=MessageRole.USER, content="bye"))
         await db_session.flush()
 
-        result = await delete_conversation(conversation_id="cascade-del", db=db_session)
+        result = await delete_conversation(
+            conversation_id="cascade-del", authenticated=_authenticated_principal(), db=db_session
+        )
         assert result["status"] == "deleted"
 
     async def test_delete_conversation_not_found_raises(self, db_session: AsyncSession):
@@ -664,7 +744,9 @@ class TestDeleteConversationDirect:
         from app.api.routes.chat import delete_conversation
 
         with pytest.raises(NotFoundError):
-            await delete_conversation(conversation_id="ghost", db=db_session)
+            await delete_conversation(
+                conversation_id="ghost", authenticated=_authenticated_principal(), db=db_session
+            )
 
 
 # =============================================================================
@@ -679,7 +761,7 @@ class TestGetOrCreateConversation:
         """Creates a new conversation when none exists."""
         from app.api.routes.chat import _get_or_create_conversation
 
-        conv = await _get_or_create_conversation(db_session, "new-conv-id")
+        conv = await _get_or_create_conversation(db_session, "new-conv-id", LEGACY_ACCOUNT_ID)
         assert conv.id == "new-conv-id"
         assert conv.title == "New Conversation"
 
@@ -691,7 +773,7 @@ class TestGetOrCreateConversation:
         db_session.add(existing)
         await db_session.flush()
 
-        conv = await _get_or_create_conversation(db_session, "existing-conv")
+        conv = await _get_or_create_conversation(db_session, "existing-conv", LEGACY_ACCOUNT_ID)
         assert conv.id == "existing-conv"
         assert conv.title == "Already Here"
 
@@ -701,7 +783,7 @@ class TestGetOrCreateConversation:
 
         from app.api.routes.chat import _get_or_create_conversation
 
-        await _get_or_create_conversation(db_session, "persisted-conv")
+        await _get_or_create_conversation(db_session, "persisted-conv", LEGACY_ACCOUNT_ID)
 
         stmt = select(Conversation).where(Conversation.id == "persisted-conv")
         result = await db_session.execute(stmt)
@@ -747,7 +829,7 @@ class TestLoadLangchainMessages:
         """No prior messages returns empty list."""
         from app.api.routes.chat import _load_langchain_messages
 
-        result = await _load_langchain_messages(db_session, "nonexistent-conv")
+        result = await _load_langchain_messages(db_session, "nonexistent-conv", LEGACY_ACCOUNT_ID)
         assert result == []
 
     async def test_converts_messages_to_langchain_types(self, db_session: AsyncSession):
@@ -768,7 +850,7 @@ class TestLoadLangchainMessages:
         )
         await db_session.commit()
 
-        result = await _load_langchain_messages(db_session, "lc-conv")
+        result = await _load_langchain_messages(db_session, "lc-conv", LEGACY_ACCOUNT_ID)
         assert len(result) == 2
         assert isinstance(result[0], HumanMessage)
         assert isinstance(result[1], AIMessage)
@@ -792,7 +874,7 @@ class TestLoadLangchainMessages:
         )
         await db_session.commit()
 
-        result = await _load_langchain_messages(db_session, "sys-conv")
+        result = await _load_langchain_messages(db_session, "sys-conv", LEGACY_ACCOUNT_ID)
         assert len(result) == 1
         assert isinstance(result[0], SystemMessage)
         assert result[0].content == "You are a helpful assistant."
@@ -812,7 +894,7 @@ class TestLoadLangchainMessages:
         )
         await db_session.commit()
 
-        result = await _load_langchain_messages(db_session, "tool-conv")
+        result = await _load_langchain_messages(db_session, "tool-conv", LEGACY_ACCOUNT_ID)
         # Tool message should be skipped
         assert len(result) == 2
 
@@ -833,11 +915,13 @@ class TestWebSocketStream:
 
     def _make_test_client(self):
         """Build a Starlette TestClient with stream_agent mocked."""
+        from app.dependencies import get_websocket_session
         from starlette.testclient import TestClient
 
         from app.main import create_app
 
         app = create_app()
+        app.dependency_overrides[get_websocket_session] = lambda: _authenticated_principal()
         return TestClient(app), app
 
     def _patches(self):
@@ -1238,6 +1322,7 @@ class TestPersistWsMessages:
         ):
             await _persist_ws_messages(
                 conversation_id=conv_id,
+                owner_id=LEGACY_ACCOUNT_ID,
                 user_content="Hello from WS",
                 assistant_content="Hi back from WS",
                 agent_used="chat",
@@ -1274,6 +1359,7 @@ class TestPersistWsMessages:
         ):
             await _persist_ws_messages(
                 conversation_id=conv_id,
+                owner_id=LEGACY_ACCOUNT_ID,
                 user_content="query",
                 assistant_content="result",
                 agent_used="sql",
@@ -1308,6 +1394,7 @@ class TestPersistWsMessages:
         ):
             await _persist_ws_messages(
                 conversation_id=conv_id,
+                owner_id=LEGACY_ACCOUNT_ID,
                 user_content="What is the weather today?",
                 assistant_content="I can't check weather.",
                 agent_used="chat",
@@ -1332,6 +1419,7 @@ class TestPersistWsMessages:
         ):
             await _persist_ws_messages(
                 conversation_id=conv_id,
+                owner_id=LEGACY_ACCOUNT_ID,
                 user_content="hello",
                 assistant_content="",
                 agent_used=None,
@@ -1363,6 +1451,7 @@ class TestPersistWsMessages:
             # Should NOT raise
             await _persist_ws_messages(
                 conversation_id="fail-test",
+                owner_id=LEGACY_ACCOUNT_ID,
                 user_content="hello",
                 assistant_content="hi",
                 agent_used="chat",

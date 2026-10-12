@@ -9,9 +9,9 @@ Provides:
 from __future__ import annotations
 
 import os
-from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -40,7 +40,11 @@ os.environ.setdefault("RATE_LIMIT_EMBEDDING", "1000/minute")
 os.environ.setdefault("RATE_LIMIT_UPLOAD", "1000/minute")
 
 
-from app.models.db_models import Base
+from app.models.db_models import LEGACY_ACCOUNT_ID, Account, AccountSession, Base
+from app.services.auth import AuthenticatedSession
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
 
 
 # =============================================================================
@@ -73,7 +77,27 @@ async def db_session(async_engine: AsyncEngine) -> AsyncGenerator[AsyncSession, 
 
 
 @pytest.fixture
-async def app(async_engine: AsyncEngine):
+def authenticated_test_session() -> AuthenticatedSession:
+    """Return an in-memory principal shared by authenticated API tests."""
+    return AuthenticatedSession(
+        account=Account(
+            id=LEGACY_ACCOUNT_ID,
+            username="test-account",
+            display_name="Test Account",
+            password_hash="!test!",
+        ),
+        session=AccountSession(
+            id="test-session",
+            account_id=LEGACY_ACCOUNT_ID,
+            token_hash="0" * 64,
+            csrf_token="test-csrf-token",
+            expires_at=datetime.now(UTC),
+        ),
+    )
+
+
+@pytest.fixture
+async def app(async_engine: AsyncEngine, authenticated_test_session: AuthenticatedSession):
     """Create a FastAPI app with dependency overrides for testing."""
     from app.main import create_app
 
@@ -86,9 +110,11 @@ async def app(async_engine: AsyncEngine):
         async with factory() as session:
             yield session
 
-    from app.dependencies import get_db
+    from app.dependencies import get_authenticated_session, get_db, get_websocket_session
 
     test_app.dependency_overrides[get_db] = _override_get_db
+    test_app.dependency_overrides[get_authenticated_session] = lambda: authenticated_test_session
+    test_app.dependency_overrides[get_websocket_session] = lambda: authenticated_test_session
 
     return test_app
 
