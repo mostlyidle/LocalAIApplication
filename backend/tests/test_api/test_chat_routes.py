@@ -955,6 +955,90 @@ class TestLoadLangchainMessages:
         assert result[0].content == "latest answer"
         assert sum(len(message.content) for message in result) <= MAX_CONTEXT_CHARACTERS
 
+    async def test_older_turns_are_summarized_and_restored_into_context(
+        self, db_session: AsyncSession, monkeypatch
+    ):
+        from app.api.routes.chat import (
+            MAX_CONTEXT_MESSAGES,
+            MIN_UNSUMMARIZED_MESSAGES,
+            _load_langchain_messages,
+            _maybe_refresh_conversation_summary,
+        )
+
+        class FakeChatModel:
+            async def ainvoke(self, messages):
+                assert "untrusted data" in messages[0].content
+                return type("Response", (), {"content": "Discussed project scope."})()
+
+        monkeypatch.setattr(
+            "app.services.llm.llm_service.get_chat_model", lambda **_: FakeChatModel()
+        )
+        conv = Conversation(owner_id=LEGACY_ACCOUNT_ID, id="summary-conv", title="Summary")
+        start = datetime(2026, 1, 1, tzinfo=UTC)
+        total = MAX_CONTEXT_MESSAGES + MIN_UNSUMMARIZED_MESSAGES
+        db_session.add(conv)
+        db_session.add_all(
+            Message(
+                id=f"summary-message-{index:03}",
+                conversation_id=conv.id,
+                role=MessageRole.USER,
+                content=f"message {index}",
+                created_at=start + timedelta(seconds=index),
+            )
+            for index in range(total)
+        )
+        await db_session.commit()
+
+        await _maybe_refresh_conversation_summary(db_session, conv.id, LEGACY_ACCOUNT_ID)
+        await db_session.refresh(conv)
+        context = await _load_langchain_messages(db_session, conv.id, LEGACY_ACCOUNT_ID)
+
+        assert conv.summary == "Discussed project scope."
+        assert conv.summary_message_count == MIN_UNSUMMARIZED_MESSAGES
+        assert conv.summary_through_message_id == "summary-message-009"
+        assert conv.summary_revision == 1
+        assert context[0].content == "Earlier conversation summary for continuity:\nDiscussed project scope."
+        assert len(context) == MAX_CONTEXT_MESSAGES + 1
+
+    async def test_summary_failure_leaves_chat_history_available(
+        self, db_session: AsyncSession, monkeypatch
+    ):
+        from app.api.routes.chat import (
+            MAX_CONTEXT_MESSAGES,
+            MIN_UNSUMMARIZED_MESSAGES,
+            _load_langchain_messages,
+            _maybe_refresh_conversation_summary,
+        )
+
+        class FailingChatModel:
+            async def ainvoke(self, _messages):
+                raise RuntimeError("Ollama unavailable")
+
+        monkeypatch.setattr(
+            "app.services.llm.llm_service.get_chat_model", lambda **_: FailingChatModel()
+        )
+        conv = Conversation(owner_id=LEGACY_ACCOUNT_ID, id="summary-failure", title="Summary")
+        start = datetime(2026, 1, 1, tzinfo=UTC)
+        total = MAX_CONTEXT_MESSAGES + MIN_UNSUMMARIZED_MESSAGES
+        db_session.add(conv)
+        db_session.add_all(
+            Message(
+                id=f"failure-message-{index:03}",
+                conversation_id=conv.id,
+                role=MessageRole.USER,
+                content=f"message {index}",
+                created_at=start + timedelta(seconds=index),
+            )
+            for index in range(total)
+        )
+        await db_session.commit()
+
+        await _maybe_refresh_conversation_summary(db_session, conv.id, LEGACY_ACCOUNT_ID)
+        context = await _load_langchain_messages(db_session, conv.id, LEGACY_ACCOUNT_ID)
+
+        assert len(context) == MAX_CONTEXT_MESSAGES
+        assert context[-1].content == f"message {total - 1}"
+
 
 # =============================================================================
 # WebSocket /chat/stream (lines 143-185)

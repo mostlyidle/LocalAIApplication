@@ -81,6 +81,9 @@ def test_upgrade_quarantines_existing_records(
             column[1]
             for column in connection.execute(text("PRAGMA table_info(meeting_stream_tickets)"))
         }
+        conversation_columns = {
+            column[1] for column in connection.execute(text("PRAGMA table_info(conversations)"))
+        }
 
     assert account == 0
     assert rows == {
@@ -91,3 +94,9 @@ def test_upgrade_quarantines_existing_records(
     assert session.csrf_token == "!reauthentication-required!"
     assert session.revoked_at is not None
     assert {"token_hash", "meeting_id", "session_id", "expires_at"} <= ticket_columns
+    assert {
+        "summary",
+        "summary_through_message_id",
+        "summary_message_count",
+        "summary_revision",
+    } <= conversation_columns
