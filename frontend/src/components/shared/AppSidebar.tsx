@@ -10,6 +10,7 @@ import {
   Settings,
   Brain,
   Activity,
+  BrainCircuit,
 } from "lucide-react";
 import {
   Sidebar,
@@ -31,6 +32,7 @@ const navItems = [
   { title: "SQL Agent", href: "/sql", icon: Database },
   { title: "RAG Search", href: "/rag", icon: Search },
   { title: "Meetings", href: "/meetings", icon: Activity },
+  { title: "Memory", href: "/memory", icon: BrainCircuit },
   { title: "Settings", href: "/settings", icon: Settings },
 ];
 

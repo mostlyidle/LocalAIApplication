@@ -83,6 +83,45 @@ export const conversationDetailSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// Account memory
+// ---------------------------------------------------------------------------
+
+export const memorySchema = z.object({
+  id: z.string(),
+  kind: z.enum(["preference", "fact", "project_decision"]),
+  content: z.string(),
+  project_scope: z.string().nullable(),
+  source_conversation_id: z.string().nullable(),
+  source_message_id: z.string().nullable(),
+  origin_agent: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  expires_at: z.string().nullable(),
+  revision: z.number(),
+});
+
+export const memoryListSchema = z.object({
+  memories: z.array(memorySchema),
+  total: z.number(),
+  limit: z.number(),
+  offset: z.number(),
+});
+
+export const memorySettingsSchema = z.object({
+  memory_enabled: z.boolean(),
+  past_chat_recall_enabled: z.boolean(),
+});
+
+export const memoryDeleteAllSchema = z.object({
+  deleted_count: z.number(),
+  memory_epoch: z.number(),
+  past_chat_recall_enabled: z.boolean(),
+});
+
+export type MemoryRecord = z.infer<typeof memorySchema>;
+export type MemorySettings = z.infer<typeof memorySettingsSchema>;
+
+// ---------------------------------------------------------------------------
 // Documents
 // ---------------------------------------------------------------------------
 

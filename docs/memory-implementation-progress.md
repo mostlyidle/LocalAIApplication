@@ -57,19 +57,21 @@ Use this file to resume the approved implementation without repeating completed 
 - Live Ollama response was slow under CPU-only Docker, taking about 75 seconds for an 845-token context. This is an environment performance result; chat completed and the persisted continuity fact was correct.
 - Began Stage 3 with migration `20261012_13`, an account-owned SQL Memory model, user-submitted memory creation with optional owner-checked source links, paginated/searchable listing, revision-checked corrections/deletions, independent account settings, and delete-all epoch invalidation. Memory rows use a soft-delete marker so future retrieval can exclude them immediately while derived-index cleanup remains Stage 4 work.
 - Stage 3 backend slice verification: full backend suite passes (747 tests, including migration sequence), targeted Ruff lint/format pass, and `git diff --check` is clean. Qdrant compatibility warning remains because no Qdrant server is used in unit tests.
+- Added the authenticated Memory page at `/memory`, linked it from the app sidebar, and wired typed frontend API helpers for listing/searching, creating, revision-checked editing/deleting, independent settings, and deleting all saved memories. The page requires the user to write and submit exact memory text, shows project scope and source conversation IDs, and confirms destructive deletes.
+- Memory UI/API verification: focused page/sidebar tests pass (14 tests); API client tests pass (34 tests); full frontend suite passes (309 tests); TypeScript and the Next.js production build with webpack pass, and the build includes `/memory`; targeted ESLint has no errors (one existing unused test-mock parameter warning). An initial Turbopack build was blocked by sandbox process binding; webpack build completed successfully. An initial standalone TypeScript run overlapped Next.js type generation and saw a transient missing generated declaration; rerunning after the build passed.
 - The first `uv run` attempt could not reach PyPI to build the project environment. Reused the repository's existing `.venv` directly for the successful checks.
 - The implementation time estimate in the plan is explicitly non-binding and does not limit the scope or completion criteria.
 
 ## Not implemented yet
 
-- Stage 3 still needs a Memory page with “Remember this” review, edit/delete controls, settings, and shared bounded context for chat and selected profiles.
+- Stage 3 still needs “Remember this” review from chat messages and shared bounded context for chat and selected profiles. The new Memory page currently supports manual explicit creation and management.
 - Stage 4 still needs opt-in past-chat recall, an account-owned Qdrant index, durable outbox processing, source links, and deletion/restart recovery tests.
 - The built-in MCP server is intentionally operator-only and local stdio, with no authenticated remote adapter; the shared-user API does not expose these servers. Do not move MCP tools into user-facing agent execution without account-aware authorization.
 - No public hostname or reverse proxy was supplied, so TLS termination and live remote login/WebSocket behavior remain deployment checks rather than verified application behavior.
 
 ## Resume here
 
-1. Complete Stage 3 by building the account-owned Memory page and integrating approved memories into a separate bounded context for chat and selected profiles. Keep saved-memory and past-chat recall opt-ins independent and default-off.
+1. Complete Stage 3 by adding “Remember this” review to chat messages, then integrate approved memories into a separate bounded context for chat and selected profiles. Keep saved-memory and past-chat recall opt-ins independent and default-off.
 2. Then implement Stage 4 past-chat recall with the SQL source as authority, a Qdrant index, durable outbox/retry handling, and source/deletion safeguards.
 3. Before remote use, configure the public HTTPS hostname, TLS proxy, allowed origins, and direct chat WebSocket route as documented in the README; keep all infrastructure and backend ports private. Keep built-in MCP tools operator-only local stdio; the configured `default` SQL connection remains explicitly shared.
 
