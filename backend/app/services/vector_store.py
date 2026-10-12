@@ -86,7 +86,11 @@ class VectorStoreService:
                         "or re-ingest into a new collection for the selected model."
                     )
             elif not tagged:
-                collection.modify(metadata={**stored, **metadata})
+                # Chroma rejects hnsw:space in updates; the stored index keeps its metric.
+                collection.modify(metadata={
+                    key: value for key, value in {**stored, **metadata}.items()
+                    if key != "hnsw:space"
+                })
         return collection
 
     async def add_documents(
