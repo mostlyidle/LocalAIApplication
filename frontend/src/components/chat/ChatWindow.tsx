@@ -603,7 +603,7 @@ export function ChatWindow() {
             value={selectedAgent}
             onChange={(event) => { setSelectedAgent(event.target.value); setProfileError(""); }}
             disabled={isStreaming}
-            className="h-11 max-w-full rounded-xl border border-input bg-card px-3 text-sm"
+            className="h-11 max-w-full rounded-xl border border-input bg-card px-3 text-base sm:text-sm"
           >
             <option value="auto">Auto select</option>
             {agents.map((agent) => (
@@ -621,7 +621,7 @@ export function ChatWindow() {
                 value={selectedModel}
                 onChange={(event) => setSelectedModel(event.target.value)}
                 disabled={isStreaming}
-                className="h-11 max-w-full rounded-xl border border-input bg-card px-3 text-sm sm:max-w-52"
+                className="h-11 max-w-full rounded-xl border border-input bg-card px-3 text-base sm:text-sm sm:max-w-52"
               >
                 {selectedProfile.inference.allowed_models.map((model) => {
                   const available = selectedProfile.model_availability?.[model];
@@ -642,27 +642,27 @@ export function ChatWindow() {
                 value={temperature}
                 onChange={(event) => setTemperature(Number(event.target.value))}
                 disabled={isStreaming}
-                className="h-11 w-20 rounded-xl border border-input bg-card px-3 text-sm"
+                className="h-11 w-20 rounded-xl border border-input bg-card px-3 text-base sm:text-sm"
               />
             </>
           )}
           {selectedProfile?.target === "rag" && (
-            <label className="flex flex-col gap-1 text-xs text-muted-foreground">Collection<input aria-label="RAG collection" value={collection} onChange={(event) => setCollection(event.target.value)} placeholder="Collection" className="h-11 w-36 rounded-xl border border-input bg-card px-3 text-sm text-foreground" /></label>
+            <label className="flex flex-col gap-1 text-xs text-muted-foreground">Collection<input aria-label="RAG collection" value={collection} onChange={(event) => setCollection(event.target.value)} placeholder="Collection" className="h-11 w-36 rounded-xl border border-input bg-card px-3 text-base sm:text-sm text-foreground" /></label>
           )}
           {selectedProfile?.target === "stock_research" && (
             <>
-              <label className="flex flex-col gap-1 text-xs text-muted-foreground">Ticker symbol<input aria-label="Ticker symbol" value={symbol} onChange={(event) => setSymbol(event.target.value)} placeholder="e.g. AAPL" className="h-11 w-36 rounded-xl border border-input bg-card px-3 text-sm text-foreground" /></label>
-              <label className="flex min-w-36 flex-1 flex-col gap-1 text-xs text-muted-foreground">Research context (optional)<input aria-label="Research context" value={context} onChange={(event) => setContext(event.target.value)} placeholder="Add a little context" className="h-11 w-full rounded-xl border border-input bg-card px-3 text-sm text-foreground" /></label>
+              <label className="flex flex-col gap-1 text-xs text-muted-foreground">Ticker symbol<input aria-label="Ticker symbol" value={symbol} onChange={(event) => setSymbol(event.target.value)} placeholder="e.g. AAPL" className="h-11 w-36 rounded-xl border border-input bg-card px-3 text-base sm:text-sm text-foreground" /></label>
+              <label className="flex min-w-36 flex-1 flex-col gap-1 text-xs text-muted-foreground">Research context (optional)<input aria-label="Research context" value={context} onChange={(event) => setContext(event.target.value)} placeholder="Add a little context" className="h-11 w-full rounded-xl border border-input bg-card px-3 text-base sm:text-sm text-foreground" /></label>
             </>
           )}
           {selectedProfile?.target === "software_engineer" && (
-            <label className="flex min-w-48 flex-1 flex-col gap-1 text-xs text-muted-foreground">Workspace path (optional)<input aria-label="Workspace path" value={workspacePath} onChange={(event) => setWorkspacePath(event.target.value)} placeholder="Workspace subpath" className="h-11 w-full rounded-xl border border-input bg-card px-3 text-sm text-foreground" /></label>
+            <label className="flex min-w-48 flex-1 flex-col gap-1 text-xs text-muted-foreground">Workspace path (optional)<input aria-label="Workspace path" value={workspacePath} onChange={(event) => setWorkspacePath(event.target.value)} placeholder="Workspace subpath" className="h-11 w-full rounded-xl border border-input bg-card px-3 text-base sm:text-sm text-foreground" /></label>
           )}
           {selectedProfile?.name === "document_analytics" && (
-            <label className="flex min-w-48 flex-1 flex-col gap-1 text-xs text-muted-foreground">Document context (optional)<input aria-label="Document context" value={context} onChange={(event) => setContext(event.target.value)} placeholder="Add a little context" className="h-11 w-full rounded-xl border border-input bg-card px-3 text-sm text-foreground" /></label>
+            <label className="flex min-w-48 flex-1 flex-col gap-1 text-xs text-muted-foreground">Document context (optional)<input aria-label="Document context" value={context} onChange={(event) => setContext(event.target.value)} placeholder="Add a little context" className="h-11 w-full rounded-xl border border-input bg-card px-3 text-base sm:text-sm text-foreground" /></label>
           )}
           {selectedProfile?.target === "image_generation" && (
-            <label className="flex min-w-48 flex-1 flex-col gap-1 text-xs text-muted-foreground">ComfyUI workflow<textarea aria-label="ComfyUI workflow" value={workflowText} onChange={(event) => setWorkflowText(event.target.value)} placeholder="Paste exported ComfyUI API workflow JSON" rows={2} className="min-h-11 w-full rounded-xl border border-input bg-card px-3 py-2 text-sm text-foreground" /></label>
+            <label className="flex min-w-48 flex-1 flex-col gap-1 text-xs text-muted-foreground">ComfyUI workflow<textarea aria-label="ComfyUI workflow" value={workflowText} onChange={(event) => setWorkflowText(event.target.value)} placeholder="Paste exported ComfyUI API workflow JSON" rows={2} className="min-h-11 w-full rounded-xl border border-input bg-card px-3 py-2 text-base sm:text-sm text-foreground" /></label>
           )}
         </div>
         {selectedProfile && <p className="mx-auto mb-3 max-w-3xl text-xs leading-relaxed text-muted-foreground">{selectedProfile.description}</p>}
@@ -682,7 +682,7 @@ export function ChatWindow() {
                 ? "Describe what to do with the attached file(s)..."
                 : "Type a message... (Shift+Enter for new line)"
             }
-            className="min-h-14 max-h-32 resize-none rounded-xl border-0 bg-transparent px-1 text-base shadow-none focus-visible:ring-0"
+            className="min-h-14 max-h-32 resize-none rounded-xl border-0 bg-transparent px-1 text-base shadow-none focus-visible:ring-2 focus-visible:ring-ring"
             rows={2}
             disabled={isStreaming || restoringConversation}
           />
