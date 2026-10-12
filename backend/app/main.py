@@ -50,12 +50,24 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     from app.agents.registry import AgentRegistry
     from app.prompt_store import PromptStore
+    from app.services.comfyui import ComfyUIClient
+    from app.services.market_data import FinnhubMarketDataClient
     from app.services.task_runner import TaskRunner
 
     profile_dir = Path(__file__).parent / "prompts"
     prompts = PromptStore(profile_dir)
     app.state.agent_registry = AgentRegistry(profile_dir, prompts)
-    app.state.task_runner = TaskRunner(app.state.agent_registry, prompts)
+    app.state.market_data = FinnhubMarketDataClient(
+        api_key=settings.finnhub_api_key,
+        cache_seconds=settings.market_data_cache_seconds,
+    )
+    app.state.comfyui = ComfyUIClient(settings.comfyui_url)
+    app.state.task_runner = TaskRunner(
+        app.state.agent_registry,
+        prompts,
+        market_data=app.state.market_data,
+        comfyui=app.state.comfyui,
+    )
 
     # Ensure data directories exist
     Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
@@ -88,6 +100,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     from app.services.hybrid_vector_store import hybrid_vector_store_service
 
     await mcp_client.close()
+    await app.state.market_data.close()
+    await app.state.comfyui.close()
     await hybrid_vector_store_service.close()
     await close_all_sql_engines()
     await close_app_db()
