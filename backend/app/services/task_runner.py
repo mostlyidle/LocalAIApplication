@@ -20,7 +20,7 @@ from app.services.document_parser import DocumentParserService
 from app.services.images import ImageInspectionError, inspect_image, manipulation_signals
 from app.services.llm import llm_service
 from app.services.market_data import MarketDataError
-from app.services.workspace import WorkspaceInputError, read_workspace
+from app.services.workspace import WorkspaceInputError, account_workspace_root, read_workspace
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -78,7 +78,7 @@ class TaskRunner:
             elif target == "image_generation":
                 result = await self._image_generation(request, execution)
             elif target == "software_engineer":
-                result = await self._software_review(request, execution)
+                result = await self._software_review(request, execution, owner_id=owner_id)
             else:
                 raise HTTPException(
                     status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -294,11 +294,12 @@ class TaskRunner:
         )
 
     async def _software_review(
-        self, request: TaskRequest, execution: AgentExecution
+        self, request: TaskRequest, execution: AgentExecution, *, owner_id: str | None
     ) -> AgentResult:
         try:
+            workspace_root = account_workspace_root(settings.agent_workspace_root, owner_id)
             workspace, sources = await asyncio.to_thread(
-                read_workspace, settings.agent_workspace_root, request.workspace_path
+                read_workspace, workspace_root, request.workspace_path
             )
         except WorkspaceInputError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
