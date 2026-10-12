@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
+import asyncio
 import sys
+import threading
 import types
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock
 
 import pytest
 
 from app.api.middleware.error_handler import DocumentParseError
 from app.services.document_parser import DocumentParserService, ParsedDocument
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def test_chunk_pages_keep_provenance() -> None:
@@ -110,6 +117,53 @@ async def test_convert_maps_text_tables_and_citations(conversion: MagicMock) -> 
 
 
 async def test_partial_conversion_is_not_silently_ingested(conversion: MagicMock) -> None:
+    parser = DocumentParserService()
     conversion.convert.return_value.status = "partial_success"
     with pytest.raises(DocumentParseError, match="completely"):
-        await DocumentParserService()._parse_pdf(Path("report.pdf"))
+        await parser._parse_pdf(Path("report.pdf"))
+    conversion.convert.return_value.status = "success"
+    assert (await parser._parse_pdf(Path("report.pdf"))).page_count == 2
+
+
+@pytest.mark.parametrize("cancel", [None, "running", "queued"])
+async def test_queued_conversions_leave_workers_available(
+    conversion: MagicMock, monkeypatch: pytest.MonkeyPatch, cancel: str | None
+) -> None:
+    loop = asyncio.get_running_loop()
+    started = asyncio.Event()
+    release = threading.Event()
+    result = conversion.convert.return_value
+
+    def slow_convert(*args: object, **kwargs: object) -> object:
+        loop.call_soon_threadsafe(started.set)
+        if not release.wait(5):
+            raise TimeoutError("Test conversion was not released")
+        return result
+
+    conversion.convert.side_effect = slow_convert
+    pool = ThreadPoolExecutor(max_workers=2)
+
+    async def run_in_pool(function: Callable[[], ParsedDocument]) -> ParsedDocument:
+        return await loop.run_in_executor(pool, function)
+
+    monkeypatch.setattr("app.services.document_parser.asyncio.to_thread", run_in_pool)
+    parser = DocumentParserService()
+    first = asyncio.create_task(parser._parse_pdf(Path("first.pdf")))
+    second = None
+    try:
+        await asyncio.wait_for(started.wait(), timeout=1)
+        second = asyncio.create_task(parser._parse_pdf(Path("second.pdf")))
+        await asyncio.sleep(0)
+        if cancel is not None:
+            cancelled = first if cancel == "running" else second
+            cancelled.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await cancelled
+        probe = loop.run_in_executor(pool, lambda: "worker available")
+        assert await asyncio.wait_for(probe, timeout=1) == "worker available"
+        assert conversion.convert.call_count == 1
+    finally:
+        release.set()
+        await asyncio.gather(first, *([second] if second is not None else []), return_exceptions=True)
+        pool.shutdown(wait=True)
+    assert conversion.convert.call_count == (1 if cancel == "queued" else 2)
