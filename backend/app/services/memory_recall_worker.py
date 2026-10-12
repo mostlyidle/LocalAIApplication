@@ -16,6 +16,7 @@ from app.models.db_models import (
     Conversation,
     ConversationRecallSummary,
     MemoryOutboxJob,
+    MemoryVectorCleanupJob,
     Message,
 )
 
@@ -69,24 +70,42 @@ async def process_one_recall_job(
         await _finish_job(db, job_id, "skipped", "source_not_eligible")
         return True
 
-    transcript = await _load_bounded_transcript(db, conversation.id, source)
-    if not transcript:
-        await _finish_job(db, job_id, "skipped", "empty_source")
-        return True
-    if any(pattern.search(transcript) for pattern in _SECRET_PATTERNS):
-        await _finish_job(db, job_id, "skipped", "sensitive_content_filtered")
-        return True
-
-    try:
-        summary_text = await asyncio.wait_for(
-            (summarize or _summarize_with_local_model)(transcript), timeout=150
+    current = await db.scalar(
+        select(ConversationRecallSummary).where(
+            ConversationRecallSummary.conversation_id == conversation.id
         )
-        summary_text = summary_text.strip()[:MAX_SUMMARY_CHARS]
-        if not summary_text:
-            raise ValueError("summarizer returned an empty summary")
-    except Exception as exc:
-        await _retry_or_fail(db, job_id, type(exc).__name__)
-        return True
+    )
+    summary_text = None
+    if current is not None and current.memory_epoch == job.memory_epoch:
+        current_source = await db.get(Message, current.source_message_id)
+        if current_source is not None and (current_source.created_at, current_source.id) >= (
+            source.created_at,
+            source.id,
+        ):
+            # A prior attempt may have saved SQL but failed to index Qdrant.
+            # Reuse that source of truth and retry only the missing index write.
+            summary_text = current.content
+            source = current_source
+
+    if summary_text is None:
+        transcript = await _load_bounded_transcript(db, conversation.id, source)
+        if not transcript:
+            await _finish_job(db, job_id, "skipped", "empty_source")
+            return True
+        if any(pattern.search(transcript) for pattern in _SECRET_PATTERNS):
+            await _finish_job(db, job_id, "skipped", "sensitive_content_filtered")
+            return True
+
+        try:
+            summary_text = await asyncio.wait_for(
+                (summarize or _summarize_with_local_model)(transcript), timeout=150
+            )
+            summary_text = summary_text.strip()[:MAX_SUMMARY_CHARS]
+            if not summary_text:
+                raise ValueError("summarizer returned an empty summary")
+        except Exception as exc:
+            await _retry_or_fail(db, job_id, type(exc).__name__)
+            return True
 
     # Recheck consent and ownership after inference; settings may change while
     # the local model is processing the transcript.
@@ -114,20 +133,13 @@ async def process_one_recall_job(
         )
     )
     if current is not None:
-        current_source = await db.get(Message, current.source_message_id)
-        if (
-            current.memory_epoch == job.memory_epoch
-            and current_source is not None
-            and (current_source.created_at, current_source.id) >= (source.created_at, source.id)
-        ):
-            await _finish_job(db, job_id, "done", None)
-            return True
-        current.owner_id = job.owner_id
-        current.source_message_id = source.id
-        current.memory_epoch = job.memory_epoch
-        current.revision += 1
-        current.content = summary_text
-        current.updated_at = datetime.now(UTC)
+        if current.source_message_id != source.id or current.memory_epoch != job.memory_epoch:
+            current.owner_id = job.owner_id
+            current.source_message_id = source.id
+            current.memory_epoch = job.memory_epoch
+            current.revision += 1
+            current.content = summary_text
+            current.updated_at = datetime.now(UTC)
     else:
         db.add(
             ConversationRecallSummary(
@@ -138,11 +150,28 @@ async def process_one_recall_job(
                 content=summary_text,
             )
         )
-    job.status = "done"
-    job.lease_until = None
-    job.last_error = None
+        await db.flush()
+        current = await db.scalar(
+            select(ConversationRecallSummary).where(
+                ConversationRecallSummary.conversation_id == conversation.id
+            )
+        )
     await db.commit()
-    logger.info("memory_recall_summary_saved", job_id=job_id, conversation_id=conversation.id)
+    if current is None:
+        await _retry_or_fail(db, job_id, "SummaryNotPersisted")
+        return True
+    try:
+        from app.services.memory_vector_index import memory_vector_index
+
+        indexed = await memory_vector_index.upsert_summary(db, current)
+    except Exception as exc:
+        await _retry_or_fail(db, job_id, type(exc).__name__)
+        return True
+    if not indexed:
+        await _finish_job(db, job_id, "skipped", "consent_changed_before_index")
+        return True
+    await _finish_job(db, job_id, "done", None)
+    logger.info("memory_recall_summary_indexed", job_id=job_id, conversation_id=conversation.id)
     return True
 
 
@@ -154,7 +183,9 @@ async def run_recall_worker(stop_event: asyncio.Event, *, poll_seconds: float = 
         processed = False
         try:
             async with get_app_session_factory()() as db:
-                processed = await process_one_recall_job(db)
+                processed = await process_one_vector_cleanup_job(db)
+                if not processed:
+                    processed = await process_one_recall_job(db)
         except Exception as exc:
             logger.warning("memory_recall_worker_iteration_failed", error_type=type(exc).__name__)
 
@@ -162,6 +193,106 @@ async def run_recall_worker(stop_event: asyncio.Event, *, poll_seconds: float = 
             continue
         with suppress(TimeoutError):
             await asyncio.wait_for(stop_event.wait(), timeout=poll_seconds)
+
+
+async def process_one_vector_cleanup_job(db: AsyncSession) -> bool:
+    """Delete one owner's or conversation's derived vectors from Qdrant."""
+    job_id = await _claim_cleanup_job(db)
+    if job_id is None:
+        return False
+    job = await db.get(MemoryVectorCleanupJob, job_id)
+    if job is None:
+        return True
+    try:
+        from app.services.memory_vector_index import memory_vector_index
+
+        if job.conversation_id is None:
+            await memory_vector_index.delete_owner(job.owner_id)
+        else:
+            await memory_vector_index.delete_conversation(job.owner_id, job.conversation_id)
+    except Exception as exc:
+        await _retry_cleanup_or_fail(db, job_id, type(exc).__name__)
+        return True
+
+    job = await db.get(MemoryVectorCleanupJob, job_id, populate_existing=True)
+    if job is not None:
+        job.status = "done"
+        job.lease_until = None
+        job.last_error = None
+        await db.commit()
+    return True
+
+
+async def _claim_cleanup_job(db: AsyncSession) -> str | None:
+    now = datetime.now(UTC)
+    candidate = await db.scalar(
+        select(MemoryVectorCleanupJob)
+        .where(
+            or_(
+                and_(
+                    MemoryVectorCleanupJob.status == "pending",
+                    MemoryVectorCleanupJob.available_at <= now,
+                ),
+                and_(
+                    MemoryVectorCleanupJob.status == "processing",
+                    MemoryVectorCleanupJob.lease_until <= now,
+                ),
+            )
+        )
+        .order_by(MemoryVectorCleanupJob.available_at, MemoryVectorCleanupJob.id)
+        .limit(1)
+        .with_for_update(skip_locked=True)
+    )
+    if candidate is None:
+        return None
+    claimable = (
+        and_(
+            MemoryVectorCleanupJob.status == "pending",
+            MemoryVectorCleanupJob.available_at <= now,
+        )
+        if candidate.status == "pending"
+        else and_(
+            MemoryVectorCleanupJob.status == "processing",
+            MemoryVectorCleanupJob.lease_until <= now,
+        )
+    )
+    result = await db.execute(
+        update(MemoryVectorCleanupJob)
+        .where(MemoryVectorCleanupJob.id == candidate.id, claimable)
+        .values(
+            status="processing",
+            attempts=MemoryVectorCleanupJob.attempts + 1,
+            lease_until=now + timedelta(seconds=LEASE_SECONDS),
+            last_error=None,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if result.rowcount != 1:
+        await db.rollback()
+        return None
+    await db.commit()
+    await db.refresh(candidate)
+    return candidate.id
+
+
+async def _retry_cleanup_or_fail(db: AsyncSession, job_id: str, error_type: str) -> None:
+    job = await db.get(MemoryVectorCleanupJob, job_id, populate_existing=True)
+    if job is None:
+        return
+    if job.attempts >= MAX_ATTEMPTS:
+        job.status = "failed"
+        job.last_error = error_type[:80]
+        job.lease_until = None
+    else:
+        delay = min(15 * (2 ** (job.attempts - 1)), 1_800)
+        job.status = "pending"
+        job.available_at = datetime.now(UTC) + timedelta(seconds=delay)
+        job.last_error = error_type[:80]
+        job.lease_until = None
+    await db.commit()
+    logger.warning(
+        "memory_vector_cleanup_retry", job_id=job_id, status=job.status, error_type=error_type
+    )
 
 
 async def _claim_job(db: AsyncSession) -> str | None:

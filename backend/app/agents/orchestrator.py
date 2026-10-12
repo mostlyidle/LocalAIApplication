@@ -300,7 +300,11 @@ async def run_agent(
     if owner_id:
         from app.services.memory_context import load_account_memory_context
 
-        state["memory_context"] = await load_account_memory_context(owner_id)
+        state["memory_context"] = await load_account_memory_context(
+            owner_id,
+            query=user_input,
+            exclude_conversation_id=conversation_id,
+        )
     if forced_agent:
         state["forced_agent"] = forced_agent
 
@@ -348,7 +352,11 @@ async def stream_agent(
     if owner_id:
         from app.services.memory_context import load_account_memory_context
 
-        state["memory_context"] = await load_account_memory_context(owner_id)
+        state["memory_context"] = await load_account_memory_context(
+            owner_id,
+            query=user_input,
+            exclude_conversation_id=conversation_id,
+        )
     if forced_agent:
         state["forced_agent"] = forced_agent
 
