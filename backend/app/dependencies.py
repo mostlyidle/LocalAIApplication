@@ -21,6 +21,8 @@ from app.services.auth import (
 from app.services.database import get_app_session
 from app.services.meetings import MeetingService, meeting_service
 
+WEBSOCKET_SESSION_RECHECK_SECONDS = 60
+
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """Provide an async database session for the application DB."""
@@ -66,6 +68,16 @@ async def get_websocket_session(
     if authenticated is None:
         raise WebSocketException(code=4401, reason="Authentication required.")
     return authenticated
+
+
+async def websocket_session_is_active(websocket: WebSocket, session_id: str) -> bool:
+    """Recheck a long-lived WebSocket's session using a short-lived DB session."""
+    from app.services.database import get_app_session_factory
+
+    factory = get_app_session_factory()
+    async with factory() as db:
+        authenticated = await resolve_session(db, websocket.cookies.get(SESSION_COOKIE))
+    return authenticated is not None and authenticated.session.id == session_id
 
 
 def get_llm() -> LLMService:
