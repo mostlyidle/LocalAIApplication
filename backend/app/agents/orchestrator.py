@@ -82,6 +82,9 @@ async def classify_intent(state: AgentState) -> dict[str, Any]:
     """
     user_input = state.get("user_input", "")
     attachments = state.get("attachments", [])
+    forced_agent = state.get("forced_agent")
+    if forced_agent in VALID_AGENTS:
+        return {"next_agent": forced_agent, "current_agent": "orchestrator"}
 
     logger.info(
         "classifying_intent",
@@ -267,6 +270,7 @@ async def run_agent(
     conversation_id: str,
     attachments: list[str] | None = None,
     existing_messages: list | None = None,
+    forced_agent: str | None = None,
 ) -> AgentState:
     """Run the full orchestrator pipeline for a user message.
 
@@ -289,6 +293,8 @@ async def run_agent(
         conversation_id=conversation_id,
         attachments=attachments,
     )
+    if forced_agent:
+        state["forced_agent"] = forced_agent
 
     # Inject conversation history if provided
     if existing_messages:
@@ -306,6 +312,7 @@ async def stream_agent(
     conversation_id: str,
     attachments: list[str] | None = None,
     existing_messages: list | None = None,
+    forced_agent: str | None = None,
 ):
     """Stream events from the orchestrator graph for real-time UI updates.
 
@@ -328,6 +335,8 @@ async def stream_agent(
         conversation_id=conversation_id,
         attachments=attachments,
     )
+    if forced_agent:
+        state["forced_agent"] = forced_agent
 
     if existing_messages:
         state["messages"] = list(existing_messages)

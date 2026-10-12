@@ -60,6 +60,8 @@ class TaskRunner:
             result = await self._image_fraud(execution, document)
         elif target == "document":
             result = await self._document_analysis(request, execution, document)
+        elif target == "rag":
+            result = await self._rag_answer(request, execution)
         elif target == "stock_research":
             result = await self._stock_research(request, execution, document)
         elif target == "image_generation":
@@ -196,6 +198,65 @@ class TaskRunner:
         )
         return AgentResult(agent=execution.profile.name, answer=answer, artifacts=artifacts)
 
+    async def _rag_answer(
+        self, request: TaskRequest, execution: AgentExecution
+    ) -> AgentResult:
+        from app.services.hybrid_vector_store import hybrid_vector_store_service
+
+        try:
+            search = await hybrid_vector_store_service.search_with_provenance(
+                query=request.prompt,
+                collection=request.collection,
+                top_k=settings.rag_top_k,
+                agent_name=execution.profile.name,
+            )
+        except (ValueError, RuntimeError) as exc:
+            raise HTTPException(status_code=503, detail=f"Hybrid retrieval failed: {exc}") from exc
+        passages = search.passages
+        if not passages:
+            return AgentResult(
+                agent=execution.profile.name,
+                answer="I could not find relevant evidence in the selected collection.",
+                artifacts={"citations": [], "retrieval": search.retrieval},
+                limitations=["No supporting passages were retrieved."],
+            )
+        citation_rows = []
+        prompt_rows = []
+        for passage in passages:
+            metadata = passage.get("metadata", {})
+            citation = {
+                key: metadata.get(key)
+                for key in (
+                    "filename",
+                    "source",
+                    "page",
+                    "page_start",
+                    "page_end",
+                    "section",
+                    "document_id",
+                    "source_chunk_id",
+                )
+                if metadata.get(key) is not None
+            }
+            citation["score"] = passage.get("score")
+            citation["score_type"] = passage.get("score_type")
+            citation_rows.append(citation)
+            source = citation.get("filename") or citation.get("source") or citation.get("document_id") or "Unknown"
+            location = f", Page {citation['page']}" if citation.get("page") is not None else ""
+            chunk_id = citation.get("source_chunk_id") or citation.get("document_id")
+            prompt_rows.append(
+                f"[Source: {source}{location}; chunk: {chunk_id}]\n{passage.get('content', '')}"
+            )
+        answer = await self._answer(
+            execution,
+            prompt_values={"prompt": request.prompt, "passages": "\n\n".join(prompt_rows)},
+        )
+        return AgentResult(
+            agent=execution.profile.name,
+            answer=answer,
+            artifacts={"citations": citation_rows, "retrieval": search.retrieval},
+        )
+
     async def _stock_research(
         self, request: TaskRequest, execution: AgentExecution, document: Document | None
     ) -> AgentResult:
@@ -306,15 +367,16 @@ class TaskRunner:
                     "image_url": f"data:image/{mime};base64,{image_data}",
                 },
             ]
-        model = llm_service.get_chat_model(
-            model=inference.model,
-            temperature=inference.temperature,
-            max_tokens=inference.max_output_tokens,
-            num_ctx=inference.context_window,
-        )
-        response = await model.ainvoke(
-            [SystemMessage(content=system), HumanMessage(content=human_content)]
-        )
+        with llm_service.inference_context(inference):
+            model = llm_service.get_chat_model(
+                model=inference.model,
+                temperature=inference.temperature,
+                max_tokens=inference.max_output_tokens,
+                num_ctx=inference.context_window,
+            )
+            response = await model.ainvoke(
+                [SystemMessage(content=system), HumanMessage(content=human_content)]
+            )
         return str(response.content)
 
     @staticmethod

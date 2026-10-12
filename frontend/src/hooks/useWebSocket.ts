@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { WS_CHAT } from "@/lib/constants";
 import type { StreamEvent } from "@/types/chat";
+import type { ChatTaskOptions } from "@/types/chat";
 
 interface UseWebSocketOptions {
   onToken?: (token: string) => void;
@@ -136,9 +137,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   }, [clearReconnectTimer, clearPendingMessage]);
 
   const sendMessage = useCallback(
-    (content: string, attachments: string[] = [], conversationId?: string) => {
+    (content: string, attachments: string[] = [], conversationId?: string, taskOptions?: ChatTaskOptions) => {
       const payload = JSON.stringify({
         type: "message", content, attachments, conversation_id: conversationId,
+        ...taskOptions,
       });
       if (streamingRef.current) return;
       streamingRef.current = true;
