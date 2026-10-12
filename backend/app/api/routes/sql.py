@@ -16,14 +16,16 @@ import uuid
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy.ext.asyncio import AsyncSession  # noqa: TC002 - FastAPI resolves this at runtime
 
 from app.agents.sql_agent import sql_agent_node
 from app.agents.state import create_initial_state
-from app.api.middleware.error_handler import InputValidationError
+from app.api.middleware.error_handler import InputValidationError, NotFoundError
 from app.api.middleware.rate_limiting import limiter
 from app.config import settings
-from app.dependencies import get_authenticated_session
+from app.dependencies import get_authenticated_session, get_db
+from app.models.db_models import SqlConnection
 from app.models.schemas import (
     DatabaseConnectionRequest,
     DatabaseSchema,
@@ -32,6 +34,7 @@ from app.models.schemas import (
     SQLQueryResult,
 )
 from app.services.auth import AuthenticatedSession  # noqa: TC001
+from app.services.sql_access import sql_connection_access
 from app.tools.sql_tools import (
     execute_query,
     introspect_schema,
@@ -52,12 +55,14 @@ router = APIRouter()
 async def natural_language_query(
     request: Request,
     body: SQLQueryRequest,
-    _authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> SQLQueryResult:
     """Convert a natural language question to SQL, execute, and return results.
 
     Invokes the SQL specialist directly with the selected database connection.
     """
+    await _require_sql_connection(db, body.database, authenticated.account.id)
     start_time = time.perf_counter()
 
     # This endpoint is explicitly SQL; the user's selected connection is authoritative.
@@ -114,12 +119,14 @@ async def natural_language_query(
 async def execute_raw_query(
     request: Request,
     body: SQLExecuteRequest,
-    _authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> dict[str, Any]:
     """Execute a raw SQL query (validated for safety) and return results.
 
     Only SELECT queries are allowed unless write mode is explicitly enabled.
     """
+    await _require_sql_connection(db, body.database, authenticated.account.id)
     start_time = time.perf_counter()
 
     try:
@@ -151,9 +158,11 @@ async def execute_raw_query(
 @router.get("/sql/schema", response_model=DatabaseSchema)
 async def get_schema(
     database: str = "default",
-    _authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> DatabaseSchema:
     """Get the schema of the target database including tables, columns, and types."""
+    await _require_sql_connection(db, database, authenticated.account.id)
     try:
         schema = await introspect_schema(database=database)
     except Exception as exc:
@@ -189,14 +198,30 @@ async def get_schema(
 @router.post("/sql/connections")
 async def register_connection(
     request: DatabaseConnectionRequest,
-    _authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> dict[str, str]:
     """Register a new database connection for the SQL agent.
 
     The connection URL is stored in the engine cache. To persist across
     restarts, update the environment configuration.
     """
-    from app.services.database import get_sql_engine
+    if request.name == "default":
+        raise HTTPException(status_code=409, detail="The configured default connection is shared.")
+    from app.services.database import _sql_engines, get_sql_engine
+
+    existing = await db.get(SqlConnection, request.name)
+    access = await sql_connection_access(
+        db,
+        name=request.name,
+        owner_id=authenticated.account.id,
+        reserve=True,
+        require_active=False,
+    )
+    if access in {"foreign", "unassigned"}:
+        raise NotFoundError("SQL connection", request.name)
+    if existing is not None and request.name in _sql_engines:
+        raise HTTPException(status_code=409, detail="Choose a new name for this SQL connection.")
 
     try:
         get_sql_engine(database_url=request.url, name=request.name)
@@ -216,20 +241,35 @@ async def register_connection(
 
 @router.get("/sql/connections")
 async def list_connections(
-    _authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> list[dict[str, str]]:
     """List all registered database connections."""
     from app.services.database import _sql_engines
 
-    return [
-        {"name": name, "url": str(engine.url).split("@")[-1]}
-        for name, engine in _sql_engines.items()
-    ]
+    connections = []
+    for name, engine in _sql_engines.items():
+        access = await sql_connection_access(db, name=name, owner_id=authenticated.account.id)
+        if access in {"owned", "shared"}:
+            connections.append({"name": name, "url": str(engine.url).split("@")[-1]})
+    return connections
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+async def _require_sql_connection(db: AsyncSession, name: str, owner_id: str) -> None:
+    """Reject private, unregistered, and inactive target database names."""
+    access = await sql_connection_access(db, name=name, owner_id=owner_id)
+    if access == "inactive":
+        raise HTTPException(
+            status_code=409,
+            detail="Re-register this SQL connection after the application restarts.",
+        )
+    if access not in {"owned", "shared"}:
+        raise NotFoundError("SQL connection", name)
 
 
 def _parse_query_output(output: str) -> dict[str, Any]:

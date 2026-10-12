@@ -4,17 +4,20 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
-import pytest
 from httpx import AsyncClient
+
+from app.models.db_models import LEGACY_ACCOUNT_ID, SqlConnection
 
 
 class TestSQLSchemaEndpoint:
     """Tests for GET /api/v1/sql/schema."""
 
-    async def test_selected_database_is_used(self, client: AsyncClient):
+    async def test_selected_database_is_used(self, client: AsyncClient, db_session, sql_engine):
+        db_session.add(SqlConnection(name="secondary", owner_id=LEGACY_ACCOUNT_ID))
+        await db_session.commit()
         with patch(
             "app.api.routes.sql.introspect_schema", AsyncMock(return_value={"tables": []})
-        ) as inspect:
+        ) as inspect, patch("app.services.database._sql_engines", {"secondary": sql_engine}):
             response = await client.get("/api/v1/sql/schema?database=secondary")
         assert response.status_code == 200
         inspect.assert_awaited_once_with(database="secondary")
@@ -68,10 +71,13 @@ class TestSQLSchemaEndpoint:
 class TestSQLExecuteEndpoint:
     """Tests for POST /api/v1/sql/execute."""
 
-    async def test_selected_database_is_used(self, client: AsyncClient, sql_engine):
+    async def test_selected_database_is_used(self, client: AsyncClient, sql_engine, db_session):
+        db_session.add(SqlConnection(name="secondary", owner_id=LEGACY_ACCOUNT_ID))
+        await db_session.commit()
         with (
             patch("app.tools.sql_tools.get_sql_engine", return_value=sql_engine) as engine,
             patch("app.api.routes.sql.execute_query", AsyncMock(return_value={})) as execute,
+            patch("app.services.database._sql_engines", {"secondary": sql_engine}),
         ):
             response = await client.post(
                 "/api/v1/sql/execute", json={"sql": "SELECT 1", "database": "secondary"}
@@ -123,9 +129,13 @@ class TestSQLExecuteEndpoint:
 class TestSQLNaturalLanguageEndpoint:
     """Explicit SQL requests retain connection selection and typed results."""
 
-    async def test_preserves_selected_database_and_result_values(self, client: AsyncClient):
+    async def test_preserves_selected_database_and_result_values(
+        self, client: AsyncClient, db_session, sql_engine
+    ):
         from langchain_core.messages import AIMessage
 
+        db_session.add(SqlConnection(name="secondary", owner_id=LEGACY_ACCOUNT_ID))
+        await db_session.commit()
         result = {
             "messages": [AIMessage(content="Result")],
             "tool_calls": [
@@ -136,7 +146,10 @@ class TestSQLNaturalLanguageEndpoint:
                 }
             ],
         }
-        with patch("app.api.routes.sql.sql_agent_node", AsyncMock(return_value=result)) as agent:
+        with (
+            patch("app.api.routes.sql.sql_agent_node", AsyncMock(return_value=result)) as agent,
+            patch("app.services.database._sql_engines", {"secondary": sql_engine}),
+        ):
             response = await client.post(
                 "/api/v1/sql/query", json={"question": "Show values", "database": "secondary"}
             )
@@ -156,3 +169,35 @@ class TestSQLConnectionsEndpoint:
 
         assert resp.status_code == 200
         assert resp.json() == []
+
+    async def test_connection_registry_is_account_private(self, client: AsyncClient, db_session, sql_engine):
+        db_session.add(SqlConnection(name="private_db", owner_id="different-account"))
+        await db_session.commit()
+        with patch("app.services.database._sql_engines", {"private_db": sql_engine}):
+            listed = await client.get("/api/v1/sql/connections")
+            schema = await client.get("/api/v1/sql/schema?database=private_db")
+            direct_tool = await client.post(
+                "/api/v1/tools/execute",
+                json={
+                    "tool_name": "sql_query_tool",
+                    "arguments": {"sql": "SELECT 1", "database": "private_db"},
+                },
+            )
+        assert listed.json() == []
+        assert schema.status_code == 404
+        assert direct_tool.status_code == 404
+
+    async def test_register_connection_claims_name_for_current_account(
+        self, client: AsyncClient, db_session, sql_engine
+    ):
+        with patch("app.services.database.get_sql_engine", return_value=sql_engine) as create:
+            response = await client.post(
+                "/api/v1/sql/connections",
+                json={"name": "reports", "url": "sqlite+aiosqlite:///reports.db"},
+            )
+        assert response.status_code == 200
+        create.assert_called_once_with(
+            database_url="sqlite+aiosqlite:///reports.db", name="reports"
+        )
+        registry = await db_session.get(SqlConnection, "reports")
+        assert registry is not None and registry.owner_id == LEGACY_ACCOUNT_ID
