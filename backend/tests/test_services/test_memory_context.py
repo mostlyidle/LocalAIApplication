@@ -2,7 +2,7 @@
 
 import json
 from datetime import UTC, datetime, timedelta
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -89,3 +89,48 @@ async def test_memory_database_failure_does_not_block_chat() -> None:
         "app.services.database.get_app_session_factory", side_effect=RuntimeError("offline")
     ):
         assert await load_account_memory_context(LEGACY_ACCOUNT_ID) == ""
+
+
+async def test_memory_context_includes_relevant_past_chat_only_when_enabled(
+    db_session: AsyncSession,
+) -> None:
+    db_session.add(
+        Account(
+            id=LEGACY_ACCOUNT_ID,
+            username="past-chat-memory-context",
+            display_name="Past Chat Context",
+            password_hash="!test!",
+            memory_enabled=True,
+            past_chat_recall_enabled=True,
+            memory_epoch=4,
+        )
+    )
+    await db_session.commit()
+    search = AsyncMock(
+        return_value=[
+            {
+                "type": "past_conversation",
+                "conversation_id": "older-chat",
+                "title": "Prior decision",
+                "content": "The user chose PostgreSQL for this project.",
+            }
+        ]
+    )
+
+    with patch("app.services.memory_vector_index.memory_vector_index.search_summaries", search):
+        context = await load_account_memory_context(
+            LEGACY_ACCOUNT_ID,
+            query="Which database did I choose?",
+            exclude_conversation_id="current-chat",
+            db=db_session,
+        )
+
+    assert "PostgreSQL" in context
+    search.assert_awaited_once_with(
+        db_session,
+        owner_id=LEGACY_ACCOUNT_ID,
+        memory_epoch=4,
+        query="Which database did I choose?",
+        exclude_conversation_id="current-chat",
+        limit=4,
+    )

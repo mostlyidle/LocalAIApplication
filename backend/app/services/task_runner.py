@@ -75,7 +75,9 @@ class TaskRunner:
             }:
                 from app.services.memory_context import load_account_memory_context
 
-                self._memory_context.set(await load_account_memory_context(owner_id))
+                self._memory_context.set(
+                    await load_account_memory_context(owner_id, query=request.prompt)
+                )
             if target == "image_analysis":
                 result = await self._image_analysis(request, execution, document)
             elif target == "image_fraud":

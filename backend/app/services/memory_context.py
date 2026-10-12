@@ -6,6 +6,7 @@ import json
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
+import structlog
 from sqlalchemy import select
 
 from app.models.db_models import Account, Memory
@@ -16,30 +17,46 @@ if TYPE_CHECKING:
 MAX_MEMORY_CONTEXT_CHARS = 4_000
 MAX_MEMORY_ITEMS = 20
 MAX_MEMORY_ITEM_CHARS = 800
+logger = structlog.get_logger(__name__)
 
 
 async def load_account_memory_context(
     owner_id: str | None,
     *,
+    query: str | None = None,
+    exclude_conversation_id: str | None = None,
     db: AsyncSession | None = None,
 ) -> str:
     """Return bounded approved memory data only when that account opted in."""
     if not owner_id:
         return ""
     if db is not None:
-        return await _load_context(db, owner_id)
+        return await _load_context(
+            db, owner_id, query=query, exclude_conversation_id=exclude_conversation_id
+        )
 
     from app.services.database import get_app_session_factory
 
     try:
         async with get_app_session_factory()() as session:
-            return await _load_context(session, owner_id)
+            return await _load_context(
+                session,
+                owner_id,
+                query=query,
+                exclude_conversation_id=exclude_conversation_id,
+            )
     except Exception:
         # Memory is supplementary; a database hiccup must not prevent chat.
         return ""
 
 
-async def _load_context(db: AsyncSession, owner_id: str) -> str:
+async def _load_context(
+    db: AsyncSession,
+    owner_id: str,
+    *,
+    query: str | None = None,
+    exclude_conversation_id: str | None = None,
+) -> str:
     account = await db.scalar(select(Account).where(Account.id == owner_id))
     if account is None or not account.memory_enabled:
         return ""
@@ -64,6 +81,22 @@ async def _load_context(db: AsyncSession, owner_id: str) -> str:
         }
         for memory in rows
     ]
+    if account.past_chat_recall_enabled and query and query.strip():
+        try:
+            from app.services.memory_vector_index import memory_vector_index
+
+            items.extend(
+                await memory_vector_index.search_summaries(
+                    db,
+                    owner_id=owner_id,
+                    memory_epoch=account.memory_epoch,
+                    query=query[:4_000],
+                    exclude_conversation_id=exclude_conversation_id,
+                    limit=4,
+                )
+            )
+        except Exception as exc:
+            logger.warning("past_chat_recall_unavailable", error_type=type(exc).__name__)
     if not items:
         return ""
     bounded: list[dict[str, str | None]] = []

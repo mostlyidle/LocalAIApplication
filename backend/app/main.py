@@ -108,6 +108,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # ── Shutdown ────────────────────────────────────────────────────
     from app.services.database import close_all_sql_engines, close_app_db
     from app.services.hybrid_vector_store import hybrid_vector_store_service
+    from app.services.memory_vector_index import memory_vector_index
 
     app.state.memory_recall_worker_stop.set()
     try:
@@ -120,6 +121,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await app.state.market_data.close()
     await app.state.comfyui.close()
     await hybrid_vector_store_service.close()
+    await memory_vector_index.close()
     await close_all_sql_engines()
     await close_app_db()
     logger.info("shutdown_complete")

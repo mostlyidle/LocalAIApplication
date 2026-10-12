@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Literal
 from sqlalchemy.exc import IntegrityError
 
 from app.models.db_models import RagCollection
-from app.services.rag_store import CollectionCapabilities
+from app.services.rag_store import ACCOUNT_MEMORY_COLLECTION, CollectionCapabilities
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +26,8 @@ async def collection_access(
     reserve: bool = False,
 ) -> CollectionAccess:
     """Resolve access without assigning existing collections to a new account."""
+    if name == ACCOUNT_MEMORY_COLLECTION:
+        return "unassigned"
     registry = await db.get(RagCollection, name)
     if registry is not None:
         return "owned" if registry.owner_id == owner_id else "foreign"
