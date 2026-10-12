@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, patch
 
@@ -11,8 +12,10 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from starlette.testclient import TestClient
 
 from app.agents.orchestrator import run_agent, stream_agent
+from app.dependencies import get_websocket_session
 from app.main import create_app
-from app.models.db_models import Base
+from app.models.db_models import LEGACY_ACCOUNT_ID, Account, AccountSession, Base
+from app.services.auth import AuthenticatedSession
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -40,7 +43,23 @@ def test_stream_saves_before_done_and_loads_history(tmp_path: Path) -> None:
             patch("app.services.database.get_app_session_factory", return_value=factory),
             patch("app.api.routes.chat.stream_agent", respond),
         ):
-            client = TestClient(create_app())
+            app = create_app()
+            app.dependency_overrides[get_websocket_session] = lambda: AuthenticatedSession(
+                account=Account(
+                    id=LEGACY_ACCOUNT_ID,
+                    username="test-account",
+                    display_name="Test Account",
+                    password_hash="!test!",
+                ),
+                session=AccountSession(
+                    id="test-session",
+                    account_id=LEGACY_ACCOUNT_ID,
+                    token_hash="0" * 64,
+                    csrf_token="test-csrf-token",
+                    expires_at=datetime.now(UTC),
+                ),
+            )
+            client = TestClient(app)
             with client.websocket_connect("/api/v1/chat/stream") as ws:
                 ws.send_json({"type": "message", "content": "My name is Ada"})
                 assert ws.receive_json()["type"] == "token"

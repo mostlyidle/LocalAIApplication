@@ -45,7 +45,6 @@ async def get_authenticated_session(
 
 async def get_websocket_session(
     websocket: WebSocket,
-    db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> AuthenticatedSession:
     """Authenticate WebSockets and reject browser origins outside app CORS policy."""
     from app.config import settings
@@ -59,7 +58,11 @@ async def get_websocket_session(
     )
     if origin is None or origin.rstrip("/") not in allowed_origins:
         raise WebSocketException(code=4403, reason="WebSocket origin is not allowed.")
-    authenticated = await resolve_session(db, websocket.cookies.get("localai_session"))
+    from app.services.database import get_app_session_factory
+
+    factory = get_app_session_factory()
+    async with factory() as db:
+        authenticated = await resolve_session(db, websocket.cookies.get(SESSION_COOKIE))
     if authenticated is None:
         raise WebSocketException(code=4401, reason="Authentication required.")
     return authenticated

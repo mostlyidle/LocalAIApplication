@@ -41,7 +41,7 @@ async def create_session(db: AsyncSession, account: Account) -> tuple[AccountSes
     session = AccountSession(
         account_id=account.id,
         token_hash=_digest(session_token),
-        csrf_token_hash=_digest(csrf_token),
+        csrf_token=csrf_token,
         expires_at=datetime.now(UTC) + timedelta(hours=settings.auth_session_ttl_hours),
     )
     db.add(session)
@@ -72,18 +72,15 @@ async def resolve_session(db: AsyncSession, token: str | None) -> AuthenticatedS
 
 
 def verify_csrf(session: AccountSession, csrf_token: str | None) -> bool:
-    """Compare the request token digest in constant time."""
+    """Compare the request token in constant time."""
     if not csrf_token:
         return False
-    return hmac.compare_digest(session.csrf_token_hash, _digest(csrf_token))
+    return hmac.compare_digest(session.csrf_token, csrf_token)
 
 
-async def rotate_csrf_token(db: AsyncSession, session: AccountSession) -> str:
-    """Issue a fresh CSRF token after an authenticated session refresh."""
-    csrf_token = new_token()
-    session.csrf_token_hash = _digest(csrf_token)
-    await db.commit()
-    return csrf_token
+def get_csrf_token(session: AccountSession) -> str:
+    """Return the stable CSRF token bound to this authenticated session."""
+    return session.csrf_token
 
 
 async def revoke_session(db: AsyncSession, session: AccountSession) -> None:

@@ -12,21 +12,21 @@ from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable  # noqa: TC003
 from typing import Any
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession  # noqa: TC002
 from sqlalchemy.orm import selectinload
 
 from app.agents.orchestrator import run_agent, stream_agent
 from app.api.middleware.error_handler import AppError
 from app.api.middleware.rate_limiting import limiter
 from app.config import settings
-from app.dependencies import get_db
+from app.dependencies import get_authenticated_session, get_db, get_websocket_session
 from app.models.db_models import Conversation, Document, Message, ToolCallRecord
 from app.models.enums import MessageRole
 from app.models.profile_schemas import AgentResult, ExecutionMetadata, TaskRequest
@@ -36,6 +36,7 @@ from app.models.schemas import (
     ConversationSummary,
     ToolCallInfo,
 )
+from app.services.auth import AuthenticatedSession  # noqa: TC001
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()
@@ -51,7 +52,8 @@ router = APIRouter()
 async def send_message(
     request: Request,
     body: ChatMessageRequest,
-    db: AsyncSession = Depends(get_db),
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> ChatMessageResponse:
     """Send a chat message and receive a complete response.
 
@@ -59,13 +61,20 @@ async def send_message(
     intent and route to the appropriate agent, then persists both the user
     message and assistant response.
     """
+    conversation_id = body.conversation_id or str(uuid.uuid4())
+    owner_id = authenticated.account.id
+    conversation = await _get_or_create_conversation(db, conversation_id, owner_id)
+
     if body.agent_name:
-        conversation_id = body.conversation_id or str(uuid.uuid4())
         execution = await _execute_selected_profile(
-            request.app, body.model_copy(update={"conversation_id": conversation_id}), db=db
+            request.app,
+            body.model_copy(update={"conversation_id": conversation_id}),
+            owner_id=owner_id,
+            db=db,
         )
-        conversation = await _get_or_create_conversation(db, conversation_id)
-        db.add(Message(conversation_id=conversation_id, role=MessageRole.USER, content=body.content))
+        db.add(
+            Message(conversation_id=conversation_id, role=MessageRole.USER, content=body.content)
+        )
         assistant_msg = Message(
             conversation_id=conversation_id,
             role=MessageRole.ASSISTANT,
@@ -104,14 +113,11 @@ async def send_message(
         )
 
     # Resolve conversation
-    conversation_id = body.conversation_id or str(uuid.uuid4())
-    conversation = await _get_or_create_conversation(db, conversation_id)
-
     # Load existing messages for context
-    existing_messages = await _load_langchain_messages(db, conversation_id)
+    existing_messages = await _load_langchain_messages(db, conversation_id, owner_id)
 
     # Run the orchestrator pipeline
-    attachment_paths = await _resolve_uploaded_paths(body.attachments, db=db)
+    attachment_paths = await _resolve_uploaded_paths(body.attachments, owner_id, db=db)
     result = await run_agent(
         user_input=body.content,
         conversation_id=conversation_id,
@@ -189,7 +195,10 @@ async def send_message(
 
 
 @router.websocket("/chat/stream")
-async def chat_stream(websocket: WebSocket) -> None:
+async def chat_stream(
+    websocket: WebSocket,
+    authenticated: AuthenticatedSession = Depends(get_websocket_session),  # noqa: B008
+) -> None:
     """WebSocket endpoint for streaming chat responses.
 
     Protocol:
@@ -209,6 +218,7 @@ async def chat_stream(websocket: WebSocket) -> None:
     """
     await websocket.accept()
     logger.info("websocket_connected")
+    owner_id = authenticated.account.id
 
     try:
         while True:
@@ -260,17 +270,27 @@ async def chat_stream(websocket: WebSocket) -> None:
             stream_error = "Agent error: response failed. Check the backend and Ollama, then retry."
             execution_metadata: dict[str, Any] | None = None
 
-            async def consume_event(event: dict[str, Any]) -> None:
+            async def consume_event(
+                event: dict[str, Any],
+                chunks: list[str] = token_chunks,
+                calls: list[dict] = tool_calls_data,
+            ) -> None:
                 nonlocal agent_used, completion_metadata, execution_metadata
                 if event.get("type") != "done":
                     await websocket.send_json(event)
                 evt_type = event.get("type")
                 if evt_type == "token":
-                    token_chunks.append(event.get("content", ""))
+                    chunks.append(event.get("content", ""))
                 elif evt_type == "tool_call":
-                    tool_calls_data.append({"tool_name": event.get("tool", ""), "tool_input": event.get("input", {}), "tool_output": None})
+                    calls.append(
+                        {
+                            "tool_name": event.get("tool", ""),
+                            "tool_input": event.get("input", {}),
+                            "tool_output": None,
+                        }
+                    )
                 elif evt_type == "tool_result":
-                    for tc in reversed(tool_calls_data):
+                    for tc in reversed(calls):
                         if tc["tool_name"] == event.get("tool", "") and tc["tool_output"] is None:
                             tc["tool_output"] = event.get("output")
                             break
@@ -287,24 +307,42 @@ async def chat_stream(websocket: WebSocket) -> None:
                     selected = await _execute_selected_profile(
                         websocket.app,
                         body.model_copy(update={"conversation_id": conversation_id}),
+                        owner_id=owner_id,
                         on_event=consume_event,
                     )
                     agent_used = selected.agent
                     selected_calls = selected.artifacts.get("tool_calls", [])
                     if selected_calls and not tool_calls_data:
                         for tc in selected_calls:
-                            await consume_event({"type": "tool_call", "tool": tc.get("tool_name", ""), "input": tc.get("tool_input", {})})
-                            await consume_event({"type": "tool_result", "tool": tc.get("tool_name", ""), "output": tc.get("tool_output")})
+                            await consume_event(
+                                {
+                                    "type": "tool_call",
+                                    "tool": tc.get("tool_name", ""),
+                                    "input": tc.get("tool_input", {}),
+                                }
+                            )
+                            await consume_event(
+                                {
+                                    "type": "tool_result",
+                                    "tool": tc.get("tool_name", ""),
+                                    "output": tc.get("tool_output"),
+                                }
+                            )
                     if not token_chunks:
                         await consume_event({"type": "token", "content": selected.answer})
                     execution_metadata = selected.model_dump(mode="json")
-                    completion_metadata = {"agent_used": selected.agent, "execution": execution_metadata}
+                    completion_metadata = {
+                        "agent_used": selected.agent,
+                        "execution": execution_metadata,
+                    }
                 else:
-                    existing_messages = await _load_ws_history(conversation_id)
-                    attachment_paths = await _resolve_uploaded_paths(attachments)
+                    existing_messages = await _load_ws_history(conversation_id, owner_id)
+                    attachment_paths = await _resolve_uploaded_paths(attachments, owner_id)
                     async for event in stream_agent(
-                        user_input=content, conversation_id=conversation_id,
-                        attachments=attachment_paths, existing_messages=existing_messages,
+                        user_input=content,
+                        conversation_id=conversation_id,
+                        attachments=attachment_paths,
+                        existing_messages=existing_messages,
                     ):
                         await consume_event(event)
             except HTTPException as exc:
@@ -325,6 +363,7 @@ async def chat_stream(websocket: WebSocket) -> None:
             assistant_content = "".join(token_chunks)
             saved = await _persist_ws_messages(
                 conversation_id=conversation_id,
+                owner_id=owner_id,
                 user_content=content,
                 assistant_content=assistant_content,
                 agent_used=agent_used,
@@ -362,12 +401,14 @@ async def chat_stream(websocket: WebSocket) -> None:
 
 @router.get("/chat/conversations", response_model=list[ConversationSummary])
 async def list_conversations(
-    db: AsyncSession = Depends(get_db),
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> list[ConversationSummary]:
     """List all conversations ordered by most recent activity."""
     stmt = (
         select(Conversation)
         .options(selectinload(Conversation.messages))
+        .where(Conversation.owner_id == authenticated.account.id)
         .order_by(Conversation.updated_at.desc())
     )
     result = await db.execute(stmt)
@@ -393,7 +434,8 @@ async def list_conversations(
 @router.get("/chat/conversations/{conversation_id}")
 async def get_conversation(
     conversation_id: str,
-    db: AsyncSession = Depends(get_db),
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> dict[str, Any]:
     """Get a conversation with all its messages and tool calls."""
     from app.api.middleware.error_handler import NotFoundError
@@ -401,7 +443,10 @@ async def get_conversation(
     stmt = (
         select(Conversation)
         .options(selectinload(Conversation.messages).selectinload(Message.tool_calls))
-        .where(Conversation.id == conversation_id)
+        .where(
+            Conversation.id == conversation_id,
+            Conversation.owner_id == authenticated.account.id,
+        )
     )
     result = await db.execute(stmt)
     conversation = result.scalar_one_or_none()
@@ -446,12 +491,16 @@ async def get_conversation(
 @router.delete("/chat/conversations/{conversation_id}")
 async def delete_conversation(
     conversation_id: str,
-    db: AsyncSession = Depends(get_db),
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> dict[str, str]:
     """Delete a conversation and all its messages."""
     from app.api.middleware.error_handler import NotFoundError
 
-    stmt = select(Conversation).where(Conversation.id == conversation_id)
+    stmt = select(Conversation).where(
+        Conversation.id == conversation_id,
+        Conversation.owner_id == authenticated.account.id,
+    )
     result = await db.execute(stmt)
     conversation = result.scalar_one_or_none()
 
@@ -470,7 +519,11 @@ async def delete_conversation(
 
 
 async def _execute_selected_profile(
-    app, body: ChatMessageRequest, *, db: AsyncSession | None = None,
+    app,
+    body: ChatMessageRequest,
+    *,
+    owner_id: str,
+    db: AsyncSession | None = None,
     on_event: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
 ) -> AgentResult:
     """Dispatch an explicit chat profile through the shared registry and services."""
@@ -479,7 +532,9 @@ async def _execute_selected_profile(
     if profile is None:
         raise HTTPException(status_code=422, detail="Unknown or disabled agent profile.")
     if len(body.attachments) > 1:
-        raise HTTPException(status_code=422, detail="Selected profiles accept one attachment at a time.")
+        raise HTTPException(
+            status_code=422, detail="Selected profiles accept one attachment at a time."
+        )
     task = TaskRequest(
         prompt=body.content,
         agent_name=profile.name,
@@ -496,30 +551,39 @@ async def _execute_selected_profile(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    if profile.target in {"chat", "sql", "document", "web"} and profile.name != "document_analytics":
+    if (
+        profile.target in {"chat", "sql", "document", "web"}
+        and profile.name != "document_analytics"
+    ):
         conversation_id = body.conversation_id or str(uuid.uuid4())
         existing = []
         if body.conversation_id:
             existing = (
-                await _load_langchain_messages(db, body.conversation_id)
+                await _load_langchain_messages(db, body.conversation_id, owner_id)
                 if db is not None
-                else await _load_ws_history(body.conversation_id)
+                else await _load_ws_history(body.conversation_id, owner_id)
             )
-        attachment_paths = await _resolve_uploaded_paths(body.attachments, db=db)
+        attachment_paths = await _resolve_uploaded_paths(body.attachments, owner_id, db=db)
         from app.agents.orchestrator import run_agent
         from app.services.llm import llm_service
 
         with llm_service.inference_context(inference):
             if on_event is None:
                 state = await run_agent(
-                    user_input=body.content, conversation_id=conversation_id,
-                    attachments=attachment_paths, existing_messages=existing, forced_agent=profile.target,
+                    user_input=body.content,
+                    conversation_id=conversation_id,
+                    attachments=attachment_paths,
+                    existing_messages=existing,
+                    forced_agent=profile.target,
                 )
             else:
                 state = None
                 async for event in stream_agent(
-                    user_input=body.content, conversation_id=conversation_id,
-                    attachments=attachment_paths, existing_messages=existing, forced_agent=profile.target,
+                    user_input=body.content,
+                    conversation_id=conversation_id,
+                    attachments=attachment_paths,
+                    existing_messages=existing,
+                    forced_agent=profile.target,
                 ):
                     if event.get("type") == "done":
                         state = event.get("state")
@@ -547,9 +611,9 @@ async def _execute_selected_profile(
     prior_turns = []
     if body.conversation_id:
         history = (
-            await _load_langchain_messages(db, body.conversation_id)
+            await _load_langchain_messages(db, body.conversation_id, owner_id)
             if db is not None
-            else await _load_ws_history(body.conversation_id)
+            else await _load_ws_history(body.conversation_id, owner_id)
         )
         prior_turns = [
             f"{message.type}: {str(message.content)[:1200]}"
@@ -562,64 +626,73 @@ async def _execute_selected_profile(
             history_limit = max(0, 32_000 - len(history_header) - len(current_request) - 1)
             history = "\n".join(prior_turns)[-history_limit:] if history_limit else ""
             task.prompt = (
-                f"{history_header}{history}\n{current_request}"
-                if history_limit
-                else body.content
+                f"{history_header}{history}\n{current_request}" if history_limit else body.content
             )
 
     document = None
     if task.asset_id:
-        documents = await _load_uploaded_documents([task.asset_id], db=db)
+        documents = await _load_uploaded_documents([task.asset_id], owner_id, db=db)
         document = documents.get(task.asset_id)
         if document is None:
             raise HTTPException(status_code=404, detail="Uploaded asset was not found.")
     kwargs = {"history": prior_turns} if profile.target == "rag" else {}
     if on_event is not None:
+
         async def emit_token(text: str) -> None:
             await on_event({"type": "token", "content": text})
+
         kwargs["on_token"] = emit_token
     return await app.state.task_runner.run(
-        task, request_id=str(uuid.uuid4()), document=document, **kwargs,
+        task,
+        request_id=str(uuid.uuid4()),
+        document=document,
+        **kwargs,
     )
 
 
 async def _load_uploaded_documents(
-    attachment_ids: list[str], *, db: AsyncSession | None = None
+    attachment_ids: list[str], owner_id: str, *, db: AsyncSession | None = None
 ) -> dict[str, Document]:
     """Resolve only IDs created by the upload route to trusted document records."""
     if not attachment_ids:
         return {}
     if db is not None:
-        result = await db.execute(select(Document).where(Document.id.in_(attachment_ids)))
+        result = await db.execute(
+            select(Document).where(Document.id.in_(attachment_ids), Document.owner_id == owner_id)
+        )
         return {document.id: document for document in result.scalars().all()}
     from app.services.database import get_app_session_factory
 
     async with get_app_session_factory()() as session:
-        result = await session.execute(select(Document).where(Document.id.in_(attachment_ids)))
+        result = await session.execute(
+            select(Document).where(Document.id.in_(attachment_ids), Document.owner_id == owner_id)
+        )
         return {document.id: document for document in result.scalars().all()}
 
 
 async def _resolve_uploaded_paths(
-    attachment_ids: list[str], *, db: AsyncSession | None = None
+    attachment_ids: list[str], owner_id: str, *, db: AsyncSession | None = None
 ) -> list[str]:
     if not attachment_ids:
         return []
-    documents = await _load_uploaded_documents(attachment_ids, db=db)
+    documents = await _load_uploaded_documents(attachment_ids, owner_id, db=db)
     if len(documents) != len(set(attachment_ids)):
         raise HTTPException(status_code=404, detail="One or more uploaded assets were not found.")
     return [documents[attachment_id].storage_path for attachment_id in attachment_ids]
 
 
-async def _load_ws_history(conversation_id: str) -> list:
+async def _load_ws_history(conversation_id: str, owner_id: str) -> list:
     """Load history in a short-lived session before a streaming turn."""
     from app.services.database import get_app_session_factory
 
     async with get_app_session_factory()() as db:
-        return await _load_langchain_messages(db, conversation_id)
+        await _get_or_create_conversation(db, conversation_id, owner_id)
+        return await _load_langchain_messages(db, conversation_id, owner_id)
 
 
 async def _persist_ws_messages(
     conversation_id: str,
+    owner_id: str,
     user_content: str,
     assistant_content: str,
     agent_used: str | None,
@@ -645,7 +718,7 @@ async def _persist_ws_messages(
     try:
         factory = get_app_session_factory()
         async with factory() as db:
-            conversation = await _get_or_create_conversation(db, conversation_id)
+            conversation = await _get_or_create_conversation(db, conversation_id, owner_id)
 
             # Persist user message
             user_msg = Message(
@@ -699,21 +772,27 @@ async def _persist_ws_messages(
         return False
 
 
-async def _get_or_create_conversation(db: AsyncSession, conversation_id: str) -> Conversation:
-    """Get an existing conversation or create a new one."""
+async def _get_or_create_conversation(
+    db: AsyncSession, conversation_id: str, owner_id: str
+) -> Conversation:
+    """Get an owned conversation or create one; hide other owners' IDs as not found."""
     stmt = select(Conversation).where(Conversation.id == conversation_id)
     result = await db.execute(stmt)
     conversation = result.scalar_one_or_none()
 
+    if conversation is not None and conversation.owner_id != owner_id:
+        from app.api.middleware.error_handler import NotFoundError
+
+        raise NotFoundError("Conversation", conversation_id)
     if conversation is None:
-        conversation = Conversation(id=conversation_id)
+        conversation = Conversation(id=conversation_id, owner_id=owner_id)
         db.add(conversation)
         await db.flush()
 
     return conversation
 
 
-async def _load_langchain_messages(db: AsyncSession, conversation_id: str) -> list:
+async def _load_langchain_messages(db: AsyncSession, conversation_id: str, owner_id: str) -> list:
     """Load prior messages from the DB and convert to LangChain message objects.
 
     Returns an empty list if no prior messages exist.
@@ -722,7 +801,11 @@ async def _load_langchain_messages(db: AsyncSession, conversation_id: str) -> li
 
     stmt = (
         select(Message)
-        .where(Message.conversation_id == conversation_id)
+        .join(Conversation, Conversation.id == Message.conversation_id)
+        .where(
+            Message.conversation_id == conversation_id,
+            Conversation.owner_id == owner_id,
+        )
         .order_by(Message.created_at)
     )
     result = await db.execute(stmt)

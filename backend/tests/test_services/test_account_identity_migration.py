@@ -49,6 +49,22 @@ def test_upgrade_quarantines_existing_records(
             )
         )
 
+    command.upgrade(config, "20261012_06")
+    with create_engine(f"sqlite:///{database_path}").begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO account_sessions "
+                "(id, account_id, token_hash, csrf_token_hash, expires_at, created_at) "
+                "VALUES ('legacy-session', :owner_id, :token_hash, :csrf_hash, "
+                "datetime('now', '+1 day'), CURRENT_TIMESTAMP)"
+            ),
+            {
+                "owner_id": LEGACY_ACCOUNT_ID,
+                "token_hash": "a" * 64,
+                "csrf_hash": "b" * 64,
+            },
+        )
+
     command.upgrade(config, "head")
     with create_engine(f"sqlite:///{database_path}").connect() as connection:
         account = connection.execute(
@@ -58,6 +74,9 @@ def test_upgrade_quarantines_existing_records(
             table: connection.execute(text(f"SELECT id, owner_id FROM {table}")).one()
             for table in ("conversations", "documents", "meetings")
         }
+        session = connection.execute(
+            text("SELECT csrf_token, revoked_at FROM account_sessions WHERE id = 'legacy-session'")
+        ).one()
 
     assert account == 0
     assert rows == {
@@ -65,3 +84,5 @@ def test_upgrade_quarantines_existing_records(
         "documents": ("legacy-doc", LEGACY_ACCOUNT_ID),
         "meetings": ("legacy-meeting", LEGACY_ACCOUNT_ID),
     }
+    assert session.csrf_token == "!reauthentication-required!"
+    assert session.revoked_at is not None

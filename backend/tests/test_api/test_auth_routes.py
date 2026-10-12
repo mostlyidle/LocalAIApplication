@@ -5,8 +5,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
+from starlette.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 from app.config import settings
+from app.main import create_app
 from app.models.db_models import Account
 from app.services.accounts import hash_password
 
@@ -17,6 +20,9 @@ if TYPE_CHECKING:
 
 async def test_login_refresh_and_logout(client: AsyncClient, db_session: AsyncSession, monkeypatch):
     """Login issues an HttpOnly cookie and logout requires the current CSRF token."""
+    from app.dependencies import get_authenticated_session
+
+    client._transport.app.dependency_overrides.pop(get_authenticated_session)
     monkeypatch.setattr(settings, "auth_cookie_secure", False)
     db_session.add(
         Account(
@@ -41,12 +47,14 @@ async def test_login_refresh_and_logout(client: AsyncClient, db_session: AsyncSe
     assert refreshed.status_code == 200
     assert refreshed.json()["account"]["username"] == "alice"
     csrf_token = refreshed.json()["csrf_token"]
-    assert csrf_token != initial_csrf
+    assert csrf_token == initial_csrf
 
     rejected = await client.post("/api/v1/auth/logout")
     assert rejected.status_code == 403
-    stale_token = await client.post("/api/v1/auth/logout", headers={"X-CSRF-Token": initial_csrf})
-    assert stale_token.status_code == 403
+    wrong_token = await client.post(
+        "/api/v1/auth/logout", headers={"X-CSRF-Token": "not-the-session-token"}
+    )
+    assert wrong_token.status_code == 403
     logout = await client.post("/api/v1/auth/logout", headers={"X-CSRF-Token": csrf_token})
     assert logout.status_code == 204
     assert (await client.get("/api/v1/auth/me")).status_code == 401
@@ -64,3 +72,24 @@ async def test_login_rejects_unknown_and_legacy_accounts(
     )
     assert response.status_code == 401
     assert response.json()["detail"] == "Invalid username or password."
+
+
+async def test_chat_and_document_routes_require_a_session(client: AsyncClient) -> None:
+    from app.dependencies import get_authenticated_session
+
+    client._transport.app.dependency_overrides.pop(get_authenticated_session)
+    assert (await client.get("/api/v1/chat/conversations")).status_code == 401
+    assert (await client.get("/api/v1/documents")).status_code == 401
+
+
+def test_chat_websocket_rejects_untrusted_origin() -> None:
+    """The browser stream checks origin before looking up a session."""
+    client = TestClient(create_app())
+    with (
+        pytest.raises(WebSocketDisconnect) as disconnected,
+        client.websocket_connect(
+            "/api/v1/chat/stream", headers={"origin": "https://attacker.example"}
+        ),
+    ):
+        pass
+    assert disconnected.value.code == 4403
