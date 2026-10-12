@@ -7,8 +7,10 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi import HTTPException
 from qdrant_client import AsyncQdrantClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.agents.registry import AgentExecution, AgentRegistry
+from app.models.db_models import RagCollection
 from app.models.profile_schemas import TaskRequest
 from app.prompt_store import PromptStore
 from app.services.hybrid_vector_store import HybridVectorStoreService
@@ -56,6 +58,23 @@ async def test_rag_rejects_context_that_cannot_hold_one_complete_passage() -> No
             await prepare_rag_context(request, execution, prompts)
     assert error.value.status_code == 422
     assert "Increase" in error.value.detail
+
+
+async def test_rag_context_rejects_another_accounts_collection(
+    db_session: AsyncSession, async_engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry, prompts = profiles()
+    db_session.add(RagCollection(name="private-rag", owner_id="another-account"))
+    await db_session.commit()
+    maker = async_sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
+    monkeypatch.setattr("app.services.database.get_app_session_factory", lambda: maker)
+
+    request = TaskRequest(prompt="private?", agent_name="rag", collection="private-rag")
+    profile = registry.get("rag")
+    execution = AgentExecution(profile, registry.resolve_inference(profile, request))
+    with pytest.raises(HTTPException) as error:
+        await prepare_rag_context(request, execution, prompts, owner_id="current-account")
+    assert error.value.status_code == 404
 
 
 @pytest.mark.parametrize("model, revision, succeeds, historical", [

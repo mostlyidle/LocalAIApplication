@@ -131,6 +131,7 @@ async def send_message(
         conversation_id=conversation_id,
         attachments=attachment_paths,
         existing_messages=existing_messages,
+        owner_id=owner_id,
     )
 
     # Extract response content
@@ -369,6 +370,7 @@ async def chat_stream(
                         conversation_id=conversation_id,
                         attachments=attachment_paths,
                         existing_messages=existing_messages,
+                        owner_id=owner_id,
                     ):
                         await consume_event(event)
             except HTTPException as exc:
@@ -607,6 +609,7 @@ async def _execute_selected_profile(
                     attachments=attachment_paths,
                     existing_messages=existing,
                     forced_agent=profile.target,
+                    owner_id=owner_id,
                 )
             else:
                 state = None
@@ -616,6 +619,7 @@ async def _execute_selected_profile(
                     attachments=attachment_paths,
                     existing_messages=existing,
                     forced_agent=profile.target,
+                    owner_id=owner_id,
                 ):
                     if event.get("type") == "done":
                         state = event.get("state")
@@ -678,6 +682,7 @@ async def _execute_selected_profile(
         task,
         request_id=str(uuid.uuid4()),
         document=document,
+        owner_id=owner_id,
         **kwargs,
     )
 

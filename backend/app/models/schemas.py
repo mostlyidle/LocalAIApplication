@@ -206,14 +206,18 @@ class RAGIngestRequest(BaseModel):
     """Request to ingest a document into the vector store."""
 
     document_id: str
-    collection: str = "documents"
+    collection: str = Field(
+        default="documents", min_length=1, max_length=63, pattern=r"^[A-Za-z0-9_-]+$"
+    )
 
 
 class RAGSearchRequest(BaseModel):
     """Semantic search query against the vector store."""
 
     query: str = Field(..., min_length=1, max_length=4_000)
-    collection: str = "documents"
+    collection: str = Field(
+        default="documents", min_length=1, max_length=63, pattern=r"^[A-Za-z0-9_-]+$"
+    )
     top_k: int = Field(default=5, ge=1, le=50)
     score_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
     agent_name: str = Field(default="rag", pattern=r"^[a-z][a-z0-9_]{0,62}$")

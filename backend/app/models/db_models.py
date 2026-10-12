@@ -57,6 +57,18 @@ class AccountSession(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
 
+class RagCollection(Base):
+    """Private ownership registry for application-managed vector collections."""
+
+    __tablename__ = "rag_collections"
+
+    name: Mapped[str] = mapped_column(String(63), primary_key=True)
+    owner_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("accounts.id", ondelete="RESTRICT"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
 class Conversation(Base):
     """A chat conversation containing multiple messages."""
 

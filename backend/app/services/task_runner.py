@@ -24,6 +24,7 @@ from app.services.workspace import WorkspaceInputError, read_workspace
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
+
     from app.models.db_models import Document
     from app.prompt_store import PromptStore
     from app.services.comfyui import ComfyUIClient
@@ -55,6 +56,7 @@ class TaskRunner:
         request_id: str,
         document: Document | None = None,
         history: list[str] | None = None,
+        owner_id: str | None = None,
         on_token: Callable[[str], Awaitable[None]] | None = None,
     ) -> AgentResult:
         token = self._on_token.set(on_token)
@@ -68,7 +70,9 @@ class TaskRunner:
             elif target == "document":
                 result = await self._document_analysis(request, execution, document)
             elif target == "rag":
-                result = await self._rag_answer(request, execution, history=history)
+                result = await self._rag_answer(
+                    request, execution, history=history, owner_id=owner_id
+                )
             elif target == "stock_research":
                 result = await self._stock_research(request, execution, document)
             elif target == "image_generation":
@@ -208,11 +212,18 @@ class TaskRunner:
         return AgentResult(agent=execution.profile.name, answer=answer, artifacts=artifacts)
 
     async def _rag_answer(
-        self, request: TaskRequest, execution: AgentExecution, *, history: list[str] | None = None
+        self,
+        request: TaskRequest,
+        execution: AgentExecution,
+        *,
+        history: list[str] | None = None,
+        owner_id: str | None = None,
     ) -> AgentResult:
         from app.services.rag_context import prepare_rag_context
 
-        context = await prepare_rag_context(request, execution, self._prompts, history=history)
+        context = await prepare_rag_context(
+            request, execution, self._prompts, history=history, owner_id=owner_id
+        )
         answer = (
             await self._answer(execution, prompt_values=context.prompt_values)
             if context.citations

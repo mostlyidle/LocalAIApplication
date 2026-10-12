@@ -28,7 +28,7 @@ from app.dependencies import (
     get_document_parser,
     get_vector_store,
 )
-from app.models.db_models import Document
+from app.models.db_models import Document, RagCollection
 from app.models.enums import DocumentFormat
 from app.models.schemas import (
     CollectionInfo,
@@ -38,6 +38,7 @@ from app.models.schemas import (
     RAGSearchResult,
 )
 from app.services.auth import AuthenticatedSession  # noqa: TC001
+from app.services.rag_access import collection_access
 from app.services.rag_store import (
     RagCollectionConflictError,
     RagCollectionSchemaError,
@@ -58,13 +59,20 @@ router = APIRouter()
 async def search_documents(
     request: Request,
     body: RAGSearchRequest,
-    _authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
     vector_store: VectorStoreService = Depends(get_vector_store),  # noqa: B008
 ) -> RAGSearchResponse:
     """Perform semantic search across ingested documents.
 
     Returns ranked results with relevance scores and source citations.
     """
+    access = await collection_access(
+        db, vector_store, name=body.collection, owner_id=authenticated.account.id
+    )
+    if access in {"foreign", "unassigned"}:
+        raise NotFoundError("Collection", body.collection)
+
     retrieval: dict[str, Any] = {}
     search_with_provenance = getattr(vector_store, "search_with_provenance", None)
     try:
@@ -180,6 +188,18 @@ async def ingest_document(
             "message": "No text content found in document.",
         }
 
+    access = await collection_access(
+        db,
+        vector_store,
+        name=body.collection,
+        owner_id=authenticated.account.id,
+        reserve=True,
+    )
+    if access == "shared":
+        raise HTTPException(status_code=403, detail="Shared RAG collections are read-only.")
+    if access in {"foreign", "unassigned"}:
+        raise NotFoundError("Collection", body.collection)
+
     # Prepare data for vector store
     texts = [c["text"] for c in chunks]
     metadatas = [c["metadata"] for c in chunks]
@@ -217,20 +237,30 @@ async def ingest_document(
 
 @router.get("/rag/collections", response_model=list[CollectionInfo])
 async def list_collections(
-    _authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
     vector_store: VectorStoreService = Depends(get_vector_store),  # noqa: B008
 ) -> list[CollectionInfo]:
     """List all vector store collections with document counts."""
     collections = await vector_store.list_collections()
 
-    return [
-        CollectionInfo(
-            name=c["name"],
-            document_count=c.get("document_count", 0),
-            metadata=c.get("metadata", {}),
+    result = []
+    for collection in collections:
+        access = await collection_access(
+            db,
+            vector_store,
+            name=collection["name"],
+            owner_id=authenticated.account.id,
         )
-        for c in collections
-    ]
+        if access in {"owned", "shared"}:
+            result.append(
+                CollectionInfo(
+                    name=collection["name"],
+                    document_count=collection.get("document_count", 0),
+                    metadata=collection.get("metadata", {}),
+                )
+            )
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -241,14 +271,26 @@ async def list_collections(
 @router.delete("/rag/collections/{name}")
 async def delete_collection(
     name: str,
-    _authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
     vector_store: VectorStoreService = Depends(get_vector_store),  # noqa: B008
 ) -> dict[str, Any]:
     """Delete a vector store collection and all its data."""
+    access = await collection_access(db, vector_store, name=name, owner_id=authenticated.account.id)
+    if access == "shared":
+        raise HTTPException(status_code=403, detail="Shared RAG collections cannot be deleted.")
+    if access != "owned":
+        raise NotFoundError("Collection", name)
+
     deleted = await vector_store.delete_collection(name)
 
     if not deleted:
         raise NotFoundError("Collection", name)
+
+    registry = await db.get(RagCollection, name)
+    if registry is not None:
+        await db.delete(registry)
+        await db.commit()
 
     logger.info("collection_deleted_via_api", name=name)
     return {"status": "deleted", "collection": name}
