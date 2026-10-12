@@ -29,7 +29,7 @@ services:
     # This container uses CPU-only inference.
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:11434/api/tags || exit 1"]
+      test: ["CMD", "ollama", "list"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -48,7 +48,10 @@ services:
       - ANONYMIZED_TELEMETRY=FALSE
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/v1/heartbeat || exit 1"]
+      test:
+        - CMD-SHELL
+        - >-
+          perl -MIO::Socket::INET -e '$$s=IO::Socket::INET->new(PeerAddr=>"127.0.0.1",PeerPort=>8000,Proto=>"tcp",Timeout=>2) or exit 1; print $$s "GET /api/v2/heartbeat HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n"; local $$/; $$r=<$$s>; exit($$r =~ / 200 / ? 0 : 1)'
       interval: 30s
       timeout: 10s
       retries: 5
@@ -146,7 +149,7 @@ services:
         required: false
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1"]
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:3000/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
