@@ -18,6 +18,12 @@ import {
   ragCollectionsSchema,
   toolsListSchema,
   agentCatalogSchema,
+  memoryListSchema,
+  memorySchema,
+  memorySettingsSchema,
+  memoryDeleteAllSchema,
+  type MemoryRecord,
+  type MemorySettings,
 } from "./schemas";
 
 class ApiError extends Error {
@@ -117,6 +123,53 @@ export async function deleteConversation(id: string) {
 
 export async function getAgentCatalog() {
   return apiFetch("/agents", undefined, agentCatalogSchema);
+}
+
+// --- Account memory ---
+export async function getMemories(q?: string) {
+  const params = new URLSearchParams({ limit: "100" });
+  if (q?.trim()) params.set("q", q.trim());
+  return apiFetch(`/memory?${params}`, undefined, memoryListSchema);
+}
+
+export async function createMemory(input: {
+  kind: MemoryRecord["kind"];
+  content: string;
+  project_scope?: string;
+}) {
+  return apiFetch("/memory", {
+    method: "POST",
+    body: JSON.stringify(input),
+  }, memorySchema);
+}
+
+export async function updateMemory(
+  id: string,
+  input: { revision: number; content?: string; kind?: MemoryRecord["kind"]; project_scope?: string | null },
+) {
+  return apiFetch(`/memory/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  }, memorySchema);
+}
+
+export async function deleteMemory(id: string, revision: number) {
+  return apiFetch<void>(`/memory/${encodeURIComponent(id)}?revision=${revision}`, { method: "DELETE" });
+}
+
+export async function getMemorySettings() {
+  return apiFetch("/memory/settings", undefined, memorySettingsSchema);
+}
+
+export async function updateMemorySettings(input: Partial<MemorySettings>) {
+  return apiFetch("/memory/settings", {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  }, memorySettingsSchema);
+}
+
+export async function deleteAllMemories() {
+  return apiFetch("/memory", { method: "DELETE" }, memoryDeleteAllSchema);
 }
 
 // --- Documents ---

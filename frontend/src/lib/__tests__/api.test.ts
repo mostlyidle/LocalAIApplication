@@ -23,6 +23,13 @@ import {
   getHealth,
   getTools,
   getAgentCatalog,
+  getMemories,
+  createMemory,
+  updateMemory,
+  deleteMemory,
+  getMemorySettings,
+  updateMemorySettings,
+  deleteAllMemories,
   login,
   logout,
   ApiError,
@@ -200,6 +207,47 @@ describe("API Client", () => {
 
       expect(result.deleted).toBe(true);
       expect(spy.mock.calls[0][1].method).toBe("DELETE");
+    });
+  });
+
+  describe("Memory endpoints", () => {
+    it("searches owned memories with encoded query parameters", async () => {
+      const spy = mockFetchSuccess({ memories: [], total: 0, limit: 100, offset: 0 });
+      globalThis.fetch = spy;
+      await getMemories("project cedar");
+      expect(spy.mock.calls[0][0]).toContain("/memory?limit=100&q=project+cedar");
+    });
+
+    it("creates, edits, and deletes a memory using revision checks", async () => {
+      const record = {
+        id: "m1", kind: "fact", content: "Uses blue", project_scope: null,
+        source_conversation_id: null, source_message_id: null, origin_agent: null,
+        created_at: "2026-10-12T00:00:00Z", updated_at: "2026-10-12T00:00:00Z",
+        expires_at: null, revision: 1,
+      };
+      const spy = mockFetchSuccess(record);
+      globalThis.fetch = spy;
+      await createMemory({ kind: "fact", content: "Uses blue" });
+      await updateMemory("m1", { revision: 1, content: "Uses cobalt blue" });
+      expect(JSON.parse(spy.mock.calls[0][1].body)).toEqual({ kind: "fact", content: "Uses blue" });
+      expect(JSON.parse(spy.mock.calls[1][1].body)).toEqual({ revision: 1, content: "Uses cobalt blue" });
+      const deleteSpy = mockFetchSuccess(undefined, 204);
+      globalThis.fetch = deleteSpy;
+      await deleteMemory("m1", 1);
+      expect(deleteSpy.mock.calls[0][0]).toContain("/memory/m1?revision=1");
+    });
+
+    it("gets and updates independent memory settings and clears memories", async () => {
+      const spy = mockFetchSuccess({ memory_enabled: false, past_chat_recall_enabled: false });
+      globalThis.fetch = spy;
+      await getMemorySettings();
+      await updateMemorySettings({ memory_enabled: true });
+      expect(spy.mock.calls[1][0]).toContain("/memory/settings");
+      expect(JSON.parse(spy.mock.calls[1][1].body)).toEqual({ memory_enabled: true });
+      const deleteSpy = mockFetchSuccess({ deleted_count: 1, memory_epoch: 2, past_chat_recall_enabled: false });
+      globalThis.fetch = deleteSpy;
+      expect((await deleteAllMemories()).deleted_count).toBe(1);
+      expect(deleteSpy.mock.calls[0][1].method).toBe("DELETE");
     });
   });
 
