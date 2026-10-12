@@ -148,6 +148,7 @@ class AgentCapability(BaseModel):
     default_for_target: bool
     inference: InferenceManifest | None
     retrieval: RetrievalManifest | None
+    model_availability: dict[str, bool | None] = Field(default_factory=dict)
 
 
 class AgentCatalogResponse(BaseModel):

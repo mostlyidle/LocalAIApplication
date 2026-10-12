@@ -693,7 +693,8 @@ The main conversational interface with streaming responses. The orchestrator aut
 
 - **Agent profiles**: Choose Auto or a catalogued agent; specialist controls appear for RAG collection, ticker, workspace path, model settings, or ComfyUI workflow.
 - **Execution details**: Assistant messages retain citations, artifacts, and limitations in history.
-- **Streaming**: Real-time token responses via WebSocket; bounded tasks emit their completed answer through the same chat stream.
+- **Streaming**: Generative profiles send incremental tokens and graph tool events via WebSocket. Deterministic tasks, such as image screening and workflow submission, emit one completed result.
+- **Model availability**: The selector labels installed and missing models separately from profile enablement and prefers an installed alternative. If Ollama is unreachable, availability is marked unknown. Reload after installing models.
 - **Markdown rendering**: Assistant responses render with full Markdown support (code blocks, tables, lists, links)
 - **Tool call visibility**: See which tools the agent invokes and their inputs/outputs
 - **Conversation history**: Conversations are persisted to the database and listed in the sidebar
@@ -741,6 +742,17 @@ not similarity percentages.
 - **Search**: Semantic search across your knowledge base with relevance scores
 - **Collections**: Organize documents into collections, view counts, delete collections
 - **Citations**: Search results include source document and page references
+
+Automatic and explicit RAG retrieve evidence before generating an answer and retain
+structured citations in conversation history. RAG reserves output space and caps
+the prompt budget at 70% of the selected context window. Only complete passages that
+fit are included and cited; omitted passages/history are reported as limitations.
+Increase the context window if no complete passage fits.
+
+Older AITechStack API collections can be queried under their recorded model/revision
+contract without changing their metadata. Because they lack historical weight
+digests, responses identify this limitation. Ingestion remains guarded: re-embed
+into a new collection to establish a verified embedding identity before new writes.
 
 **Workflow**:
 1. Upload documents on the **Documents** page
