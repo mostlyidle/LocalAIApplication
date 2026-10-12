@@ -36,7 +36,15 @@ docker compose exec ollama ollama pull nomic-embed-text
 
 Open the app at <http://localhost:3000>. The API is at <http://localhost:8000>; interactive API docs are at <http://localhost:8000/docs>.
 
-Compose binds service ports to `127.0.0.1` for local use. For remote users, put the app behind a TLS reverse proxy and configure the browser API/WebSocket URLs and allowed origins for that hostname; do not publish Ollama, Qdrant, ChromaDB, or the backend directly.
+Compose binds service ports to `127.0.0.1` for local use. For remote users, put the frontend behind a TLS reverse proxy and keep the backend reachable only on the Compose network. Set these variables in the environment used by `docker compose` before rebuilding:
+
+```dotenv
+NEXT_PUBLIC_API_URL=
+NEXT_PUBLIC_WS_URL=
+BACKEND_URL=http://backend:8000
+```
+
+Empty browser URLs use the public site's same-origin `/api` and WebSocket paths. Route HTTP API requests through the frontend (Next.js rewrites them to the backend), and route `/api/v1/chat/stream` WebSocket upgrades directly to the backend. Set `CORS_ORIGINS` and `MEETING_ALLOWED_ORIGINS` to the exact public `https://` origin and keep `AUTH_COOKIE_SECURE=true`. For a native Tauri client, set `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_WS_URL` to the public HTTPS/WSS API origin because it cannot use browser same-origin routing. Do not publish Ollama, Qdrant, ChromaDB, or the backend directly.
 
 Accounts are operator-managed. After the stack is running, create one with:
 
