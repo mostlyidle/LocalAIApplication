@@ -60,12 +60,21 @@ export function ChatWindow() {
   }, []);
 
   useEffect(() => {
-    setSelectedModel(selectedProfile?.inference?.defaults.model ?? "");
+    const defaultModel = selectedProfile?.inference?.defaults.model ?? "";
+    const installedModel = selectedProfile?.inference?.allowed_models.find(
+      (model) => selectedProfile.model_availability?.[model] === true,
+    );
+    setSelectedModel(
+      selectedProfile?.model_availability?.[defaultModel] === false && installedModel
+        ? installedModel : defaultModel,
+    );
     setTemperature(selectedProfile?.inference?.defaults.temperature ?? 0.1);
   }, [
     selectedAgent,
     selectedProfile?.inference?.defaults.model,
     selectedProfile?.inference?.defaults.temperature,
+    selectedProfile?.inference?.allowed_models,
+    selectedProfile?.model_availability,
   ]);
 
   // Auto-scroll to bottom
@@ -200,8 +209,13 @@ export function ChatWindow() {
         }
       }
       if (selectedProfile.inference) {
+        const model = selectedModel || selectedProfile.inference.defaults.model;
+        if (selectedProfile.model_availability?.[model] === false) {
+          setProfileError(`Install ${model} in Ollama, then reload the page, or choose an installed model.`);
+          return;
+        }
         options.inference = {
-          model: selectedModel || selectedProfile.inference.defaults.model,
+          model,
           temperature,
         };
       }
@@ -346,7 +360,13 @@ export function ChatWindow() {
                 disabled={isStreaming}
                 className="h-8 max-w-52 rounded-md border bg-background px-2 text-xs"
               >
-                {selectedProfile.inference.allowed_models.map((model) => <option key={model}>{model}</option>)}
+                {selectedProfile.inference.allowed_models.map((model) => {
+                  const available = selectedProfile.model_availability?.[model];
+                  const label = available === true ? " (installed)"
+                    : available === false ? " (not installed)"
+                    : available === null ? " (availability unknown)" : "";
+                  return <option key={model} value={model} disabled={available === false}>{model}{label}</option>;
+                })}
               </select>
               <label className="sr-only" htmlFor="agent-temperature">Temperature</label>
               <input

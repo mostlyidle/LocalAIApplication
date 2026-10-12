@@ -43,6 +43,7 @@ export const agentCatalogSchema = z.object({
     target: z.string(),
     description: z.string(),
     default_for_target: z.boolean(),
+    model_availability: z.record(z.string(), z.boolean().nullable()).optional(),
     inference: z.object({
       allowed_models: z.array(z.string()),
       defaults: z.object({ model: z.string(), temperature: z.number() }).passthrough(),

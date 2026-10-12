@@ -140,15 +140,23 @@ class LLMService:
         except httpx.TimeoutException:
             return False, "Ollama health check timed out"
 
-    async def list_models(self) -> list[dict[str, Any]]:
+    async def list_models(self, *, raise_on_error: bool = False) -> list[dict[str, Any]]:
         """List all locally available Ollama models."""
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 resp = await client.get(f"{self._base_url}/api/tags")
                 resp.raise_for_status()
-                return resp.json().get("models", [])
-        except (httpx.HTTPError, KeyError) as exc:
+                payload = resp.json()
+                models = payload.get("models") if isinstance(payload, dict) else None
+                if not isinstance(models, list) or any(not isinstance(model, dict) for model in models):
+                    raise ValueError("Invalid model inventory")
+                if raise_on_error and any(not isinstance(model.get("name"), str) for model in models):
+                    raise ValueError("Invalid model names")
+                return models
+        except (httpx.HTTPError, ValueError, KeyError) as exc:
             logger.error("list_models_failed", error=str(exc))
+            if raise_on_error:
+                raise LLMConnectionError("Ollama model availability could not be checked.") from exc
             return []
 
 
