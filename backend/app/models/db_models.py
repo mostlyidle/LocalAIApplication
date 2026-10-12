@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -130,6 +130,15 @@ class Message(Base):
     """A single message within a conversation."""
 
     __tablename__ = "messages"
+    __table_args__ = (
+        Index(
+            "uq_messages_conversation_client_turn_role",
+            "conversation_id",
+            "client_turn_id",
+            "role",
+            unique=True,
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
     conversation_id: Mapped[str] = mapped_column(
@@ -137,6 +146,8 @@ class Message(Base):
     )
     role: Mapped[str] = mapped_column(String(20))  # user | assistant | system | tool
     content: Mapped[str] = mapped_column(Text)
+    client_turn_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    turn_status: Mapped[str | None] = mapped_column(String(16), nullable=True)
     agent_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     execution_metadata: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
