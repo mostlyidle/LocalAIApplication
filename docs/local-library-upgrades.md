@@ -82,7 +82,8 @@ DOCLING_ARTIFACTS_PATH=/absolute/path/to/docling-models
 
 Restart the backend. The PDF path disables remote services and OCR downloads, limits files
 to the existing upload size, limits documents to 1,000 pages, and sets a 120-second conversion
-budget. Conversions run one at a time per parser instance. Failed or partial conversions are
+budget. Conversions run one at a time per parser instance; queued requests wait asynchronously
+without occupying shared executor threads. Failed or partial conversions are
 reported instead of silently ingesting incomplete output. A timed-out Python await does not
 terminate a native worker; the worker lock continues protecting subsequent conversion work.
 
