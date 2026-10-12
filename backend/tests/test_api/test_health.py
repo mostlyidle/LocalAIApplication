@@ -89,6 +89,13 @@ class TestHealthEndpoint:
         assert services["local_asr"]["required_for_meeting"] is True
         assert services["ollama"]["optional_for_answers"] is True
         assert services["qdrant"]["optional_for_answers"] is True
+        assert services["finnhub_market_data"]["optional_for_answers"] is True
+        assert services["comfyui"]["optional_for_answers"] is True
+
+    async def test_metrics_endpoint_is_exposed(self, client: AsyncClient):
+        response = await client.get("/metrics")
+        assert response.status_code == 200
+        assert "http_requests_total" in response.text
 
     async def test_health_unhealthy_when_all_down(self, client: AsyncClient):
         """When all services fail, status should be 'unhealthy'."""

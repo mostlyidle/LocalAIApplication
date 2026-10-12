@@ -72,6 +72,10 @@ describe("SettingsPage", () => {
       ollama: { status: "ok" },
       qdrant: { status: "ok" },
       database: { status: "ok" },
+      services: [
+        { name: "finnhub_market_data", healthy: false, message: "FINNHUB_API_KEY is not configured" },
+        { name: "comfyui", healthy: true, message: "ComfyUI is reachable" },
+      ],
     });
     mockGetTools.mockResolvedValue({
       tools: [
@@ -103,6 +107,8 @@ describe("SettingsPage", () => {
       expect(screen.getByText("Ollama")).toBeInTheDocument();
       expect(screen.getByText("Qdrant")).toBeInTheDocument();
       expect(screen.getByText("Database")).toBeInTheDocument();
+      expect(screen.getByText("Finnhub Market Data")).toBeInTheDocument();
+      expect(screen.getByText("ComfyUI")).toBeInTheDocument();
     });
   });
 

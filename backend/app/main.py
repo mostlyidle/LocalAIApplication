@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 from fastapi import FastAPI
+from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.api.middleware.cors import setup_cors
 from app.api.middleware.error_handler import register_exception_handlers
@@ -141,6 +142,8 @@ def create_app() -> FastAPI:
     app.include_router(tasks.router, prefix="/api/v1", tags=["Agents"])
     app.include_router(tools.router, prefix="/api/v1", tags=["Tools"])
     app.include_router(meetings.router, prefix="/api/v1", tags=["Meetings"])
+
+    Instrumentator().instrument(app).expose(app, include_in_schema=False)
 
     return app
 

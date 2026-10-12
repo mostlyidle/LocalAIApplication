@@ -10,10 +10,13 @@ import httpx
 class ComfyUIClient:
     """Keep workflow execution local; this client only submits and returns its job id."""
 
-    def __init__(self, base_url: str) -> None:
+    def __init__(
+        self, base_url: str, *, transport: httpx.AsyncBaseTransport | None = None
+    ) -> None:
         self._client = httpx.AsyncClient(
             base_url=base_url.rstrip("/"),
             timeout=30.0,
+            transport=transport,
             limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
         )
 
