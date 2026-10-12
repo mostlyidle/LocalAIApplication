@@ -54,6 +54,28 @@ export function MessageBubble({ message }: MessageBubbleProps) {
             ))}
           </div>
         )}
+        {message.execution && (
+          <details className="mt-3 rounded border border-border/60 px-2 py-1 text-xs">
+            <summary className="cursor-pointer font-medium">Sources and task details</summary>
+            {Array.isArray(message.execution.artifacts?.citations) && (
+              <ul className="mt-2 list-disc space-y-1 pl-4">
+                {(message.execution.artifacts.citations as Record<string, unknown>[]).map((citation, index) => (
+                  <li key={index}>
+                    {String(citation.filename ?? citation.source ?? citation.document_id ?? "Source")}
+                    {citation.page != null ? `, page ${String(citation.page)}` : ""}
+                    {citation.section ? ` · ${String(citation.section)}` : ""}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {message.execution.limitations?.map((limitation, index) => (
+              <p key={index} className="mt-2 text-muted-foreground">{limitation}</p>
+            ))}
+            <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-all text-[10px] text-muted-foreground">
+              {JSON.stringify(message.execution.artifacts ?? {}, null, 2)}
+            </pre>
+          </details>
+        )}
         <div className="mt-1 text-[10px] opacity-50">
           {new Date(message.timestamp).toLocaleTimeString()}
         </div>

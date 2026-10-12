@@ -16,6 +16,7 @@ import {
   ragIngestSchema,
   ragCollectionsSchema,
   toolsListSchema,
+  agentCatalogSchema,
 } from "./schemas";
 
 class ApiError extends Error {
@@ -79,6 +80,10 @@ export async function getConversation(id: string) {
 
 export async function deleteConversation(id: string) {
   return apiFetch<{ deleted: boolean }>(`/chat/conversations/${id}`, { method: "DELETE" });
+}
+
+export async function getAgentCatalog() {
+  return apiFetch("/agents", undefined, agentCatalogSchema);
 }
 
 // --- Documents ---
@@ -149,10 +154,15 @@ export async function addSQLConnection(name: string, url: string) {
 }
 
 // --- RAG ---
-export async function searchRAG(query: string, collection?: string, topK?: number) {
+export async function searchRAG(
+  query: string,
+  collection?: string,
+  topK?: number,
+  agentName = "rag",
+) {
   return apiFetch("/rag/search", {
     method: "POST",
-    body: JSON.stringify({ query, collection, top_k: topK }),
+    body: JSON.stringify({ query, collection, top_k: topK, agent_name: agentName }),
   }, ragSearchResultSchema);
 }
 

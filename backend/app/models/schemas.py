@@ -11,15 +11,15 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr, field_validator
 
 from app.models.enums import (
-    AudioSource,
     AgentType,
+    AudioSource,
     DocumentFormat,
     DocumentStatus,
-    MessageRole,
     MeetingStatus,
+    MessageRole,
     StreamEventType,
 )
-
+from app.models.profile_schemas import InferenceOptions
 
 # =============================================================================
 # Chat
@@ -32,6 +32,13 @@ class ChatMessageRequest(BaseModel):
     content: str = Field(..., min_length=1, max_length=32_000)
     conversation_id: str | None = None
     attachments: list[str] = Field(default_factory=list)
+    agent_name: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]{0,62}$")
+    collection: str = Field(default="documents", pattern=r"^[A-Za-z0-9_-]{1,63}$")
+    symbol: str | None = Field(default=None, pattern=r"^[A-Za-z0-9.^=-]{1,20}$")
+    workspace_path: str | None = Field(default=None, max_length=500)
+    context: str | None = Field(default=None, max_length=100_000)
+    workflow: dict[str, Any] | None = None
+    inference: InferenceOptions | None = None
 
 
 class ToolCallInfo(BaseModel):
@@ -50,8 +57,9 @@ class ChatMessageResponse(BaseModel):
     conversation_id: str
     role: MessageRole = MessageRole.ASSISTANT
     content: str
-    agent_used: AgentType | None = None
+    agent_used: str | None = None
     tool_calls: list[ToolCallInfo] = Field(default_factory=list)
+    execution: dict[str, Any] | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
@@ -207,7 +215,8 @@ class RAGSearchRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=4_000)
     collection: str = "documents"
     top_k: int = Field(default=5, ge=1, le=50)
-    score_threshold: float = Field(default=0.4, ge=0.0, le=1.0)
+    score_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
+    agent_name: str = Field(default="rag", pattern=r"^[a-z][a-z0-9_]{0,62}$")
 
 
 class RAGSearchResult(BaseModel):
@@ -215,6 +224,7 @@ class RAGSearchResult(BaseModel):
 
     content: str
     score: float
+    score_type: str = "cosine"
     source: str
     page: int | None = None
     section: str | None = None
@@ -227,6 +237,7 @@ class RAGSearchResponse(BaseModel):
     query: str
     results: list[RAGSearchResult]
     total_results: int
+    retrieval: dict[str, Any] = Field(default_factory=dict)
 
 
 class CollectionInfo(BaseModel):

@@ -70,6 +70,22 @@ describe("useWebSocket", () => {
     expect(result.current.isStreaming).toBe(false);
   });
 
+  it("includes selected profile inputs in the WebSocket request", async () => {
+    const { result } = renderHook(() => useWebSocket());
+    act(() => result.current.connect());
+    await act(async () => { vi.advanceTimersByTime(1); });
+    act(() => result.current.sendMessage("Research this", [], undefined, {
+      agent_name: "stock_research",
+      symbol: "AAPL",
+      inference: { model: "qwen2.5:7b" },
+    }));
+
+    const payload = JSON.parse(MockWebSocket.instances[0].send.mock.calls[0][0]);
+    expect(payload.agent_name).toBe("stock_research");
+    expect(payload.symbol).toBe("AAPL");
+    expect(payload.inference.model).toBe("qwen2.5:7b");
+  });
+
   it("reports a queued message that cannot connect instead of silently dropping it", async () => {
     const onError = vi.fn();
     const { result, unmount } = renderHook(() => useWebSocket({ onError }));

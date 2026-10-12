@@ -6,6 +6,7 @@ import asyncio
 import json
 import shutil
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, patch
 
@@ -55,6 +56,10 @@ async def test_http_responses_pass_frontend_schemas(
             "metadata": {"source": path.name},
         }
     ]
+    store.search_with_provenance.return_value = SimpleNamespace(
+        passages=store.search.return_value,
+        retrieval={"mode": "hybrid_rrf", "strategy": "hybrid_rrf"},
+    )
     store.add_documents.return_value = 1
     app.dependency_overrides[get_vector_store] = lambda: store
     query_result = {"columns": ["value"], "rows": [[1]], "row_count": 1, "execution_time_ms": 0.1}
@@ -102,7 +107,7 @@ async def test_http_responses_pass_frontend_schemas(
             AsyncMock(return_value=(False, "Not configured")),
         ),
         patch(
-            "app.services.vector_store.vector_store_service.list_collections",
+            "app.services.hybrid_vector_store.hybrid_vector_store_service.list_collections",
             store.list_collections,
         ),
         patch("app.services.database.get_app_engine", return_value=db_session.bind),

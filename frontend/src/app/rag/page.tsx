@@ -14,6 +14,7 @@ import * as api from "@/lib/api";
 interface SearchResult {
   content: string;
   score: number;
+  score_type?: string;
   metadata: Record<string, unknown>;
 }
 
@@ -32,6 +33,7 @@ interface DocumentItem {
 
 export default function RAGPage() {
   const [query, setQuery] = useState("");
+  const [agentName, setAgentName] = useState("rag");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [collections, setCollections] = useState<Collection[]>([]);
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
@@ -75,7 +77,7 @@ export default function RAGPage() {
     setIsSearching(true);
     setError(null);
     try {
-      const data = await api.searchRAG(query.trim());
+      const data = await api.searchRAG(query.trim(), undefined, undefined, agentName);
       setResults((data.results ?? []) as SearchResult[]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Search failed");
@@ -131,6 +133,15 @@ export default function RAGPage() {
                   placeholder="Search your knowledge base..."
                   className="flex-1"
                 />
+                <select
+                  aria-label="Retrieval profile"
+                  value={agentName}
+                  onChange={(e) => setAgentName(e.target.value)}
+                  className="h-9 rounded-md border bg-background px-3 text-sm"
+                >
+                  <option value="rag">Hybrid retrieval</option>
+                  <option value="rag_v2">Hybrid + query rewrites</option>
+                </select>
                 <Button type="submit" disabled={!query.trim() || isSearching}>
                   {isSearching ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -176,10 +187,12 @@ export default function RAGPage() {
                             )}
                           </div>
                           <Badge
-                            variant={result.score > 0.8 ? "default" : "secondary"}
+                            variant={result.score_type === "rrf" ? "secondary" : result.score > 0.8 ? "default" : "secondary"}
                             className="text-[10px]"
                           >
-                            {(result.score * 100).toFixed(1)}%
+                            {result.score_type === "rrf"
+                              ? `RRF ${result.score.toFixed(4)}`
+                              : `${(result.score * 100).toFixed(1)}%`}
                           </Badge>
                         </div>
                         <p className="text-sm leading-relaxed">{result.content}</p>

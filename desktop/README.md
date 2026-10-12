@@ -129,7 +129,7 @@ fields rather than HTTP status alone:
   `app_database`.
 - `services[].name == "local_asr"` reports the bounded local `small.en` load check (normally
   limited to five seconds) and its actionable error message.
-- `services[].name == "ollama"` and `"chromadb"` are optional for meeting capture and answer
+- `services[].name == "ollama"` and `"qdrant"` are optional for meeting capture and answer
   suggestions; their failure is reported as degradation.
 
 The backend initializes its application database and reconciles meetings left `active` by a
@@ -207,8 +207,8 @@ missing audio.
 ## Optional Ollama and RAG
 
 Ollama is not required for native capture or local transcription. It provides private answer
-suggestions for detected **system-source** questions when available. ChromaDB/RAG is disabled
-by default for meetings; set `MEETING_ENABLE_RAG=true` only when the local Chroma store and
+suggestions for detected **system-source** questions when available. Qdrant/RAG is disabled
+by default for meetings; set `MEETING_ENABLE_RAG=true` only when the local Qdrant store and
 embedding setup are available. If Ollama or RAG is unavailable, the backend emits a visible
 `degraded` event and transcription continues. No cloud service or API key is required.
 

@@ -310,16 +310,54 @@ async def health_check() -> HealthResponse:
             )
         )
 
-    # Check ChromaDB
+    # Optional specialists are surfaced separately from enabled profiles.
+    # Finnhub reports configuration only; no rate-limited market request is made here.
+    services.append(
+        ServiceHealth(
+            name="finnhub_market_data",
+            healthy=bool(settings.finnhub_api_key),
+            message=(
+                "API key configured"
+                if settings.finnhub_api_key
+                else "FINNHUB_API_KEY is not configured"
+            ),
+            optional_for_answers=True,
+        )
+    )
     try:
         start = time.perf_counter()
-        from app.services.vector_store import vector_store_service
+        async with httpx.AsyncClient(timeout=2.5) as client:
+            response = await client.get(f"{settings.comfyui_url.rstrip('/')}/system_stats")
+        healthy = response.status_code == 200
+        services.append(
+            ServiceHealth(
+                name="comfyui",
+                healthy=healthy,
+                message="ComfyUI is reachable" if healthy else f"Unexpected status: {response.status_code}",
+                latency_ms=round((time.perf_counter() - start) * 1000, 2),
+                optional_for_answers=True,
+            )
+        )
+    except httpx.HTTPError as exc:
+        services.append(
+            ServiceHealth(
+                name="comfyui",
+                healthy=False,
+                message=str(exc),
+                optional_for_answers=True,
+            )
+        )
+
+    # Check Qdrant
+    try:
+        start = time.perf_counter()
+        from app.services.hybrid_vector_store import hybrid_vector_store_service as vector_store_service
 
         collections = await vector_store_service.list_collections()
         latency = (time.perf_counter() - start) * 1000
         services.append(
             ServiceHealth(
-                name="chromadb",
+                name="qdrant",
                 healthy=True,
                 message=f"OK — {len(collections)} collections",
                 latency_ms=round(latency, 2),
@@ -329,7 +367,7 @@ async def health_check() -> HealthResponse:
     except Exception as exc:
         services.append(
             ServiceHealth(
-                name="chromadb",
+                name="qdrant",
                 healthy=False,
                 message=str(exc),
                 optional_for_answers=True,

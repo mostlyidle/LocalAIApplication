@@ -82,9 +82,9 @@ class MeetingService:
         )
         self.transcription_engine = transcription_engine
         if answer_service is None and settings.meeting_enable_rag:
-            from app.services.vector_store import vector_store_service
+            from app.services.hybrid_vector_store import hybrid_vector_store_service
 
-            answer_service = MeetingAnswerService(retriever=vector_store_service)
+            answer_service = MeetingAnswerService(retriever=hybrid_vector_store_service)
         self.answer_service = answer_service or MeetingAnswerService()
         self.session_factory = session_factory
         self.question_detector = DeterministicQuestionDetector()

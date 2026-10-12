@@ -39,7 +39,7 @@ class TestHealthEndpoint:
             ),
             patch("app.services.database.get_app_engine", return_value=FakeEngine()),
             patch("app.api.routes.tools.httpx.AsyncClient", mock_optional_http),
-            patch("app.services.vector_store.vector_store_service.list_collections", mock_optional_rag),
+            patch("app.services.hybrid_vector_store.hybrid_vector_store_service.list_collections", mock_optional_rag),
         ):
             response = await client.get("/api/v1/health/ready")
 
@@ -56,14 +56,14 @@ class TestHealthEndpoint:
 
     async def test_health_returns_200(self, client: AsyncClient):
         """Health endpoint should always return 200 even when services are down."""
-        # vector_store_service is lazily imported inside health_check,
+        # hybrid_vector_store_service is lazily imported inside health_check,
         # so we patch it in its home module.
         mock_vs = AsyncMock()
         mock_vs.list_collections = AsyncMock(return_value=["documents"])
 
         with (
             patch("app.api.routes.tools.httpx.AsyncClient") as mock_httpx_class,
-            patch("app.services.vector_store.vector_store_service", mock_vs),
+            patch("app.services.hybrid_vector_store.hybrid_vector_store_service", mock_vs),
         ):
             # Mock Ollama check — simulate Ollama being healthy
             # Use MagicMock (not AsyncMock) because httpx Response.json() is synchronous.
@@ -88,7 +88,14 @@ class TestHealthEndpoint:
         services = {service["name"]: service for service in data["services"]}
         assert services["local_asr"]["required_for_meeting"] is True
         assert services["ollama"]["optional_for_answers"] is True
-        assert services["chromadb"]["optional_for_answers"] is True
+        assert services["qdrant"]["optional_for_answers"] is True
+        assert services["finnhub_market_data"]["optional_for_answers"] is True
+        assert services["comfyui"]["optional_for_answers"] is True
+
+    async def test_metrics_endpoint_is_exposed(self, client: AsyncClient):
+        response = await client.get("/metrics")
+        assert response.status_code == 200
+        assert "http_requests_total" in response.text
 
     async def test_health_unhealthy_when_all_down(self, client: AsyncClient):
         """When all services fail, status should be 'unhealthy'."""
@@ -97,7 +104,7 @@ class TestHealthEndpoint:
 
         with (
             patch("app.api.routes.tools.httpx.AsyncClient") as mock_httpx_class,
-            patch("app.services.vector_store.vector_store_service", mock_vs),
+            patch("app.services.hybrid_vector_store.hybrid_vector_store_service", mock_vs),
             patch(
                 "app.services.database.get_app_engine",
                 side_effect=RuntimeError("DB offline"),
