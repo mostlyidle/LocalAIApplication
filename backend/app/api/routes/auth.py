@@ -16,8 +16,8 @@ from app.services.auth import (
     SESSION_COOKIE,
     AuthenticatedSession,
     create_session,
+    get_csrf_token,
     revoke_session,
-    rotate_csrf_token,
 )
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -61,10 +61,9 @@ async def login(
 @router.get("/me", response_model=LoginResponse)
 async def current_account(
     authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
-    db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> LoginResponse:
-    """Return the signed-in account and refresh its one-time CSRF token."""
-    csrf_token = await rotate_csrf_token(db, authenticated.session)
+    """Return the signed-in account and its session-bound CSRF token."""
+    csrf_token = get_csrf_token(authenticated.session)
     return LoginResponse(
         account=AccountResponse.model_validate(authenticated.account),
         csrf_token=csrf_token,
