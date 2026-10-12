@@ -95,6 +95,12 @@ describe("Header", () => {
     expect(screen.getByText("Settings")).toBeDefined();
   });
 
+  it.each([["/memory", "Memory"], ["/meetings", "Meetings"]])("renders the title for %s", (path, title) => {
+    mockPathname.mockReturnValue(path);
+    render(<Header />);
+    expect(screen.getByText(title)).toBeDefined();
+  });
+
   it("falls back to Local AI for unknown paths", () => {
     mockPathname.mockReturnValue("/unknown");
     render(<Header />);

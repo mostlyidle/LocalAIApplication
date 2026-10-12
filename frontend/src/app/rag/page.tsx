@@ -115,10 +115,10 @@ export default function RAGPage() {
   };
 
   return (
-    <div className="container mx-auto max-w-5xl p-6">
-      <div className="mb-6 flex items-center gap-2">
-        <Search className="h-6 w-6 text-violet-500" />
-        <h1 className="text-xl font-bold">RAG Search</h1>
+    <div className="container mx-auto max-w-5xl px-4 py-6 sm:p-8">
+      <div className="mb-6 flex items-center gap-3">
+        <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-sky-soft text-sky-ink"><Search className="h-6 w-6" aria-hidden="true" /></span>
+        <div><h1 className="text-2xl font-bold">RAG Search</h1><p className="mt-1 text-sm text-muted-foreground">Find the dots. Connect the ideas.</p></div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -126,18 +126,20 @@ export default function RAGPage() {
           {/* Search form */}
           <Card>
             <CardContent className="pt-6">
-              <form onSubmit={handleSearch} className="flex gap-2">
+              <form onSubmit={handleSearch} className="flex flex-wrap gap-2">
+                <label htmlFor="rag-query" className="basis-full text-sm font-semibold">Search your knowledge base</label>
                 <Input
+                  id="rag-query"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Search your knowledge base..."
-                  className="flex-1"
+                  className="min-w-0 basis-full sm:basis-48 sm:flex-1"
                 />
                 <select
                   aria-label="Retrieval profile"
                   value={agentName}
                   onChange={(e) => setAgentName(e.target.value)}
-                  className="h-9 rounded-md border bg-background px-3 text-sm"
+                  className="h-11 max-w-full rounded-xl border border-input bg-card px-3 text-sm"
                 >
                   <option value="rag">Hybrid retrieval</option>
                   <option value="rag_v2">Hybrid + query rewrites</option>

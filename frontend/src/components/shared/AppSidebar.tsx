@@ -22,6 +22,8 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarFooter,
+  SidebarTrigger,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { Badge } from "@/components/ui/badge";
 import { BrandMark } from "./BrandMark";
@@ -38,6 +40,7 @@ const navItems = [
 
 export function AppSidebar() {
   const pathname = usePathname();
+  const { isMobile, setOpenMobile } = useSidebar();
 
   return (
     <Sidebar>
@@ -49,6 +52,7 @@ export function AppSidebar() {
             <p className="text-xs text-muted-foreground">Your little AI studio</p>
           </div>
         </Link>
+        <SidebarTrigger className="absolute right-3 top-3 size-11 md:hidden" />
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup className="px-3">
@@ -58,7 +62,7 @@ export function AppSidebar() {
               {navItems.map((item) => (
                 <SidebarMenuItem key={item.href}>
                   <SidebarMenuButton asChild className="h-12 rounded-xl px-3 font-medium transition-colors data-[active=true]:bg-card data-[active=true]:shadow-xs" isActive={pathname === item.href || pathname.startsWith(item.href + "/")}>
-                    <Link href={item.href} aria-current={pathname === item.href || pathname.startsWith(item.href + "/") ? "page" : undefined}>
+                    <Link href={item.href} onClick={() => { if (isMobile) setOpenMobile(false); }} aria-current={pathname === item.href || pathname.startsWith(item.href + "/") ? "page" : undefined}>
                       <span className={`grid size-8 shrink-0 place-items-center rounded-lg ${item.tone}`}>
                         <item.icon className="h-4 w-4" aria-hidden="true" />
                       </span>

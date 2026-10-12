@@ -16,8 +16,8 @@ export function ClientProviders({ children }: { children: ReactNode }) {
         <AuthProvider>
           <SidebarProvider>
             <AuthenticatedShell>
-              <AppSidebar />
               <a href="#main-content" className="sr-only z-50 rounded-lg bg-primary p-3 text-primary-foreground focus:not-sr-only focus:fixed focus:left-4 focus:top-4">Skip to content</a>
+              <AppSidebar />
               <div className="studio-surface flex h-dvh min-w-0 flex-1 flex-col overflow-hidden">
                 <Header />
                 <main id="main-content" tabIndex={-1} className="min-h-0 flex-1 overflow-auto">{children}</main>

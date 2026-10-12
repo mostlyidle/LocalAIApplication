@@ -238,6 +238,27 @@ describe("ChatWindow", () => {
     expect(screen.getByText("Start a conversation")).toBeInTheDocument();
   });
 
+  it("fills an editable starter prompt without sending a message", async () => {
+    render(<ChatWindow />);
+    await userEvent.click(screen.getByRole("button", { name: /Spark an idea/ }));
+    const message = screen.getByRole("textbox", { name: "Your message" });
+    expect(message).toHaveValue("Help me brainstorm a few creative ideas for ");
+    expect(message).toHaveFocus();
+    expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
+  it("scrolls messages to the bottom and a new empty chat back to its greeting", () => {
+    const { container, rerender } = render(<ChatWindow />);
+    const viewport = container.querySelector("[data-radix-scroll-area-viewport]")!;
+    Object.defineProperty(viewport, "scrollHeight", { configurable: true, value: 800 });
+    mockChatState.messages = [{ id: "1", role: "user", content: "Hello", timestamp: "2024-01-01T00:00:00Z" }];
+    rerender(<ChatWindow />);
+    expect(viewport.scrollTop).toBe(800);
+    mockChatState.messages = [];
+    rerender(<ChatWindow />);
+    expect(viewport.scrollTop).toBe(0);
+  });
+
   it("loads available profiles into the agent selector", async () => {
     mockGetAgentCatalog.mockResolvedValue({ agents: [
       {
@@ -501,13 +522,7 @@ describe("ChatWindow", () => {
     });
 
     // Find and click the remove button (X icon)
-    const removeButtons = screen.getAllByRole("button");
-    // The remove button is the small X button inside the attachment preview
-    const removeBtn = removeButtons.find(
-      (btn) => btn.classList.contains("h-5") && btn.classList.contains("w-5")
-    );
-    expect(removeBtn).toBeTruthy();
-    await user.click(removeBtn!);
+    await user.click(screen.getByRole("button", { name: "Remove file.pdf" }));
 
     // Attachment should be gone
     expect(screen.queryByText("Ready")).not.toBeInTheDocument();

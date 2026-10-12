@@ -36,7 +36,7 @@ export function Header() {
   return (
     <header className="flex h-16 shrink-0 items-center gap-3 border-b bg-card/80 px-4 sm:px-6">
       <SidebarTrigger className="size-11" />
-      <Separator orientation="vertical" className="h-6" />
+      <Separator orientation="vertical" className="data-[orientation=vertical]:h-5" />
       <span className="text-sm font-semibold">{title}</span>
       <div className="ml-auto flex items-center gap-2">
         {account && (

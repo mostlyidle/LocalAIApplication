@@ -5,7 +5,7 @@ import { ClientProviders } from "@/components/shared/ClientProviders";
 export const metadata: Metadata = {
   title: "Local AI — Your friendly AI studio",
   description: "Chat, create, and explore with your own team of local AI agents.",
-  icons: { icon: "/local-ai-logo.svg", apple: "/local-ai-logo.svg" },
+  icons: { icon: "/local-ai-logo.svg" },
 };
 
 export default function RootLayout({

@@ -148,11 +148,11 @@ export default function MemoryPage() {
   };
 
   return (
-    <main className="container mx-auto max-w-4xl space-y-6 p-6">
+    <div className="container mx-auto max-w-4xl space-y-6 px-4 py-6 sm:p-8">
       <header className="flex items-center gap-3">
-        <BrainCircuit className="h-6 w-6 text-primary" />
+        <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-violet-soft text-violet-ink"><BrainCircuit className="h-6 w-6" aria-hidden="true" /></span>
         <div>
-          <h1 className="text-xl font-bold">Memory</h1>
+          <h1 className="text-2xl font-bold">Memory</h1>
           <p className="text-sm text-muted-foreground">Review and manage facts saved to your account.</p>
         </div>
       </header>
@@ -254,6 +254,6 @@ export default function MemoryPage() {
           ))}
         </CardContent>
       </Card>
-    </main>
+    </div>
   );
 }
