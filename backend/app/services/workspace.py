@@ -39,6 +39,19 @@ class WorkspaceInputError(ValueError):
     """Requested workspace path is missing, outside the configured root, or unreadable."""
 
 
+def account_workspace_root(root: Path, account_id: str | None) -> Path:
+    """Resolve the operator-assigned workspace directory for one account."""
+    if not account_id:
+        raise WorkspaceInputError("An authenticated account is required to access a workspace.")
+    base = root.expanduser().resolve()
+    workspace = (base / account_id).resolve()
+    if not workspace.is_relative_to(base):
+        raise WorkspaceInputError("The account workspace must stay inside the configured root.")
+    if not workspace.is_dir():
+        raise WorkspaceInputError("No workspace is assigned to this account.")
+    return workspace
+
+
 def read_workspace(root: Path, requested: str | None) -> tuple[str, list[str]]:
     """Read bounded text files under the configured root without following escapes."""
     root = root.expanduser().resolve()

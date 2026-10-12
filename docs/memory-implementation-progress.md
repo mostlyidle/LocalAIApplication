@@ -8,7 +8,7 @@ Use this file to resume the approved implementation without repeating completed 
 - Stage: 1 of 5, identity and ownership
 - Branch: `feature/account-memory-stage1`
 - Status: in progress; do not expose this checkpoint as a shared-account deployment yet
-- Pushed checkpoints: `9ed6362` (account schema and legacy quarantine), `5863058` (operator-managed credentials), `221f466` (plan and resume notes), `14c6f91` (session endpoints), `c2caa64` (chat/document ownership and stable CSRF), `2bc4743` (meeting ownership), `5852d9d` (WebSocket revalidation), `f63bbbe` (agent API authentication), `1e9def0` (account-owned RAG collections), `cafa5c9` (account-owned named SQL connections)
+- Pushed checkpoints: `9ed6362` (account schema and legacy quarantine), `5863058` (operator-managed credentials), `221f466` (plan and resume notes), `14c6f91` (session endpoints), `c2caa64` (chat/document ownership and stable CSRF), `2bc4743` (meeting ownership), `5852d9d` (WebSocket revalidation), `f63bbbe` (agent API authentication), `1e9def0` (account-owned RAG collections), `cafa5c9` (account-owned named SQL connections), `c10f23d` (block unscoped direct file tools), `51b4ffd` (filesystem path containment)
 
 ## Completed checkpoint
 
@@ -35,19 +35,19 @@ Use this file to resume the approved implementation without repeating completed 
 - Added a SQL connection ownership registry. Named connections registered through the API are account-owned; foreign and pre-existing unregistered names are hidden/rejected by SQL APIs and direct SQL tools. The configured `default` database remains a shared application resource. Registered connection URLs remain process-local as before; after a backend restart, the owner must re-register the connection before querying it. The combined focused suite passes 185 tests.
 - Blocked direct `/tools/execute` calls to document and filesystem tools because their file paths are not account-scoped. Safe direct tools and account-scoped document workflows remain available. Added route tests; all 16 tool-route tests pass. Ruff and formatting pass with the same unrelated legacy lint rules excluded, and `git diff --check` is clean.
 - Fixed filesystem path containment to use resolved path ancestry rather than string prefixes, preventing sibling directories such as `data-private` from matching an allowed `data` root. Added a regression test; all 21 filesystem-tool tests pass. Focused Ruff/format checks pass with unrelated pre-existing lint findings excluded.
+- Scoped software-review workspace access to the authenticated account directory under `AGENT_WORKSPACE_ROOT/<account-id>`. Missing assignments fail closed with 422. Added workspace helper, task-runner, and route coverage, and updated README operator instructions. The combined focused workspace/task set passes 23 tests.
 - The first `uv run` attempt could not reach PyPI to build the project environment. Reused the repository's existing `.venv` directly for the successful checks.
 - The implementation time estimate in the plan is explicitly non-binding and does not limit the scope or completion criteria.
 
 ## Not implemented yet
 
-- Per-account workspace roots. The configured software-review workspace is an operator-selected read-only project workspace and remains shared by policy until workspace ownership is specified.
 - Direct MCP process/resource access remains outside the HTTP account session boundary, including SQL and RAG MCP tools. Path-based direct HTTP tool execution is now blocked, but MCP server process access still needs an explicit trust boundary.
 - Dry-run and explicit legacy data assignment/import command.
 - Frontend sign-in and shared-deployment network boundary.
 
 ## Resume here
 
-1. Define the local MCP trust boundary and per-account workspace policy. HTTP direct calls to path-based document/filesystem tools are blocked; MCP servers run separately and are not protected by the app's account session. The API's configured `default` SQL connection is explicitly shared; custom connections are private.
+1. Define the local MCP trust boundary. HTTP direct calls to path-based document/filesystem tools are blocked; MCP servers run separately and are not protected by the app's account session. The API's configured `default` SQL connection is explicitly shared; custom connections are private.
 2. Add dry-run and explicit assignment for quarantined legacy records.
 3. Add frontend sign-in and the shared-deployment network boundary.
 4. Replace the temporary legacy-owner defaults after every creation path supplies the authenticated account.

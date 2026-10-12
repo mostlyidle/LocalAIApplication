@@ -165,20 +165,42 @@ async def test_image_generation_submits_bounded_workflow() -> None:
 async def test_software_engineer_reviews_only_configured_workspace_files(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    source = tmp_path / "review.py"
+    account_id = "11111111-1111-4111-8111-111111111111"
+    account_workspace = tmp_path / account_id
+    account_workspace.mkdir()
+    other_workspace = tmp_path / "22222222-2222-4222-8222-222222222222"
+    other_workspace.mkdir()
+    source = account_workspace / "review.py"
     source.write_text("def calculate():\n    return 42\n", encoding="utf-8")
+    (other_workspace / "private.py").write_text("other-account-secret", encoding="utf-8")
     monkeypatch.setattr("app.services.task_runner.settings.agent_workspace_root", tmp_path)
     model = SimpleNamespace(ainvoke=AsyncMock(return_value=SimpleNamespace(content="Looks good.")))
     with patch("app.services.task_runner.llm_service.get_chat_model", return_value=model):
         result = await _runner().run(
             TaskRequest(prompt="Review this project.", target="software_engineer"),
             request_id="request-review",
+            owner_id=account_id,
         )
 
     prompt = model.ainvoke.call_args.args[0][1].content
     assert "return 42" in prompt
+    assert "other-account-secret" not in prompt
     assert result.artifacts["source_files"] == ["review.py"]
     assert len(result.limitations) == 2
+
+
+async def test_software_engineer_rejects_unassigned_account_workspace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "another-account").mkdir()
+    monkeypatch.setattr("app.services.task_runner.settings.agent_workspace_root", tmp_path)
+
+    with pytest.raises(HTTPException, match="No workspace is assigned"):
+        await _runner().run(
+            TaskRequest(prompt="Review this project.", target="software_engineer"),
+            request_id="request-review-unassigned",
+            owner_id="unassigned-account",
+        )
 
 
 async def test_rag_task_preserves_hybrid_citation_provenance() -> None:
