@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "name": "image_fraud",
+  "target": "image_fraud",
+  "description": "Runs deterministic metadata and recompression triage on uploaded images.",
+  "enabled": true,
+  "default_for_target": true,
+  "inference": null
+}

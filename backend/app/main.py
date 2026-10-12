@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import AsyncIterator
+from typing import TYPE_CHECKING
 
 import structlog
 from fastapi import FastAPI
@@ -15,6 +15,9 @@ from app.api.middleware.error_handler import register_exception_handlers
 from app.api.middleware.rate_limiting import setup_rate_limiting
 from app.api.middleware.request_logging import setup_request_logging
 from app.config import settings
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 
 
 def _configure_logging() -> None:
@@ -44,6 +47,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # ── Startup ─────────────────────────────────────────────────────
     logger.info("starting_up", port=settings.api_port)
+
+    from app.agents.registry import AgentRegistry
+    from app.prompt_store import PromptStore
+
+    profile_dir = Path(__file__).parent / "prompts"
+    prompts = PromptStore(profile_dir)
+    app.state.agent_registry = AgentRegistry(profile_dir, prompts)
 
     # Ensure data directories exist
     Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
@@ -103,8 +113,9 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
 
     # API routes
-    from app.api.routes import chat, documents, meetings, rag, sql, tools
+    from app.api.routes import agents, chat, documents, meetings, rag, sql, tools
 
+    app.include_router(agents.router, prefix="/api/v1", tags=["Agents"])
     app.include_router(chat.router, prefix="/api/v1", tags=["Chat"])
     app.include_router(documents.router, prefix="/api/v1", tags=["Documents"])
     app.include_router(sql.router, prefix="/api/v1", tags=["SQL"])

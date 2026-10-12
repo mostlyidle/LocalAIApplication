@@ -17,6 +17,7 @@ dependencies = [
     "langchain-community>=0.3.0",
     "langchain-text-splitters>=0.3.0",
     "langgraph>=0.2.0",
+    "jinja2>=3.1.0,<4",
 
     # MCP
     "mcp[cli]>=1.0.0",
