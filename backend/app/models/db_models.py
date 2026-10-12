@@ -107,7 +107,6 @@ class Conversation(Base):
         String(36),
         ForeignKey("accounts.id", ondelete="RESTRICT"),
         index=True,
-        default=LEGACY_ACCOUNT_ID,
     )
     title: Mapped[str] = mapped_column(String(255), default="New Conversation")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
@@ -174,7 +173,6 @@ class Document(Base):
         String(36),
         ForeignKey("accounts.id", ondelete="RESTRICT"),
         index=True,
-        default=LEGACY_ACCOUNT_ID,
     )
     filename: Mapped[str] = mapped_column(String(255))
     format: Mapped[str] = mapped_column(String(20))
@@ -207,7 +205,6 @@ class Meeting(Base):
         String(36),
         ForeignKey("accounts.id", ondelete="RESTRICT"),
         index=True,
-        default=LEGACY_ACCOUNT_ID,
     )
     status: Mapped[str] = mapped_column(String(20), default="created", index=True)
     consent_policy_version: Mapped[str] = mapped_column(String(100), nullable=False)

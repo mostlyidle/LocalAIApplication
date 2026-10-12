@@ -15,7 +15,7 @@ from httpx import AsyncClient, Response
 from langchain_core.messages import AIMessage
 
 from app.dependencies import get_vector_store
-from app.models.db_models import Document
+from app.models.db_models import Document, LEGACY_ACCOUNT_ID
 from app.models.enums import DocumentFormat, DocumentStatus
 
 if TYPE_CHECKING:
@@ -38,6 +38,7 @@ async def test_http_responses_pass_frontend_schemas(
     path = tmp_path / "contract.txt"
     path.write_text("A local contract document.", encoding="utf-8")
     doc = Document(
+        owner_id=LEGACY_ACCOUNT_ID,
         id="contract-doc",
         filename=path.name,
         format=DocumentFormat.from_extension(".txt"),

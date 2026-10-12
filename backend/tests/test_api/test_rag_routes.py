@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from httpx import AsyncClient
 
+from app.models.db_models import LEGACY_ACCOUNT_ID
 from app.services.rag_store import (
     RagCollectionConflictError,
     RagCollectionSchemaError,
@@ -46,7 +47,7 @@ async def test_rag_operations_surface_domain_errors(
     else:
         path = tmp_path / "report.txt"
         path.write_text("evidence", encoding="utf-8")
-        db_session.add(Document(id="error-doc", filename=path.name, format="text", size_bytes=8, storage_path=str(path)))
+        db_session.add(Document(owner_id=LEGACY_ACCOUNT_ID, id="error-doc", filename=path.name, format="text", size_bytes=8, storage_path=str(path)))
         await db_session.commit()
         parser = SimpleNamespace(
             parse=AsyncMock(return_value=SimpleNamespace(text="evidence")),
@@ -220,6 +221,7 @@ class TestRAGIngest:
         from app.models.db_models import Document
 
         doc = Document(
+            owner_id=LEGACY_ACCOUNT_ID,
             id="test-doc-1",
             filename="report.pdf",
             format="pdf",
@@ -292,6 +294,7 @@ class TestRAGIngest:
         from app.models.db_models import Document
 
         doc = Document(
+            owner_id=LEGACY_ACCOUNT_ID,
             id="test-doc-missing",
             filename="gone.pdf",
             format="pdf",
@@ -313,6 +316,7 @@ class TestRAGIngest:
         from app.models.db_models import Document
 
         doc = Document(
+            owner_id=LEGACY_ACCOUNT_ID,
             id="test-doc-empty",
             filename="empty.pdf",
             format="pdf",
