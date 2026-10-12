@@ -69,6 +69,7 @@ for tool in calculator_tools:
 
 # Build a name -> tool lookup
 _TOOL_LOOKUP = {tool.name: tool for tool in all_tools}
+_PATH_BASED_TOOL_NAMES = {tool.name for tool in document_tools + filesystem_tools}
 
 
 # ---------------------------------------------------------------------------
@@ -126,6 +127,15 @@ async def execute_tool(
     tool = _TOOL_LOOKUP.get(body.tool_name)
     if tool is None:
         raise NotFoundError("Tool", body.tool_name)
+
+    if body.tool_name in _PATH_BASED_TOOL_NAMES:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Path-based tools are unavailable through direct execution because "
+                "their file paths are not account-scoped."
+            ),
+        )
 
     if body.tool_name == "rag_ingest_tool":
         raise HTTPException(

@@ -83,6 +83,25 @@ class TestExecuteTool:
         data = resp.json()
         assert data["error"]["code"] == "NOT_FOUND"
 
+    @pytest.mark.parametrize(
+        ("tool_name", "arguments"),
+        [
+            ("document_parse_tool", {"file_path": "/etc/passwd"}),
+            ("filesystem_read_tool", {"file_path": "/etc/passwd"}),
+        ],
+    )
+    async def test_execute_path_based_tool_is_forbidden(
+        self, client: AsyncClient, tool_name: str, arguments: dict[str, str]
+    ):
+        """Direct execution must not bypass account-scoped file access."""
+        resp = await client.post(
+            "/api/v1/tools/execute",
+            json={"tool_name": tool_name, "arguments": arguments},
+        )
+
+        assert resp.status_code == 403
+        assert "not account-scoped" in resp.json()["detail"]
+
     async def test_execute_tool_validation_error(self, client: AsyncClient):
         """Missing required arguments should result in 422."""
         # sql_query_tool requires 'query' argument — calling without it
