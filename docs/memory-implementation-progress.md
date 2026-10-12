@@ -8,7 +8,7 @@ Use this file to resume the approved implementation without repeating completed 
 - Stage: 1 of 5, identity and ownership
 - Branch: `feature/account-memory-stage1`
 - Status: in progress; do not expose this checkpoint as a shared-account deployment yet
-- Pushed checkpoints: `9ed6362` (account schema and legacy quarantine), `5863058` (operator-managed credentials)
+- Pushed checkpoints: `9ed6362` (account schema and legacy quarantine), `5863058` (operator-managed credentials), `221f466` (plan and resume notes)
 
 ## Completed checkpoint
 
@@ -19,22 +19,25 @@ Use this file to resume the approved implementation without repeating completed 
 - Added Argon2 password hashing and an operator CLI for account creation and password resets. Password resets revoke active sessions. There is no public registration route.
 - Added credential and reset/revocation tests.
 - Verified with `pytest tests/test_services/test_accounts.py tests/test_services/test_account_identity_migration.py -q` (9 passed), Ruff lint, and Ruff format check.
+- Added `/api/v1/auth/login`, `/auth/me`, and `/auth/logout` with random opaque cookie sessions, SHA-256 token digests, HttpOnly/SameSite cookies, configurable Secure cookies and expiry, session revocation, and a session-bound CSRF token required for mutations.
+- Added REST session/CSRF and WebSocket origin/session dependencies, plus login, CSRF replay, logout, credential, and migration tests. The WebSocket dependency is not wired into chat or meetings routes yet.
+- Verified the auth slice with 12 focused tests, Ruff lint, and Ruff format check. Tests emit one existing Qdrant client-version warning because no Qdrant server is running.
 - The first `uv run` attempt could not reach PyPI to build the project environment. Reused the repository's existing `.venv` directly for the successful checks.
 - The implementation time estimate in the plan is explicitly non-binding and does not limit the scope or completion criteria.
 
 ## Not implemented yet
 
-- Login/logout/current-account API, secure cookies, CSRF checks, and session validation for REST/WebSocket.
 - Ownership filters and authorization for chat, uploaded file access, meetings, RAG collections, SQL connections, workspace roots, tools, and MCP.
 - Dry-run and explicit legacy data assignment/import command.
 - Frontend sign-in and shared-deployment network boundary.
 
 ## Resume here
 
-1. Add login/logout/current-account endpoints, hashed opaque sessions, secure cookies, CSRF checks, and focused security tests.
-2. Enforce account ownership for each resource family and every WebSocket/tool entry point before enabling shared-account access.
+1. Enforce conversation and upload ownership in REST and WebSocket chat/document paths, including persisted background WebSocket turns.
+2. Enforce ownership for meetings, collections, SQL connections, workspace roots, tools, and MCP; review all direct access surfaces.
 3. Add dry-run and explicit assignment for quarantined legacy records.
-4. Replace the temporary legacy-owner defaults after every creation path supplies the authenticated account.
+4. Add frontend sign-in and the shared-deployment network boundary.
+5. Replace the temporary legacy-owner defaults after every creation path supplies the authenticated account.
 
 ## Important safety decision
 
