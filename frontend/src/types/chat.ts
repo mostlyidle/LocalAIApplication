@@ -35,6 +35,7 @@ export interface AgentCapability {
   target: string;
   description: string;
   default_for_target: boolean;
+  model_availability?: Record<string, boolean | null>;
   inference: {
     allowed_models: string[];
     defaults: { model: string; temperature: number };

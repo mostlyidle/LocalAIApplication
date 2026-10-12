@@ -134,6 +134,32 @@ describe("ChatWindow", () => {
     });
   });
 
+  it.each([
+    { availability: { "qwen2.5:7b": false, "llama3.2:3b": true }, selected: "llama3.2:3b", label: "not installed", blocked: false },
+    { availability: { "qwen2.5:7b": false, "llama3.2:3b": false }, selected: "qwen2.5:7b", label: "not installed", blocked: true },
+    { availability: { "qwen2.5:7b": null, "llama3.2:3b": null }, selected: "qwen2.5:7b", label: "availability unknown", blocked: false },
+  ])("shows actual model availability and chooses $selected ($label)", async ({ availability, selected, label, blocked }) => {
+    mockGetAgentCatalog.mockResolvedValue({ agents: [{
+      name: "rag", target: "rag", description: "Answer from evidence", default_for_target: true,
+      model_availability: availability,
+      inference: { allowed_models: ["qwen2.5:7b", "llama3.2:3b"], defaults: { model: "qwen2.5:7b", temperature: 0.2 }, limits: { temperature: { minimum: 0, maximum: 2 } } },
+    }] });
+    render(<ChatWindow />);
+    await waitFor(() => expect(screen.getByLabelText("Agent profile").querySelector('option[value="rag"]')).not.toBeNull());
+    fireEvent.change(screen.getByLabelText("Agent profile"), { target: { value: "rag" } });
+    await waitFor(() => expect(screen.getByLabelText("Agent model")).toHaveValue(selected));
+    expect(screen.getByRole("option", { name: `qwen2.5:7b (${label})` })).toBeInTheDocument();
+    const input = screen.getByPlaceholderText("Type a message... (Shift+Enter for new line)");
+    fireEvent.change(input, { target: { value: "What is supported?" } });
+    fireEvent.submit(input.closest("form")!);
+    if (blocked) {
+      expect(mockSendMessage).not.toHaveBeenCalled();
+      expect(screen.getByText(/Install qwen2.5:7b in Ollama/)).toBeInTheDocument();
+    } else {
+      expect(mockSendMessage).toHaveBeenCalledWith("What is supported?", [], expect.objectContaining({ inference: { model: selected, temperature: 0.2 } }));
+    }
+  });
+
   it("renders messages via MessageBubble", () => {
     mockChatState.messages = [
       { id: "1", role: "user", content: "Hi", timestamp: "2024-01-01T00:00:00Z" },

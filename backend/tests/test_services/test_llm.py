@@ -259,6 +259,17 @@ class TestListModels:
 
         assert models == []
 
+    @pytest.mark.parametrize("payload", [{}, {"models": [{"name": 42}]}, {"models": "invalid"}])
+    async def test_strict_inventory_distinguishes_invalid_responses_from_empty_models(self, payload):
+        from app.api.middleware.error_handler import LLMConnectionError
+        response = MagicMock()
+        response.json.return_value = payload
+        with patch("app.services.llm.httpx.AsyncClient") as cls:
+            cls.return_value.__aenter__ = AsyncMock(return_value=MagicMock(get=AsyncMock(return_value=response)))
+            cls.return_value.__aexit__ = AsyncMock(return_value=False)
+            with pytest.raises(LLMConnectionError):
+                await LLMService().list_models(raise_on_error=True)
+
 
 # =============================================================================
 # Module-level singleton
