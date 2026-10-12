@@ -36,6 +36,8 @@ docker compose exec ollama ollama pull nomic-embed-text
 
 Open the app at <http://localhost:3000>. The API is at <http://localhost:8000>; interactive API docs are at <http://localhost:8000/docs>.
 
+Compose binds service ports to `127.0.0.1` for local use. For remote users, put the app behind a TLS reverse proxy and configure the browser API/WebSocket URLs and allowed origins for that hostname; do not publish Ollama, Qdrant, ChromaDB, or the backend directly.
+
 Accounts are operator-managed. After the stack is running, create one with:
 
 ```bash
