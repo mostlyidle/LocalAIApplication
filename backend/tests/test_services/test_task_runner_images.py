@@ -99,7 +99,7 @@ async def test_image_analysis_receives_approved_memory_as_separate_prompt_contex
         patch(
             "app.services.memory_context.load_account_memory_context",
             new_callable=AsyncMock,
-            return_value='[{"type":"preference","content":"Concise"}]',
+            return_value='[{"type":"preference","content":"Concise"},{"type":"past_conversation","conversation_id":"prior-chat","title":"Kitchen plans","content":"Sage cabinets"}]',
         ),
     ):
         result = await _runner().run(
@@ -116,6 +116,9 @@ async def test_image_analysis_receives_approved_memory_as_separate_prompt_contex
     prompt_messages = model.ainvoke.call_args.args[0]
     system_messages = [message for message in prompt_messages if message.type == "system"]
     assert result.answer == "A blue swatch."
+    assert result.artifacts["memory_sources"] == [
+        {"conversation_id": "prior-chat", "title": "Kitchen plans"}
+    ]
     assert len(system_messages) == 2
     assert "Concise" in system_messages[1].content
 

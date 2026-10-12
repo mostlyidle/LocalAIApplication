@@ -101,6 +101,23 @@ describe("MessageBubble", () => {
     expect(screen.getByText("execute_sql_query")).toBeInTheDocument();
   });
 
+  it("lets the user open a conversation used as recalled context", () => {
+    const onOpenConversation = vi.fn();
+    const message = makeMessage({
+      execution: {
+        artifacts: {
+          memory_sources: [{ conversation_id: "source-chat", title: "Kitchen plans" }],
+        },
+      },
+    });
+    render(<MessageBubble message={message} onOpenConversation={onOpenConversation} />);
+
+    fireEvent.click(screen.getByText("Sources and task details"));
+    fireEvent.click(screen.getByRole("button", { name: "Open: Kitchen plans" }));
+
+    expect(onOpenConversation).toHaveBeenCalledWith("source-chat");
+  });
+
   it("does not render tool calls section when empty", () => {
     render(<MessageBubble message={makeMessage({ toolCalls: [] })} />);
     expect(screen.queryByTestId("tool-call-display")).not.toBeInTheDocument();

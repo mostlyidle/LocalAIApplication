@@ -7,7 +7,11 @@ from unittest.mock import AsyncMock, patch
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.db_models import LEGACY_ACCOUNT_ID, Account, Memory
-from app.services.memory_context import MAX_MEMORY_CONTEXT_CHARS, load_account_memory_context
+from app.services.memory_context import (
+    MAX_MEMORY_CONTEXT_CHARS,
+    load_account_memory_context,
+    memory_sources_from_context,
+)
 
 
 async def test_memory_context_is_empty_until_account_opts_in(db_session: AsyncSession) -> None:
@@ -25,6 +29,22 @@ async def test_memory_context_is_empty_until_account_opts_in(db_session: AsyncSe
     await db_session.commit()
 
     assert await load_account_memory_context(LEGACY_ACCOUNT_ID, db=db_session) == ""
+
+
+def test_memory_sources_include_only_bounded_past_conversation_labels() -> None:
+    context = json.dumps(
+        [
+            {"type": "preference", "content": "Concise"},
+            {"type": "past_conversation", "conversation_id": "chat-1", "title": "First"},
+            {"type": "past_conversation", "conversation_id": "chat-1", "title": "Duplicate"},
+            {"type": "past_conversation", "conversation_id": "chat-2", "content": "summary"},
+        ]
+    )
+
+    assert memory_sources_from_context(context) == [
+        {"conversation_id": "chat-1", "title": "First"},
+        {"conversation_id": "chat-2", "title": "Past conversation"},
+    ]
 
 
 async def test_memory_context_is_owned_approved_active_and_bounded(

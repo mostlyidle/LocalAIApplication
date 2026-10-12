@@ -107,7 +107,13 @@ class TaskRunner:
                 model=inference.model if inference else None,
                 inference=inference,
             )
-            return result.model_copy(update={"metadata": metadata})
+            from app.services.memory_context import memory_sources_from_context
+
+            memory_sources = memory_sources_from_context(self._memory_context.get())
+            artifacts = dict(result.artifacts)
+            if memory_sources:
+                artifacts["memory_sources"] = memory_sources
+            return result.model_copy(update={"metadata": metadata, "artifacts": artifacts})
         finally:
             self._on_token.reset(token)
             self._memory_context.reset(memory_token)

@@ -72,12 +72,19 @@ async def test_specialist_streams_incrementally_and_clears_callback_between_requ
 
 async def test_auto_rag_execution_survives_rest_history_reload(client) -> None:
     execution = {"agent": "rag", "answer": "Friday [guide:0]", "artifacts": {"citations": [{"asset_id": "guide", "chunk_index": 0, "page": 2}]}}
-    state = {"messages": [AIMessage(content=execution["answer"])], "metadata": {"agent_used": "rag", "execution": execution}, "tool_calls": []}
+    state = {"messages": [AIMessage(content=execution["answer"])], "metadata": {"agent_used": "rag", "execution": execution}, "tool_calls": [], "memory_context": '[{"type":"past_conversation","conversation_id":"source-chat","title":"Kitchen plans","content":"summary"}]'}
+    expected_execution = {
+        **execution,
+        "artifacts": {
+            **execution["artifacts"],
+            "memory_sources": [{"conversation_id": "source-chat", "title": "Kitchen plans"}],
+        },
+    }
     with patch("app.api.routes.chat.run_agent", AsyncMock(return_value=state)):
         response = await client.post("/api/v1/chat", json={"content": "Search documents for deadline"})
-    assert response.status_code == 200 and response.json()["execution"] == execution
+    assert response.status_code == 200 and response.json()["execution"] == expected_execution
     history = await client.get(f"/api/v1/chat/conversations/{response.json()['conversation_id']}")
-    assert history.json()["messages"][-1]["execution"] == execution
+    assert history.json()["messages"][-1]["execution"] == expected_execution
 
 
 def test_auto_rag_stream_persists_terminal_citation_metadata(
@@ -86,7 +93,20 @@ def test_auto_rag_stream_persists_terminal_citation_metadata(
     execution = {"agent": "rag", "artifacts": {"citations": [{"asset_id": "guide", "chunk_index": 0}]}}
     async def stream(**kwargs):
         yield {"type": "token", "content": "Friday"}
-        yield {"type": "done", "metadata": {"agent_used": "rag", "execution": execution}}
+        yield {
+            "type": "done",
+            "metadata": {"agent_used": "rag", "execution": execution},
+            "state": {
+                "memory_context": '[{"type":"past_conversation","conversation_id":"source-chat","title":"Kitchen plans","content":"summary"}]'
+            },
+        }
+    expected_execution = {
+        **execution,
+        "artifacts": {
+            **execution["artifacts"],
+            "memory_sources": [{"conversation_id": "source-chat", "title": "Kitchen plans"}],
+        },
+    }
     persist = AsyncMock(return_value=True)
     with (
         patch("app.api.routes.chat.stream_agent", side_effect=stream),
@@ -103,8 +123,8 @@ def test_auto_rag_stream_persists_terminal_citation_metadata(
         ) as ws:
             ws.send_json({"type": "message", "content": "Search documents"})
             assert ws.receive_json()["type"] == "token"
-            assert ws.receive_json()["metadata"]["execution"] == execution
-    assert persist.call_args.kwargs["execution_metadata"] == execution
+            assert ws.receive_json()["metadata"]["execution"] == expected_execution
+    assert persist.call_args.kwargs["execution_metadata"] == expected_execution
 
 
 async def test_concurrent_specialist_streams_keep_callbacks_isolated() -> None:
