@@ -31,6 +31,7 @@ class ChatMessageRequest(BaseModel):
 
     content: str = Field(..., min_length=1, max_length=32_000)
     conversation_id: str | None = None
+    client_turn_id: uuid.UUID | None = None
     attachments: list[str] = Field(default_factory=list)
     agent_name: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]{0,62}$")
     collection: str = Field(default="documents", pattern=r"^[A-Za-z0-9_-]{1,63}$")

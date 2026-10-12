@@ -1186,6 +1186,41 @@ class TestWebSocketStream:
                 assert r1["type"] == "error"
                 assert "Agent error" in r1["content"]
 
+    def test_completed_client_turn_is_replayed_without_running_agent(self):
+        """A resent client turn returns its saved answer without duplicating work."""
+        saved = Message(
+            conversation_id="turn-conversation",
+            role=MessageRole.ASSISTANT,
+            content="Saved answer",
+            client_turn_id="11111111-1111-4111-8111-111111111111",
+            turn_status="completed",
+            agent_type="chat",
+        )
+        client, _ = self._make_test_client()
+        with (
+            patch("app.api.routes.chat._find_ws_turn", new_callable=AsyncMock, return_value=saved),
+            patch("app.api.routes.chat.stream_agent", new_callable=AsyncMock) as mock_stream,
+            self._patches() as mock_persist,
+        ):
+            with client.websocket_connect("/api/v1/chat/stream") as ws:
+                ws.send_json(
+                    {
+                        "type": "message",
+                        "content": "original request",
+                        "conversation_id": "turn-conversation",
+                        "client_turn_id": "11111111-1111-4111-8111-111111111111",
+                    }
+                )
+                token = ws.receive_json()
+                done = ws.receive_json()
+
+        assert token == {"type": "token", "content": "Saved answer"}
+        assert done["type"] == "done"
+        assert done["metadata"]["replayed"] is True
+        assert done["metadata"]["conversation_id"] == "turn-conversation"
+        mock_stream.assert_not_called()
+        mock_persist.assert_not_called()
+
     def test_message_with_conversation_id(self):
         """Client can provide a conversation_id."""
 
@@ -1468,6 +1503,8 @@ class TestPersistWsMessages:
                 assistant_content="Hi back from WS",
                 agent_used="chat",
                 tool_calls_data=[],
+                client_turn_id="ws-turn-1",
+                turn_status="completed",
             )
 
         from sqlalchemy import select
@@ -1481,6 +1518,8 @@ class TestPersistWsMessages:
         assert msgs[1].role == MessageRole.ASSISTANT
         assert msgs[1].content == "Hi back from WS"
         assert msgs[1].agent_type == "chat"
+        assert all(message.client_turn_id == "ws-turn-1" for message in msgs)
+        assert all(message.turn_status == "completed" for message in msgs)
 
     async def test_persists_tool_calls(self, db_session: AsyncSession):
         """Tool call records are persisted alongside the assistant message."""

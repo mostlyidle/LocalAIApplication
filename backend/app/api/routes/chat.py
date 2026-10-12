@@ -296,6 +296,42 @@ async def chat_stream(
             conversation_id = body.conversation_id or str(uuid.uuid4())
             attachments = body.attachments
 
+            if body.client_turn_id is not None:
+                existing_turn = await _find_ws_turn(
+                    conversation_id, owner_id, str(body.client_turn_id)
+                )
+                if existing_turn is not None:
+                    if existing_turn.turn_status == "completed":
+                        if existing_turn.content:
+                            await websocket.send_json(
+                                {"type": "token", "content": existing_turn.content}
+                            )
+                        metadata = {}
+                        if existing_turn.execution_metadata:
+                            try:
+                                metadata["execution"] = json.loads(existing_turn.execution_metadata)
+                            except json.JSONDecodeError:
+                                logger.warning("invalid_saved_execution_metadata")
+                        await websocket.send_json(
+                            {
+                                "type": "done",
+                                "metadata": {
+                                    **metadata,
+                                    "agent_used": existing_turn.agent_type,
+                                    "conversation_id": conversation_id,
+                                    "replayed": True,
+                                },
+                            }
+                        )
+                    else:
+                        await websocket.send_json(
+                            {
+                                "type": "error",
+                                "content": "This turn did not complete. Please send it again.",
+                            }
+                        )
+                    continue
+
             # Accumulators for persistence after streaming completes
             token_chunks: list[str] = []
             tool_calls_data: list[dict] = []
@@ -411,6 +447,8 @@ async def chat_stream(
                 agent_used=agent_used,
                 tool_calls_data=tool_calls_data,
                 execution_metadata=execution_metadata,
+                client_turn_id=(str(body.client_turn_id) if body.client_turn_id else None),
+                turn_status="failed" if stream_failed else "completed",
             )
             if stream_failed:
                 # An agent failure has exactly one terminal event. In
@@ -735,6 +773,25 @@ async def _load_ws_history(conversation_id: str, owner_id: str) -> list:
         return await _load_langchain_messages(db, conversation_id, owner_id)
 
 
+async def _find_ws_turn(conversation_id: str, owner_id: str, client_turn_id: str) -> Message | None:
+    """Find an already persisted assistant result for an owned client turn."""
+    from app.services.database import get_app_session_factory
+
+    async with get_app_session_factory()() as db:
+        stmt = (
+            select(Message)
+            .join(Conversation, Message.conversation_id == Conversation.id)
+            .where(
+                Conversation.owner_id == owner_id,
+                Message.conversation_id == conversation_id,
+                Message.client_turn_id == client_turn_id,
+                Message.role == MessageRole.ASSISTANT,
+            )
+        )
+        result = await db.execute(stmt)
+        return result.scalar_one_or_none()
+
+
 async def _persist_ws_messages(
     conversation_id: str,
     owner_id: str,
@@ -743,6 +800,8 @@ async def _persist_ws_messages(
     agent_used: str | None,
     tool_calls_data: list[dict],
     execution_metadata: dict[str, Any] | None = None,
+    client_turn_id: str | None = None,
+    turn_status: str | None = None,
 ) -> bool:
     """Persist user and assistant messages from a WebSocket stream to the DB.
 
@@ -770,6 +829,8 @@ async def _persist_ws_messages(
                 conversation_id=conversation_id,
                 role=MessageRole.USER,
                 content=user_content,
+                client_turn_id=client_turn_id,
+                turn_status=turn_status,
             )
             db.add(user_msg)
 
@@ -778,6 +839,8 @@ async def _persist_ws_messages(
                 conversation_id=conversation_id,
                 role=MessageRole.ASSISTANT,
                 content=assistant_content or "No response generated.",
+                client_turn_id=client_turn_id,
+                turn_status=turn_status,
                 agent_type=agent_used,
                 execution_metadata=json.dumps(execution_metadata) if execution_metadata else None,
             )
