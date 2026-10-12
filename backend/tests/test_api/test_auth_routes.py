@@ -80,6 +80,15 @@ async def test_chat_and_document_routes_require_a_session(client: AsyncClient) -
     client._transport.app.dependency_overrides.pop(get_authenticated_session)
     assert (await client.get("/api/v1/chat/conversations")).status_code == 401
     assert (await client.get("/api/v1/documents")).status_code == 401
+    assert (
+        await client.post(
+            "/api/v1/meetings",
+            json={
+                "consent_policy_version": "meeting-consent-v1",
+                "consent_attested_at": "2026-10-12T12:00:00Z",
+            },
+        )
+    ).status_code == 401
 
 
 def test_chat_websocket_rejects_untrusted_origin() -> None:
