@@ -45,4 +45,9 @@ async def run_task(
     runner = getattr(request.app.state, "task_runner", None)
     if runner is None:
         raise RuntimeError("Task services are not initialized.")
-    return await runner.run(body, request_id=str(uuid.uuid4()), document=document)
+    return await runner.run(
+        body,
+        request_id=str(uuid.uuid4()),
+        document=document,
+        owner_id=authenticated.account.id,
+    )

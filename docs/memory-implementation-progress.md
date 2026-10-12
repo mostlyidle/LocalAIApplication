@@ -8,7 +8,7 @@ Use this file to resume the approved implementation without repeating completed 
 - Stage: 1 of 5, identity and ownership
 - Branch: `feature/account-memory-stage1`
 - Status: in progress; do not expose this checkpoint as a shared-account deployment yet
-- Pushed checkpoints: `9ed6362` (account schema and legacy quarantine), `5863058` (operator-managed credentials), `221f466` (plan and resume notes), `14c6f91` (session endpoints), `c2caa64` (chat/document ownership and stable CSRF), `2bc4743` (meeting ownership), `5852d9d` (WebSocket revalidation)
+- Pushed checkpoints: `9ed6362` (account schema and legacy quarantine), `5863058` (operator-managed credentials), `221f466` (plan and resume notes), `14c6f91` (session endpoints), `c2caa64` (chat/document ownership and stable CSRF), `2bc4743` (meeting ownership), `5852d9d` (WebSocket revalidation), `f63bbbe` (agent API authentication)
 
 ## Completed checkpoint
 
@@ -30,20 +30,22 @@ Use this file to resume the approved implementation without repeating completed 
 - Enforced account ownership on meeting creation, read, stop, delete, and audio WebSocket claim/start/audio/stop/failure paths. Added cross-account route and stream tests; 28 meeting/auth tests pass. The service module has three pre-existing Ruff UP041 suggestions; targeted checks ignoring that unrelated rule pass.
 - Chat and meeting WebSockets now revalidate session expiry/revocation at least every 60 seconds, including idle streams. A revoked meeting session stops the meeting before the socket closes. Added integration tests for both stream types; the combined account/chat/document/meeting/migration set passes 112 tests. Ruff and formatting pass on changed files; the three existing meeting-service UP041 suggestions were excluded from lint.
 - Added authenticated-session requirements to agent discovery, tasks, direct tool execution, SQL, and RAG endpoints (health checks remain public). Task asset lookup and RAG ingestion now require document ownership. The focused API checks pass 57 tests with Ruff and format checks clean (three unrelated existing Ruff rules excluded in legacy tool/health code).
+- Added a RAG collection ownership registry. New application collections are reserved to the uploading account before vector writes; foreign and unregistered legacy collections are hidden and rejected. Validated collection names are bounded to Qdrant's 63-character limit. Dataloader-owned collections remain shared and read-only. These checks cover RAG search/list/delete/ingest, the direct RAG search tool, selected and automatic RAG agents, and task execution; direct RAG list/ingest tools now require the scoped API routes. A migration leaves pre-existing unregistered collections quarantined rather than assigning them to an account.
+- Verified the combined account/chat/document/meeting/RAG/task/SQL/tool/migration set: 183 tests pass. Ruff passes with existing unrelated typing/style rules excluded; focused formatting checks pass on new/clean files. The Qdrant client warning remains because no Qdrant server is running.
 - The first `uv run` attempt could not reach PyPI to build the project environment. Reused the repository's existing `.venv` directly for the successful checks.
 - The implementation time estimate in the plan is explicitly non-binding and does not limit the scope or completion criteria.
 
 ## Not implemented yet
 
-- Per-account isolation for vector collection search/list/delete and SQL connection registries. RAG collections and SQL connections are still shared among signed-in accounts; do not enable untrusted/shared access yet.
-- Per-account workspace roots and direct MCP process/resource access review.
+- Per-account SQL connection registry and authorization. Registered SQL connections and raw SQL access remain shared among signed-in accounts.
+- Per-account workspace roots and isolation for non-RAG direct tools; direct MCP process/resource access remains outside the HTTP account session boundary.
 - Dry-run and explicit legacy data assignment/import command.
 - Frontend sign-in and shared-deployment network boundary.
 
 ## Resume here
 
-1. Enforce per-account vector collection access and SQL connection ownership, preserving intentionally shared RAG Dataloader collections only through an explicit policy.
-2. Review direct MCP process/resource access and define per-account workspace roots.
+1. Enforce per-account SQL connection ownership and decide whether configured SQL connections are intentionally shared.
+2. Review direct MCP process/resource access, scope remaining direct tools, and define per-account workspace roots.
 3. Add dry-run and explicit assignment for quarantined legacy records.
 4. Add frontend sign-in and the shared-deployment network boundary.
 5. Replace the temporary legacy-owner defaults after every creation path supplies the authenticated account.

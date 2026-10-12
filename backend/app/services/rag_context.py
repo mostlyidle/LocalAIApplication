@@ -29,9 +29,25 @@ async def prepare_rag_context(
     prompts: PromptStore,
     *,
     history: list[str] | None = None,
+    owner_id: str | None = None,
 ) -> RagContext:
     """Retrieve first and include only complete passages that fit the answer budget."""
     from app.services.hybrid_vector_store import hybrid_vector_store_service
+
+    if owner_id is not None:
+        from app.services.database import get_app_session_factory
+        from app.services.rag_access import collection_access
+
+        factory = get_app_session_factory()
+        async with factory() as db:
+            access = await collection_access(
+                db,
+                hybrid_vector_store_service,
+                name=request.collection,
+                owner_id=owner_id,
+            )
+        if access in {"foreign", "unassigned"}:
+            raise HTTPException(status_code=404, detail="RAG collection was not found.")
 
     inference = execution.inference
     assert inference is not None

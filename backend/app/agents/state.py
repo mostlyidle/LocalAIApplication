@@ -40,12 +40,14 @@ class AgentState(TypedDict):
     error: str | None
     database: NotRequired[str]
     forced_agent: NotRequired[str]
+    owner_id: NotRequired[str]
 
 
 def create_initial_state(
     user_input: str,
     conversation_id: str,
     attachments: list[str] | None = None,
+    owner_id: str | None = None,
 ) -> AgentState:
     """Create a fresh AgentState for a new user message.
 
@@ -57,7 +59,7 @@ def create_initial_state(
     Returns:
         An initialized AgentState.
     """
-    return AgentState(
+    state = AgentState(
         messages=[],
         current_agent="orchestrator",
         next_agent=None,
@@ -68,3 +70,6 @@ def create_initial_state(
         metadata={},
         error=None,
     )
+    if owner_id is not None:
+        state["owner_id"] = owner_id
+    return state

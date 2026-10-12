@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from httpx import AsyncClient
@@ -33,13 +33,15 @@ async def test_rag_operations_surface_domain_errors(
     client: AsyncClient, db_session, tmp_path: Path, error: Exception, expected: int, operation: str
 ) -> None:
     from app.dependencies import get_document_parser, get_vector_store
-    from app.models.db_models import Document
+    from app.models.db_models import Document, RagCollection
 
     store = AsyncMock()
     store.add_documents.side_effect = error
     store.delete_collection.side_effect = error
     client._transport.app.dependency_overrides[get_vector_store] = lambda: store
     if operation == "delete":
+        db_session.add(RagCollection(name="loader", owner_id="00000000-0000-4000-8000-000000000000"))
+        await db_session.commit()
         response = await client.delete("/api/v1/rag/collections/loader")
     else:
         path = tmp_path / "report.txt"
@@ -268,6 +270,11 @@ class TestRAGIngest:
         assert data["chunks_ingested"] == 1
         assert data["collection"] == "docs"
         assert data["filename"] == "report.pdf"
+        from app.models.db_models import RagCollection
+
+        registry = await db_session.get(RagCollection, "docs")
+        assert registry is not None
+        assert registry.owner_id == "00000000-0000-4000-8000-000000000000"
 
         # Cleanup
         file_path.unlink(missing_ok=True)
@@ -357,13 +364,23 @@ class TestRAGIngest:
 class TestRAGCollections:
     """Tests for GET /api/v1/rag/collections."""
 
-    async def test_list_collections(self, client: AsyncClient) -> None:
+    async def test_list_collections(self, client: AsyncClient, db_session) -> None:
+        from app.models.db_models import RagCollection
+        from app.services.rag_store import CollectionCapabilities
+
+        db_session.add(RagCollection(name="reports", owner_id="00000000-0000-4000-8000-000000000000"))
+        await db_session.commit()
         mock_vs = AsyncMock()
         mock_vs.list_collections = AsyncMock(
             return_value=[
                 {"name": "documents", "document_count": 42, "metadata": {}},
                 {"name": "reports", "document_count": 7, "metadata": {"source": "uploads"}},
             ]
+        )
+        mock_vs.collection_capabilities = AsyncMock(
+            side_effect=lambda name: CollectionCapabilities(mode="hybrid", loader_owned=True)
+            if name == "documents"
+            else None
         )
 
         from app.dependencies import get_vector_store
@@ -399,7 +416,11 @@ class TestRAGCollections:
 class TestDeleteCollection:
     """Tests for DELETE /api/v1/rag/collections/{name}."""
 
-    async def test_delete_collection_success(self, client: AsyncClient) -> None:
+    async def test_delete_collection_success(self, client: AsyncClient, db_session) -> None:
+        from app.models.db_models import RagCollection
+
+        db_session.add(RagCollection(name="old_docs", owner_id="00000000-0000-4000-8000-000000000000"))
+        await db_session.commit()
         mock_vs = AsyncMock()
         mock_vs.delete_collection = AsyncMock(return_value=True)
 
@@ -412,6 +433,57 @@ class TestDeleteCollection:
         data = resp.json()
         assert data["status"] == "deleted"
         assert data["collection"] == "old_docs"
+
+    async def test_foreign_collection_is_hidden_and_cannot_be_deleted(self, client: AsyncClient, db_session) -> None:
+        from app.dependencies import get_vector_store
+        from app.models.db_models import RagCollection
+
+        db_session.add(RagCollection(name="private", owner_id="different-account"))
+        await db_session.commit()
+        store = AsyncMock()
+        store.list_collections.return_value = [{"name": "private", "document_count": 1, "metadata": {}}]
+        client._transport.app.dependency_overrides[get_vector_store] = lambda: store
+
+        listed = await client.get("/api/v1/rag/collections")
+        searched = await client.post("/api/v1/rag/search", json={"query": "secret", "collection": "private"})
+        deleted = await client.delete("/api/v1/rag/collections/private")
+        direct_tool = await client.post(
+            "/api/v1/tools/execute",
+            json={
+                "tool_name": "rag_search_tool",
+                "arguments": {"query": "secret", "collection": "private"},
+            },
+        )
+        invalid_tool_args = await client.post(
+            "/api/v1/tools/execute",
+            json={
+                "tool_name": "rag_search_tool",
+                "arguments": {"query": "secret", "collection": ["invalid"]},
+            },
+        )
+
+        assert listed.json() == []
+        assert searched.status_code == 404
+        assert deleted.status_code == 404
+        assert direct_tool.status_code == 404
+        assert invalid_tool_args.status_code == 422
+        store.search_with_provenance.assert_not_awaited()
+        store.delete_collection.assert_not_awaited()
+
+    async def test_shared_loader_collection_cannot_be_deleted(self, client: AsyncClient) -> None:
+        from app.dependencies import get_vector_store
+        from app.services.rag_store import CollectionCapabilities
+
+        store = AsyncMock()
+        store.collection_capabilities = AsyncMock(
+            return_value=CollectionCapabilities(mode="hybrid", loader_owned=True)
+        )
+        client._transport.app.dependency_overrides[get_vector_store] = lambda: store
+
+        response = await client.delete("/api/v1/rag/collections/shared-loader")
+
+        assert response.status_code == 403
+        store.delete_collection.assert_not_awaited()
 
     async def test_delete_collection_not_found(self, client: AsyncClient) -> None:
         mock_vs = AsyncMock()

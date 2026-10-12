@@ -271,6 +271,7 @@ async def run_agent(
     attachments: list[str] | None = None,
     existing_messages: list | None = None,
     forced_agent: str | None = None,
+    owner_id: str | None = None,
 ) -> AgentState:
     """Run the full orchestrator pipeline for a user message.
 
@@ -292,6 +293,7 @@ async def run_agent(
         user_input=user_input,
         conversation_id=conversation_id,
         attachments=attachments,
+        owner_id=owner_id,
     )
     if forced_agent:
         state["forced_agent"] = forced_agent
@@ -313,6 +315,7 @@ async def stream_agent(
     attachments: list[str] | None = None,
     existing_messages: list | None = None,
     forced_agent: str | None = None,
+    owner_id: str | None = None,
 ):
     """Stream events from the orchestrator graph for real-time UI updates.
 
@@ -334,6 +337,7 @@ async def stream_agent(
         user_input=user_input,
         conversation_id=conversation_id,
         attachments=attachments,
+        owner_id=owner_id,
     )
     if forced_agent:
         state["forced_agent"] = forced_agent

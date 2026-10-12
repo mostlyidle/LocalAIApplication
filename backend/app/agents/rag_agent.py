@@ -34,7 +34,9 @@ async def rag_agent_node(state: AgentState) -> dict[str, Any]:
         for message in state["messages"][:-1][-8:]
         if getattr(message, "content", None)
     ]
-    context = await prepare_rag_context(request, execution, prompts, history=history)
+    context = await prepare_rag_context(
+        request, execution, prompts, history=history, owner_id=state.get("owner_id")
+    )
     if context.citations:
         system, user = prompts.render_messages(profile.name, "rag", context.prompt_values)
         with llm_service.inference_context(inference):

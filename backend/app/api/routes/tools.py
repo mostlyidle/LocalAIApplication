@@ -9,16 +9,23 @@ Provides:
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from typing import Any
 
 import httpx
 import structlog
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy.ext.asyncio import AsyncSession  # noqa: TC002 - FastAPI resolves this at runtime
 
 from app.api.middleware.rate_limiting import limiter
 from app.config import settings
-from app.dependencies import get_authenticated_session
+from app.dependencies import (
+    VectorStoreService,
+    get_authenticated_session,
+    get_db,
+    get_vector_store,
+)
 from app.models.enums import AgentType
 from app.models.schemas import (
     HealthResponse,
@@ -28,6 +35,7 @@ from app.models.schemas import (
     ToolInfo,
 )
 from app.services.auth import AuthenticatedSession  # noqa: TC001
+from app.services.rag_access import collection_access
 from app.tools import (
     all_tools,
     calculator_tools,
@@ -103,7 +111,9 @@ async def list_tools(
 async def execute_tool(
     request: Request,
     body: ToolExecuteRequest,
-    _authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    vector_store: VectorStoreService = Depends(get_vector_store),  # noqa: B008
 ) -> ToolExecuteResponse:
     """Execute a tool directly by name with the provided arguments.
 
@@ -115,6 +125,33 @@ async def execute_tool(
     tool = _TOOL_LOOKUP.get(body.tool_name)
     if tool is None:
         raise NotFoundError("Tool", body.tool_name)
+
+    if body.tool_name == "rag_ingest_tool":
+        raise HTTPException(
+            status_code=403,
+            detail="Upload a document first, then use the account-scoped RAG ingest endpoint.",
+        )
+    if body.tool_name == "rag_list_collections_tool":
+        raise HTTPException(
+            status_code=403,
+            detail="Use the account-scoped RAG collections endpoint.",
+        )
+    if body.tool_name == "rag_search_tool":
+        collection_name = body.arguments.get("collection", "documents")
+        if (
+            not isinstance(collection_name, str)
+            or len(collection_name) > 63
+            or re.fullmatch(r"[A-Za-z0-9_-]+", collection_name) is None
+        ):
+            raise HTTPException(status_code=422, detail="Invalid RAG collection name.")
+        access = await collection_access(
+            db,
+            vector_store,
+            name=collection_name,
+            owner_id=authenticated.account.id,
+        )
+        if access in {"foreign", "unassigned"}:
+            raise NotFoundError("Collection", collection_name)
 
     start_time = time.perf_counter()
 
