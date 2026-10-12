@@ -66,6 +66,14 @@ class ResolvedInferenceOptions(BaseModel):
         }
 
 
+class ExecutionMetadata(BaseModel):
+    request_id: str
+    target: RoutableTarget
+    agent_name: str
+    model: str | None = None
+    inference: ResolvedInferenceOptions | None = None
+
+
 class TaskRequest(BaseModel):
     """Bounded agent-task input; optional fields are interpreted by each target."""
 
@@ -101,3 +109,11 @@ class TaskRequest(BaseModel):
         if self.model and "model" not in values:
             values["model"] = self.model
         return values or None
+
+
+class AgentResult(BaseModel):
+    agent: str
+    answer: str
+    artifacts: dict[str, Any] = Field(default_factory=dict)
+    limitations: list[str] = Field(default_factory=list)
+    metadata: ExecutionMetadata | None = None
