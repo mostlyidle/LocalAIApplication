@@ -203,6 +203,34 @@ class Memory(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
+class MemoryOutboxJob(Base):
+    """Durable, idempotent work item for indexing one eligible chat turn."""
+
+    __tablename__ = "memory_outbox_jobs"
+    __table_args__ = (
+        UniqueConstraint("source_message_id", name="uq_memory_outbox_source_message"),
+        Index("ix_memory_outbox_status_available", "status", "available_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
+    owner_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("accounts.id", ondelete="RESTRICT"), index=True
+    )
+    conversation_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("conversations.id", ondelete="CASCADE"), index=True
+    )
+    source_message_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("messages.id", ondelete="CASCADE")
+    )
+    memory_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), default="pending", server_default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    available_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
 class ToolCallRecord(Base):
     """Record of a tool invocation made during message generation."""
 
