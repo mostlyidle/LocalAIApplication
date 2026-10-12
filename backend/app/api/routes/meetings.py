@@ -19,7 +19,12 @@ from sqlalchemy.ext.asyncio import (
 
 from app.api.middleware.error_handler import AppError
 from app.config import settings
-from app.dependencies import get_db, get_meeting_service
+from app.dependencies import (
+    get_authenticated_session,
+    get_db,
+    get_meeting_service,
+    get_websocket_session,
+)
 from app.models.db_models import DetectedQuestion, Meeting, TranscriptSegment
 from app.models.enums import MeetingStatus
 from app.models.schemas import (
@@ -37,6 +42,9 @@ from app.models.schemas import (
     MeetingStopResponse,
     decode_audio_envelope,
 )
+from app.services.auth import (
+    AuthenticatedSession,  # noqa: TC001 - FastAPI resolves this annotation at runtime
+)
 from app.services.meetings import (
     MeetingService,  # noqa: TC001 - FastAPI resolves this annotation at runtime
 )
@@ -49,12 +57,14 @@ _client_message_adapter = TypeAdapter(MeetingClientMessage)
 @router.post("/meetings", response_model=MeetingResponse)
 async def create_meeting(
     body: MeetingCreateRequest,
-    db: AsyncSession = Depends(get_db),
-    service: MeetingService = Depends(get_meeting_service),
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    service: MeetingService = Depends(get_meeting_service),  # noqa: B008
 ) -> MeetingResponse:
     """Create a meeting with one canonical consent receipt."""
     meeting = await service.create_meeting(
         db,
+        owner_id=authenticated.account.id,
         consent_policy_version=body.consent_policy_version,
         consent_attested_at=body.consent_attested_at,
     )
@@ -64,22 +74,24 @@ async def create_meeting(
 @router.get("/meetings/{meeting_id}", response_model=MeetingResponse)
 async def get_meeting(
     meeting_id: str,
-    db: AsyncSession = Depends(get_db),
-    service: MeetingService = Depends(get_meeting_service),
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    service: MeetingService = Depends(get_meeting_service),  # noqa: B008
 ) -> MeetingResponse:
     """Return meeting metadata without audio payloads."""
-    meeting = await service.get_meeting(db, meeting_id)
+    meeting = await service.get_meeting(db, meeting_id, authenticated.account.id)
     return await _meeting_response(db, meeting)
 
 
 @router.post("/meetings/{meeting_id}/stop", response_model=MeetingStopResponse)
 async def stop_meeting(
     meeting_id: str,
-    db: AsyncSession = Depends(get_db),
-    service: MeetingService = Depends(get_meeting_service),
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    service: MeetingService = Depends(get_meeting_service),  # noqa: B008
 ) -> MeetingStopResponse:
     """Stop a meeting and clean up its processor session idempotently."""
-    meeting = await service.stop_meeting(db, meeting_id)
+    meeting = await service.stop_meeting(db, meeting_id, authenticated.account.id)
     response = await _meeting_response(db, meeting)
     return MeetingStopResponse(**response.model_dump())
 
@@ -87,11 +99,12 @@ async def stop_meeting(
 @router.delete("/meetings/{meeting_id}", response_model=MeetingDeleteResponse)
 async def delete_meeting(
     meeting_id: str,
-    db: AsyncSession = Depends(get_db),
-    service: MeetingService = Depends(get_meeting_service),
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    service: MeetingService = Depends(get_meeting_service),  # noqa: B008
 ) -> MeetingDeleteResponse:
     """Delete a meeting and purge all processor/child state."""
-    await service.delete_meeting(db, meeting_id)
+    await service.delete_meeting(db, meeting_id, authenticated.account.id)
     return MeetingDeleteResponse(meeting_id=meeting_id)
 
 
@@ -99,8 +112,9 @@ async def delete_meeting(
 async def meeting_stream(
     websocket: WebSocket,
     meeting_id: str,
-    db: AsyncSession = Depends(get_db),
-    service: MeetingService = Depends(get_meeting_service),
+    authenticated: AuthenticatedSession = Depends(get_websocket_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    service: MeetingService = Depends(get_meeting_service),  # noqa: B008
 ) -> None:
     """Accept strict JSON controls and bounded binary PCM envelopes.
 
@@ -118,7 +132,7 @@ async def meeting_stream(
     session_id = str(uuid.uuid4())
     event_task: asyncio.Task[None] | None = None
     try:
-        meeting = await service.claim_stream(db, meeting_id, session_id)
+        meeting = await service.claim_stream(db, meeting_id, session_id, authenticated.account.id)
         event_queue = service.event_queue(meeting_id, session_id)
         event_task = asyncio.create_task(_forward_events(websocket, event_queue))
         await _send_status(websocket, meeting)
@@ -149,6 +163,7 @@ async def meeting_stream(
                         session_id,
                         header,
                         payload,
+                        authenticated.account.id,
                     )
                 except AudioEnvelopeError as exc:
                     await _send_error(websocket, exc.code, str(exc))
@@ -168,7 +183,9 @@ async def meeting_stream(
 
             raw_text = frame.get("text")
             if not raw_text:
-                await _send_error(websocket, "INVALID_MESSAGE", "Expected a JSON control message or binary audio.")
+                await _send_error(
+                    websocket, "INVALID_MESSAGE", "Expected a JSON control message or binary audio."
+                )
                 continue
             try:
                 payload = json.loads(raw_text)
@@ -176,11 +193,15 @@ async def meeting_stream(
                     raise TypeError("control message must be an object")
                 command = _client_message_adapter.validate_python(payload)
             except (json.JSONDecodeError, TypeError, ValidationError):
-                await _send_error(websocket, "INVALID_MESSAGE", "Control message does not match the protocol.")
+                await _send_error(
+                    websocket, "INVALID_MESSAGE", "Control message does not match the protocol."
+                )
                 continue
 
             if command.type == "start":
-                meeting = await service.start_stream(db, meeting_id, session_id)
+                meeting = await service.start_stream(
+                    db, meeting_id, session_id, authenticated.account.id
+                )
                 await _send_status(websocket, meeting)
             elif isinstance(command, MeetingSourceEnded):
                 await service.source_ended(meeting_id, session_id, command.source)
@@ -193,7 +214,7 @@ async def meeting_stream(
                     ),
                 )
             elif isinstance(command, MeetingStopCommand):
-                meeting = await service.stop_meeting(db, meeting_id)
+                meeting = await service.stop_meeting(db, meeting_id, authenticated.account.id)
                 await event_queue.join()
                 await _send_status(websocket, meeting)
                 await websocket.close(code=1000)
@@ -205,7 +226,9 @@ async def meeting_stream(
     except Exception as exc:
         logger.exception("meeting_stream_failed", meeting_id=meeting_id, error=str(exc))
         try:
-            await service.fail_meeting(db, meeting_id, "Audio stream failed.", session_id)
+            await service.fail_meeting(
+                db, meeting_id, "Audio stream failed.", session_id, authenticated.account.id
+            )
             await _send_error(websocket, "MEETING_STREAM_FAILED", "Audio stream failed.")
         except Exception:
             logger.warning("meeting_failure_persistence_failed", meeting_id=meeting_id)
@@ -222,8 +245,7 @@ def _is_allowed_origin(origin: str | None) -> bool:
     if not origin:
         return False
     configured = {
-        item.rstrip("/")
-        for item in (*settings.cors_origins, *settings.meeting_allowed_origins)
+        item.rstrip("/") for item in (*settings.cors_origins, *settings.meeting_allowed_origins)
     }
     tauri_origins = {
         "tauri://localhost",
@@ -234,7 +256,11 @@ def _is_allowed_origin(origin: str | None) -> bool:
     if candidate in configured or candidate in tauri_origins:
         return True
     parsed = urlparse(candidate)
-    return parsed.scheme in {"http", "https"} and parsed.hostname in {"localhost", "127.0.0.1"} and candidate in configured
+    return (
+        parsed.scheme in {"http", "https"}
+        and parsed.hostname in {"localhost", "127.0.0.1"}
+        and candidate in configured
+    )
 
 
 async def _meeting_response(db: AsyncSession, meeting: Meeting) -> MeetingResponse:

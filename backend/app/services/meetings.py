@@ -18,7 +18,7 @@ from app.api.middleware.error_handler import (
     NotFoundError,
 )
 from app.config import settings
-from app.models.db_models import DetectedQuestion, Meeting, TranscriptSegment
+from app.models.db_models import LEGACY_ACCOUNT_ID, DetectedQuestion, Meeting, TranscriptSegment
 from app.models.enums import MeetingStatus
 from app.models.schemas import (
     AudioEnvelopeHeader,
@@ -102,6 +102,7 @@ class MeetingService:
         self,
         db: AsyncSession,
         *,
+        owner_id: str | None = None,
         consent_policy_version: str,
         consent_attested_at: datetime,
     ) -> Meeting:
@@ -112,6 +113,7 @@ class MeetingService:
             raise ConsentRequiredError()
 
         meeting = Meeting(
+            owner_id=owner_id or LEGACY_ACCOUNT_ID,
             status=MeetingStatus.CREATED.value,
             consent_policy_version=consent_policy_version,
             consent_attested_at=consent_attested_at.astimezone(UTC),
@@ -122,17 +124,24 @@ class MeetingService:
         logger.info("meeting_created", meeting_id=meeting.id)
         return meeting
 
-    async def get_meeting(self, db: AsyncSession, meeting_id: str) -> Meeting:
+    async def get_meeting(
+        self, db: AsyncSession, meeting_id: str, owner_id: str | None = None
+    ) -> Meeting:
         """Load a meeting or raise a consistent not-found error."""
-        result = await db.execute(select(Meeting).where(Meeting.id == meeting_id))
+        statement = select(Meeting).where(Meeting.id == meeting_id)
+        if owner_id is not None:
+            statement = statement.where(Meeting.owner_id == owner_id)
+        result = await db.execute(statement)
         meeting = result.scalar_one_or_none()
         if meeting is None:
             raise NotFoundError("Meeting", meeting_id)
         return meeting
 
-    async def start_stream(self, db: AsyncSession, meeting_id: str, session_id: str) -> Meeting:
+    async def start_stream(
+        self, db: AsyncSession, meeting_id: str, session_id: str, owner_id: str | None = None
+    ) -> Meeting:
         """Claim one stream and authoritatively transition created to active."""
-        meeting = await self.get_meeting(db, meeting_id)
+        meeting = await self.get_meeting(db, meeting_id, owner_id)
         async with self._session_lock:
             if meeting_id in self._closing_meetings:
                 raise MeetingProtocolError(
@@ -146,9 +155,13 @@ class MeetingService:
                     "ACTIVE_AUDIO_SESSION",
                 )
             if meeting.status == MeetingStatus.STOPPED.value:
-                raise MeetingProtocolError("Stopped meetings cannot be started.", "MEETING_NOT_STARTABLE")
+                raise MeetingProtocolError(
+                    "Stopped meetings cannot be started.", "MEETING_NOT_STARTABLE"
+                )
             if meeting.status == MeetingStatus.FAILED.value:
-                raise MeetingProtocolError("Failed meetings cannot be started.", "MEETING_NOT_STARTABLE")
+                raise MeetingProtocolError(
+                    "Failed meetings cannot be started.", "MEETING_NOT_STARTABLE"
+                )
 
             engine = await self._ensure_transcription_engine()
             consumer = self._make_consumer(
@@ -176,9 +189,11 @@ class MeetingService:
                 await db.refresh(meeting)
             return meeting
 
-    async def claim_stream(self, db: AsyncSession, meeting_id: str, session_id: str) -> Meeting:
+    async def claim_stream(
+        self, db: AsyncSession, meeting_id: str, session_id: str, owner_id: str | None = None
+    ) -> Meeting:
         """Reserve the sole WebSocket session without starting the meeting."""
-        meeting = await self.get_meeting(db, meeting_id)
+        meeting = await self.get_meeting(db, meeting_id, owner_id)
         async with self._session_lock:
             if meeting_id in self._closing_meetings:
                 raise MeetingProtocolError(
@@ -192,7 +207,9 @@ class MeetingService:
                     "ACTIVE_AUDIO_SESSION",
                 )
             if meeting.status in {MeetingStatus.STOPPED.value, MeetingStatus.FAILED.value}:
-                raise MeetingProtocolError("Meeting is no longer streamable.", "MEETING_NOT_STREAMABLE")
+                raise MeetingProtocolError(
+                    "Meeting is no longer streamable.", "MEETING_NOT_STREAMABLE"
+                )
             self._sessions[meeting_id] = session_id
             self._event_queues.setdefault(meeting_id, asyncio.Queue(maxsize=128))
             return meeting
@@ -210,9 +227,10 @@ class MeetingService:
         session_id: str,
         header: AudioEnvelopeHeader,
         payload: bytes,
+        owner_id: str | None = None,
     ) -> bool:
         """Validate lifecycle/session state and accept through the processor."""
-        meeting = await self.get_meeting(db, meeting_id)
+        meeting = await self.get_meeting(db, meeting_id, owner_id)
         if not meeting.consent_policy_version or meeting.consent_attested_at is None:
             raise ConsentRequiredError()
         if meeting.status != MeetingStatus.ACTIVE.value:
@@ -248,9 +266,11 @@ class MeetingService:
                 self._closing_meetings.pop(meeting_id, None)
                 closing.set()
 
-    async def stop_meeting(self, db: AsyncSession, meeting_id: str) -> Meeting:
+    async def stop_meeting(
+        self, db: AsyncSession, meeting_id: str, owner_id: str | None = None
+    ) -> Meeting:
         """Stop a meeting idempotently and clean up its active processor."""
-        meeting = await self.get_meeting(db, meeting_id)
+        meeting = await self.get_meeting(db, meeting_id, owner_id)
         async with self._session_lock:
             closing = self._closing_meetings.get(meeting_id)
             if closing is None:
@@ -290,9 +310,10 @@ class MeetingService:
         meeting_id: str,
         reason: str,
         session_id: str | None = None,
+        owner_id: str | None = None,
     ) -> Meeting:
         """Transition to failed and purge any associated processor state."""
-        meeting = await self.get_meeting(db, meeting_id)
+        meeting = await self.get_meeting(db, meeting_id, owner_id)
         active_session = self._sessions.get(meeting_id)
         if active_session is not None and (session_id is None or session_id == active_session):
             try:
@@ -355,9 +376,11 @@ class MeetingService:
         logger.warning("meetings_reconciled_after_restart", count=len(meetings))
         return len(meetings)
 
-    async def delete_meeting(self, db: AsyncSession, meeting_id: str) -> None:
+    async def delete_meeting(
+        self, db: AsyncSession, meeting_id: str, owner_id: str | None = None
+    ) -> None:
         """Delete a meeting and all children after purging audio state."""
-        await self.get_meeting(db, meeting_id)
+        await self.get_meeting(db, meeting_id, owner_id)
         session_id = self._sessions.pop(meeting_id, None)
         try:
             await self.processor.purge(meeting_id, session_id)
@@ -365,8 +388,13 @@ class MeetingService:
             await self._close_answer_worker(meeting_id, session_id, drain=False)
             self._event_queues.pop(meeting_id, None)
         await db.execute(delete(DetectedQuestion).where(DetectedQuestion.meeting_id == meeting_id))
-        await db.execute(delete(TranscriptSegment).where(TranscriptSegment.meeting_id == meeting_id))
-        await db.execute(delete(Meeting).where(Meeting.id == meeting_id))
+        await db.execute(
+            delete(TranscriptSegment).where(TranscriptSegment.meeting_id == meeting_id)
+        )
+        statement = delete(Meeting).where(Meeting.id == meeting_id)
+        if owner_id is not None:
+            statement = statement.where(Meeting.owner_id == owner_id)
+        await db.execute(statement)
         await db.commit()
         logger.info("meeting_deleted", meeting_id=meeting_id)
 
@@ -387,9 +415,7 @@ class MeetingService:
             load_task = asyncio.create_task(self._load_transcription_engine())
             self._asr_load_task = load_task
         try:
-            await asyncio.wait_for(
-                asyncio.shield(load_task), timeout=ASR_READINESS_TIMEOUT_SECONDS
-            )
+            await asyncio.wait_for(asyncio.shield(load_task), timeout=ASR_READINESS_TIMEOUT_SECONDS)
         except asyncio.TimeoutError as exc:
             raise MeetingProtocolError(
                 "Local ASR is not ready: readiness check timed out; try again shortly.",
@@ -447,9 +473,7 @@ class MeetingService:
                 if not text:
                     continue
                 async with session_factory() as inference_db, inference_db.begin():
-                    sequence = await self._allocate_transcript_sequence(
-                        inference_db, meeting_id
-                    )
+                    sequence = await self._allocate_transcript_sequence(inference_db, meeting_id)
                     segment = TranscriptSegment(
                         meeting_id=meeting_id,
                         sequence=sequence,
@@ -502,6 +526,7 @@ class MeetingService:
                         question=detected.question,
                     ),
                 )
+
         return consume
 
     def _ensure_answer_worker(
@@ -551,7 +576,9 @@ class MeetingService:
     ) -> None:
         """Process answer work independently from the audio processor worker."""
         timeout = float(
-            getattr(self.answer_service, "provider_timeout_seconds", ANSWER_PROVIDER_TIMEOUT_SECONDS)
+            getattr(
+                self.answer_service, "provider_timeout_seconds", ANSWER_PROVIDER_TIMEOUT_SECONDS
+            )
         )
         request_timeout = timeout * 2 + ANSWER_DRAIN_GRACE_SECONDS
         try:
@@ -585,7 +612,9 @@ class MeetingService:
                                 message="Private answer suggestions are unavailable.",
                             ),
                         )
-                        logger.warning("meeting_ollama_degraded", meeting_id=meeting_id, error=str(exc))
+                        logger.warning(
+                            "meeting_ollama_degraded", meeting_id=meeting_id, error=str(exc)
+                        )
                         continue
 
                     if self._answer_sessions.get(meeting_id) != session_id:
@@ -628,7 +657,9 @@ class MeetingService:
         worker = self._answer_workers.get(meeting_id)
         if drain and queue is not None and worker is not None:
             timeout = float(
-                getattr(self.answer_service, "provider_timeout_seconds", ANSWER_PROVIDER_TIMEOUT_SECONDS)
+                getattr(
+                    self.answer_service, "provider_timeout_seconds", ANSWER_PROVIDER_TIMEOUT_SECONDS
+                )
             )
             try:
                 await asyncio.wait_for(
@@ -644,9 +675,7 @@ class MeetingService:
         self._answer_workers.pop(meeting_id, None)
         self._answer_sessions.pop(meeting_id, None)
 
-    def _session_factory_for(
-        self, db: AsyncSession
-    ) -> async_sessionmaker[AsyncSession]:
+    def _session_factory_for(self, db: AsyncSession) -> async_sessionmaker[AsyncSession]:
         """Return a factory for isolated background sessions on the app database."""
         if self.session_factory is not None:
             return self.session_factory
