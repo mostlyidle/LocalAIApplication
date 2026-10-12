@@ -365,6 +365,7 @@ async def test_reconcile_active_meetings_fails_stale_meeting_without_deleting_tr
 ):
     """A restart closes stale state while retaining the durable meeting history."""
     meeting = Meeting(
+        owner_id=LEGACY_ACCOUNT_ID,
         status=MeetingStatus.ACTIVE.value,
         consent_policy_version="v1",
         consent_attested_at=datetime.now(UTC),

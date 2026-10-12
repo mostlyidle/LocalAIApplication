@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock
 
 from httpx import AsyncClient
 
-from app.models.db_models import Document
+from app.models.db_models import Document, LEGACY_ACCOUNT_ID
 from app.models.profile_schemas import AgentResult
 
 
@@ -15,6 +15,7 @@ async def test_task_route_resolves_uploaded_asset_id(
     path = tmp_path / "image.png"
     path.write_bytes(b"image bytes")
     document = Document(
+        owner_id=LEGACY_ACCOUNT_ID,
         id="uploaded-image",
         filename="image.png",
         format="png",

@@ -155,6 +155,7 @@ class TestSendMessage:
         document_path.write_text("trusted upload", encoding="utf-8")
         db_session.add(
             Document(
+                owner_id=LEGACY_ACCOUNT_ID,
                 id="uploaded-note",
                 filename="note.txt",
                 format="text",
@@ -178,7 +179,7 @@ class TestSendMessage:
     ):
         """Providing conversation_id reuses the conversation."""
         # Create a conversation first
-        conv = Conversation(id="test-conv-123", title="Test")
+        conv = Conversation(owner_id=LEGACY_ACCOUNT_ID, id="test-conv-123", title="Test")
         db_session.add(conv)
         await db_session.commit()
 
@@ -355,7 +356,7 @@ class TestSendMessageDirect:
         conv_id = "title-test-conv"
 
         # Create a fresh conversation with default title
-        conv = Conversation(id=conv_id, title="New Conversation")
+        conv = Conversation(owner_id=LEGACY_ACCOUNT_ID, id=conv_id, title="New Conversation")
         db_session.add(conv)
         await db_session.flush()
 
@@ -388,7 +389,7 @@ class TestSendMessageDirect:
         result = _make_agent_result("Response", "chat")
         conv_id = "keep-title-conv"
 
-        conv = Conversation(id=conv_id, title="My Custom Title")
+        conv = Conversation(owner_id=LEGACY_ACCOUNT_ID, id=conv_id, title="My Custom Title")
         db_session.add(conv)
         await db_session.flush()
 
@@ -441,7 +442,7 @@ class TestSendMessageDirect:
         from app.models.schemas import ChatMessageRequest
 
         conv_id = "ctx-conv"
-        conv = Conversation(id=conv_id, title="Context Test")
+        conv = Conversation(owner_id=LEGACY_ACCOUNT_ID, id=conv_id, title="Context Test")
         db_session.add(conv)
         db_session.add(Message(conversation_id=conv_id, role=MessageRole.USER, content="First msg"))
         db_session.add(
@@ -482,7 +483,7 @@ class TestListConversations:
 
     async def test_returns_conversations(self, client: AsyncClient, db_session: AsyncSession):
         """Conversations are returned with metadata."""
-        conv = Conversation(id="conv-1", title="Test Chat")
+        conv = Conversation(owner_id=LEGACY_ACCOUNT_ID, id="conv-1", title="Test Chat")
         db_session.add(conv)
         msg = Message(
             conversation_id="conv-1",
@@ -507,7 +508,7 @@ class TestListConversationsDirect:
         """Exercise list_conversations directly to cover summary building."""
         from app.api.routes.chat import list_conversations
 
-        conv = Conversation(id="list-conv-1", title="Listed Chat")
+        conv = Conversation(owner_id=LEGACY_ACCOUNT_ID, id="list-conv-1", title="Listed Chat")
         db_session.add(conv)
         db_session.add(Message(conversation_id="list-conv-1", role=MessageRole.USER, content="Hi"))
         await db_session.flush()
@@ -522,7 +523,7 @@ class TestListConversationsDirect:
         """A conversation with no messages uses created_at as last_message_at."""
         from app.api.routes.chat import list_conversations
 
-        conv = Conversation(id="empty-conv", title="Empty")
+        conv = Conversation(owner_id=LEGACY_ACCOUNT_ID, id="empty-conv", title="Empty")
         db_session.add(conv)
         await db_session.flush()
 
@@ -535,8 +536,8 @@ class TestListConversationsDirect:
         """Conversations are ordered by updated_at descending."""
         from app.api.routes.chat import list_conversations
 
-        c1 = Conversation(id="ord-1", title="First")
-        c2 = Conversation(id="ord-2", title="Second")
+        c1 = Conversation(owner_id=LEGACY_ACCOUNT_ID, id="ord-1", title="First")
+        c2 = Conversation(owner_id=LEGACY_ACCOUNT_ID, id="ord-2", title="Second")
         db_session.add(c1)
         await db_session.flush()
         db_session.add(c2)
@@ -560,7 +561,7 @@ class TestGetConversation:
         self, client: AsyncClient, db_session: AsyncSession
     ):
         """Returns conversation detail with messages."""
-        conv = Conversation(id="detail-conv", title="Detail Test")
+        conv = Conversation(owner_id=LEGACY_ACCOUNT_ID, id="detail-conv", title="Detail Test")
         db_session.add(conv)
         msg = Message(
             conversation_id="detail-conv",
@@ -590,7 +591,7 @@ class TestGetConversationDirect:
         """Exercise message serialization including tool_calls (lines 237-242)."""
         from app.api.routes.chat import get_conversation
 
-        conv = Conversation(id="detail-tc", title="With Tools")
+        conv = Conversation(owner_id=LEGACY_ACCOUNT_ID, id="detail-tc", title="With Tools")
         db_session.add(conv)
         msg = Message(
             conversation_id="detail-tc",
@@ -629,7 +630,7 @@ class TestGetConversationDirect:
         """Tool call with null tool_input returns empty dict."""
         from app.api.routes.chat import get_conversation
 
-        conv = Conversation(id="null-ti", title="Null Input")
+        conv = Conversation(owner_id=LEGACY_ACCOUNT_ID, id="null-ti", title="Null Input")
         db_session.add(conv)
         msg = Message(conversation_id="null-ti", role=MessageRole.ASSISTANT, content="result")
         db_session.add(msg)
@@ -664,7 +665,7 @@ class TestGetConversationDirect:
         """Verify created_at and updated_at are ISO-formatted strings."""
         from app.api.routes.chat import get_conversation
 
-        conv = Conversation(id="ts-conv", title="Timestamps")
+        conv = Conversation(owner_id=LEGACY_ACCOUNT_ID, id="ts-conv", title="Timestamps")
         db_session.add(conv)
         await db_session.flush()
 
@@ -685,7 +686,7 @@ class TestDeleteConversation:
 
     async def test_deletes_conversation(self, client: AsyncClient, db_session: AsyncSession):
         """Deleting an existing conversation returns success."""
-        conv = Conversation(id="del-conv", title="To Delete")
+        conv = Conversation(owner_id=LEGACY_ACCOUNT_ID, id="del-conv", title="To Delete")
         db_session.add(conv)
         await db_session.commit()
 
@@ -707,7 +708,7 @@ class TestDeleteConversationDirect:
         """Exercise delete_conversation directly."""
         from app.api.routes.chat import delete_conversation
 
-        conv = Conversation(id="direct-del", title="Delete Me")
+        conv = Conversation(owner_id=LEGACY_ACCOUNT_ID, id="direct-del", title="Delete Me")
         db_session.add(conv)
         await db_session.flush()
 
@@ -728,7 +729,7 @@ class TestDeleteConversationDirect:
         """Cascade deletes messages when conversation is deleted."""
         from app.api.routes.chat import delete_conversation
 
-        conv = Conversation(id="cascade-del", title="Cascade")
+        conv = Conversation(owner_id=LEGACY_ACCOUNT_ID, id="cascade-del", title="Cascade")
         db_session.add(conv)
         db_session.add(Message(conversation_id="cascade-del", role=MessageRole.USER, content="bye"))
         await db_session.flush()
@@ -769,7 +770,7 @@ class TestGetOrCreateConversation:
         """Returns existing conversation without creating duplicate."""
         from app.api.routes.chat import _get_or_create_conversation
 
-        existing = Conversation(id="existing-conv", title="Already Here")
+        existing = Conversation(owner_id=LEGACY_ACCOUNT_ID, id="existing-conv", title="Already Here")
         db_session.add(existing)
         await db_session.flush()
 
@@ -838,7 +839,7 @@ class TestLoadLangchainMessages:
 
         from app.api.routes.chat import _load_langchain_messages
 
-        conv = Conversation(id="lc-conv", title="Test")
+        conv = Conversation(owner_id=LEGACY_ACCOUNT_ID, id="lc-conv", title="Test")
         db_session.add(conv)
         db_session.add(Message(conversation_id="lc-conv", role=MessageRole.USER, content="Hello"))
         db_session.add(
@@ -863,7 +864,7 @@ class TestLoadLangchainMessages:
 
         from app.api.routes.chat import _load_langchain_messages
 
-        conv = Conversation(id="sys-conv", title="System")
+        conv = Conversation(owner_id=LEGACY_ACCOUNT_ID, id="sys-conv", title="System")
         db_session.add(conv)
         db_session.add(
             Message(
@@ -883,7 +884,7 @@ class TestLoadLangchainMessages:
         """Tool messages are skipped (not converted)."""
         from app.api.routes.chat import _load_langchain_messages
 
-        conv = Conversation(id="tool-conv", title="Tool Msg")
+        conv = Conversation(owner_id=LEGACY_ACCOUNT_ID, id="tool-conv", title="Tool Msg")
         db_session.add(conv)
         db_session.add(Message(conversation_id="tool-conv", role=MessageRole.USER, content="Hi"))
         db_session.add(

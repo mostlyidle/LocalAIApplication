@@ -9,7 +9,7 @@ from fastapi import HTTPException
 from PIL import Image
 
 from app.agents.registry import AgentRegistry
-from app.models.db_models import Document
+from app.models.db_models import Document, LEGACY_ACCOUNT_ID
 from app.models.profile_schemas import TaskRequest
 from app.prompt_store import PromptStore
 from app.services.task_runner import TaskRunner
@@ -30,6 +30,7 @@ def _image_document(tmp_path: Path) -> Document:
     image_path = tmp_path / "sample.png"
     Image.new("RGB", (12, 8), color=(50, 100, 150)).save(image_path)
     return Document(
+        owner_id=LEGACY_ACCOUNT_ID,
         id="uploaded-image-id",
         filename="sample.png",
         format="png",
@@ -111,6 +112,7 @@ async def test_image_specialist_rejects_a_document_asset(tmp_path: Path) -> None
     path = tmp_path / "note.txt"
     path.write_text("not an image", encoding="utf-8")
     document = Document(
+        owner_id=LEGACY_ACCOUNT_ID,
         id="text-id",
         filename=path.name,
         format="text",
