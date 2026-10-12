@@ -18,7 +18,7 @@ from app.api.middleware.error_handler import (
     NotFoundError,
 )
 from app.config import settings
-from app.models.db_models import LEGACY_ACCOUNT_ID, DetectedQuestion, Meeting, TranscriptSegment
+from app.models.db_models import DetectedQuestion, Meeting, TranscriptSegment
 from app.models.enums import MeetingStatus
 from app.models.schemas import (
     AudioEnvelopeHeader,
@@ -102,7 +102,7 @@ class MeetingService:
         self,
         db: AsyncSession,
         *,
-        owner_id: str | None = None,
+        owner_id: str,
         consent_policy_version: str,
         consent_attested_at: datetime,
     ) -> Meeting:
@@ -113,7 +113,7 @@ class MeetingService:
             raise ConsentRequiredError()
 
         meeting = Meeting(
-            owner_id=owner_id or LEGACY_ACCOUNT_ID,
+            owner_id=owner_id,
             status=MeetingStatus.CREATED.value,
             consent_policy_version=consent_policy_version,
             consent_attested_at=consent_attested_at.astimezone(UTC),
