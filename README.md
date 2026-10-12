@@ -36,6 +36,19 @@ docker compose exec ollama ollama pull nomic-embed-text
 
 Open the app at <http://localhost:3000>. The API is at <http://localhost:8000>; interactive API docs are at <http://localhost:8000/docs>.
 
+Accounts are operator-managed. After the stack is running, create one with:
+
+```bash
+docker compose exec backend python -m app.account_admin create --username alice --display-name "Alice"
+```
+
+The command prompts for a password. To reassign quarantined legacy records, first run a dry-run with the exact IDs, then repeat with `--apply` after checking the selection:
+
+```bash
+docker compose exec backend python -m app.account_admin assign-legacy --username alice --conversation CONVERSATION_ID --document DOCUMENT_ID --meeting MEETING_ID
+docker compose exec backend python -m app.account_admin assign-legacy --username alice --conversation CONVERSATION_ID --document DOCUMENT_ID --meeting MEETING_ID --apply
+```
+
 Useful Docker commands:
 
 ```bash
