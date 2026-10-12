@@ -104,7 +104,7 @@ class HybridVectorStoreService(VectorStoreService):
         agent_name: str = "rag",
         rewrite_model: str | None = None,
     ) -> RagSearchResult:
-        profile = self._profile_registry().get(agent_name)
+        profile = self.profile_registry().get(agent_name)
         if profile is None or profile.target != "rag" or profile.retrieval is None:
             raise ValueError(f"'{agent_name}' is not an enabled RAG profile.")
         retrieval = profile.retrieval
@@ -209,7 +209,7 @@ class HybridVectorStoreService(VectorStoreService):
         class QueryRewriteResponse(BaseModel):
             queries: list[str] = Field(max_length=4)
 
-        profile = self._profile_registry().get(agent_name)
+        profile = self.profile_registry().get(agent_name)
         if profile is None or profile.inference is None:
             return [], "invalid_profile"
         from app.prompt_store import PromptStore
@@ -252,7 +252,7 @@ class HybridVectorStoreService(VectorStoreService):
             return [], "insufficient_distinct_rewrites"
         return distinct, None
 
-    def _profile_registry(self):
+    def profile_registry(self):
         if self._profiles is None:
             from app.agents.registry import AgentRegistry
             from app.prompt_store import PromptStore

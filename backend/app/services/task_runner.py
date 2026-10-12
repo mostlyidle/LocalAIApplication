@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+from contextvars import ContextVar
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -22,6 +23,7 @@ from app.services.market_data import MarketDataError
 from app.services.workspace import WorkspaceInputError, read_workspace
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
     from app.models.db_models import Document
     from app.prompt_store import PromptStore
     from app.services.comfyui import ComfyUIClient
@@ -44,6 +46,7 @@ class TaskRunner:
         self._parser = DocumentParserService()
         self._market_data = market_data
         self._comfyui = comfyui
+        self._on_token: ContextVar[Callable[[str], Awaitable[None]] | None] = ContextVar("task_tokens", default=None)
 
     async def run(
         self,
@@ -52,37 +55,42 @@ class TaskRunner:
         request_id: str,
         document: Document | None = None,
         history: list[str] | None = None,
+        on_token: Callable[[str], Awaitable[None]] | None = None,
     ) -> AgentResult:
-        execution = self._resolve_execution(request, document)
-        target = execution.profile.target
-        if target == "image_analysis":
-            result = await self._image_analysis(request, execution, document)
-        elif target == "image_fraud":
-            result = await self._image_fraud(execution, document)
-        elif target == "document":
-            result = await self._document_analysis(request, execution, document)
-        elif target == "rag":
-            result = await self._rag_answer(request, execution, history=history)
-        elif target == "stock_research":
-            result = await self._stock_research(request, execution, document)
-        elif target == "image_generation":
-            result = await self._image_generation(request, execution)
-        elif target == "software_engineer":
-            result = await self._software_review(request, execution)
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"The '{execution.profile.name}' specialist is not available yet.",
+        token = self._on_token.set(on_token)
+        try:
+            execution = self._resolve_execution(request, document)
+            target = execution.profile.target
+            if target == "image_analysis":
+                result = await self._image_analysis(request, execution, document)
+            elif target == "image_fraud":
+                result = await self._image_fraud(execution, document)
+            elif target == "document":
+                result = await self._document_analysis(request, execution, document)
+            elif target == "rag":
+                result = await self._rag_answer(request, execution, history=history)
+            elif target == "stock_research":
+                result = await self._stock_research(request, execution, document)
+            elif target == "image_generation":
+                result = await self._image_generation(request, execution)
+            elif target == "software_engineer":
+                result = await self._software_review(request, execution)
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"The '{execution.profile.name}' specialist is not available yet.",
+                )
+            inference = execution.inference
+            metadata = ExecutionMetadata(
+                request_id=request_id,
+                target=target,
+                agent_name=execution.profile.name,
+                model=inference.model if inference else None,
+                inference=inference,
             )
-        inference = execution.inference
-        metadata = ExecutionMetadata(
-            request_id=request_id,
-            target=target,
-            agent_name=execution.profile.name,
-            model=inference.model if inference else None,
-            inference=inference,
-        )
-        return result.model_copy(update={"metadata": metadata})
+            return result.model_copy(update={"metadata": metadata})
+        finally:
+            self._on_token.reset(token)
 
     def _resolve_execution(self, request: TaskRequest, document: Document | None) -> AgentExecution:
         profile = self._registry.get(request.agent_name) if request.agent_name else None
@@ -336,10 +344,18 @@ class TaskRunner:
                 max_tokens=inference.max_output_tokens,
                 num_ctx=inference.context_window,
             )
-            response = await model.ainvoke(
-                [SystemMessage(content=system), HumanMessage(content=human_content)]
-            )
-        return str(response.content)
+            messages = [SystemMessage(content=system), HumanMessage(content=human_content)]
+            on_token = self._on_token.get()
+            if on_token is None:
+                response = await model.ainvoke(messages)
+                return str(response.content)
+            chunks: list[str] = []
+            async for chunk in model.astream(messages):
+                if chunk.content:
+                    text = str(chunk.content)
+                    chunks.append(text)
+                    await on_token(text)
+            return "".join(chunks)
 
     @staticmethod
     def _uploaded_path(document: Document | None, *, image: bool) -> Path:
