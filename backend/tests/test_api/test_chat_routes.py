@@ -431,10 +431,9 @@ class TestSendMessageDirect:
         db_result = await db_session.execute(stmt)
         msgs = db_result.scalars().all()
         assert len(msgs) == 2
-        assert msgs[0].role == MessageRole.USER
-        assert msgs[0].content == "Persist me"
-        assert msgs[1].role == MessageRole.ASSISTANT
-        assert msgs[1].content == "Persisted reply"
+        by_role = {message.role: message for message in msgs}
+        assert by_role[MessageRole.USER].content == "Persist me"
+        assert by_role[MessageRole.ASSISTANT].content == "Persisted reply"
 
     async def test_run_agent_receives_existing_messages(self, db_session: AsyncSession):
         """Existing messages are loaded and passed to run_agent."""
@@ -1513,11 +1512,10 @@ class TestPersistWsMessages:
         result = await db_session.execute(stmt)
         msgs = result.scalars().all()
         assert len(msgs) == 2
-        assert msgs[0].role == MessageRole.USER
-        assert msgs[0].content == "Hello from WS"
-        assert msgs[1].role == MessageRole.ASSISTANT
-        assert msgs[1].content == "Hi back from WS"
-        assert msgs[1].agent_type == "chat"
+        by_role = {message.role: message for message in msgs}
+        assert by_role[MessageRole.USER].content == "Hello from WS"
+        assert by_role[MessageRole.ASSISTANT].content == "Hi back from WS"
+        assert by_role[MessageRole.ASSISTANT].agent_type == "chat"
         assert all(message.client_turn_id == "ws-turn-1" for message in msgs)
         assert all(message.turn_status == "completed" for message in msgs)
 

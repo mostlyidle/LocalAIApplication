@@ -67,6 +67,7 @@ export const conversationDetailSchema = z.object({
   title: z.string(),
   messages: z.array(z.object({
     id: z.string(),
+    client_turn_id: z.string().nullable().optional(),
     role: z.enum(["user", "assistant", "system", "tool"]),
     content: z.string(),
     agent_type: z.string().nullable().optional(),

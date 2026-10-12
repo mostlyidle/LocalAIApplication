@@ -12,6 +12,7 @@ from typing import Any
 import structlog
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from app.agents.memory_context import memory_context_message
 from app.agents.state import AgentState
 from app.services.llm import llm_service
 from app.tools.sql_tools import (
@@ -70,6 +71,9 @@ async def sql_agent_node(state: AgentState) -> dict[str, Any]:
     llm_with_tools = llm.bind_tools(sql_tools)
 
     messages = [SystemMessage(content=system_prompt)]
+    memory_message = memory_context_message(state)
+    if memory_message is not None:
+        messages.append(memory_message)
     messages.extend(state["messages"])
 
     if not any(isinstance(m, HumanMessage) for m in state["messages"]):

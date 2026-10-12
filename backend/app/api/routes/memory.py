@@ -61,6 +61,7 @@ async def create_memory(
     """Store a memory only after the user explicitly submits it."""
     owner_id = authenticated.account.id
     conversation_id = body.source_conversation_id
+    source_message_id = body.source_message_id
     if body.source_message_id:
         source = await db.scalar(
             select(Message)
@@ -75,6 +76,23 @@ async def create_memory(
         if conversation_id is not None and conversation_id != source.conversation_id:
             raise NotFoundError("Message", body.source_message_id)
         conversation_id = source.conversation_id
+    elif body.source_client_turn_id:
+        source_filters = [
+            Message.client_turn_id == body.source_client_turn_id,
+            Message.role == "user",
+            Conversation.owner_id == owner_id,
+        ]
+        if conversation_id is not None:
+            source_filters.append(Message.conversation_id == conversation_id)
+        source = await db.scalar(
+            select(Message)
+            .join(Conversation, Conversation.id == Message.conversation_id)
+            .where(*source_filters)
+        )
+        if source is None:
+            raise NotFoundError("Message", body.source_client_turn_id)
+        conversation_id = source.conversation_id
+        source_message_id = source.id
     elif conversation_id is not None:
         owned = await db.scalar(
             select(Conversation.id).where(
@@ -91,7 +109,7 @@ async def create_memory(
         content=body.content.strip(),
         project_scope=body.project_scope.strip() if body.project_scope else None,
         source_conversation_id=conversation_id,
-        source_message_id=body.source_message_id,
+        source_message_id=source_message_id,
         origin_agent=body.origin_agent,
         approved=True,
     )

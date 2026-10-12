@@ -9,7 +9,7 @@ from fastapi import HTTPException
 from PIL import Image
 
 from app.agents.registry import AgentRegistry
-from app.models.db_models import Document, LEGACY_ACCOUNT_ID
+from app.models.db_models import LEGACY_ACCOUNT_ID, Document
 from app.models.profile_schemas import TaskRequest
 from app.prompt_store import PromptStore
 from app.services.task_runner import TaskRunner
@@ -48,7 +48,8 @@ async def test_image_specialists_normalize_pillow_size_errors(
     with pytest.raises(HTTPException) as error:
         await _runner().run(
             TaskRequest(prompt="Inspect image", agent_name=agent, asset_id=document.id),
-            request_id="oversized", document=document,
+            request_id="oversized",
+            document=document,
         )
     assert error.value.status_code == 422
     assert "pixel processing limit" in error.value.detail
@@ -84,6 +85,39 @@ async def test_image_analysis_uses_profile_model_and_uploaded_image_bytes(
     assert human_content[1]["image_url"].startswith("data:image/png;base64,")
     assert result.metadata is not None
     assert result.metadata.request_id == "request-1"
+
+
+async def test_image_analysis_receives_approved_memory_as_separate_prompt_context(
+    tmp_path: Path,
+) -> None:
+    document = _image_document(tmp_path)
+    model = SimpleNamespace(
+        ainvoke=AsyncMock(return_value=SimpleNamespace(content="A blue swatch."))
+    )
+    with (
+        patch("app.services.task_runner.llm_service.get_chat_model", return_value=model),
+        patch(
+            "app.services.memory_context.load_account_memory_context",
+            new_callable=AsyncMock,
+            return_value='[{"type":"preference","content":"Concise"}]',
+        ),
+    ):
+        result = await _runner().run(
+            TaskRequest(
+                prompt="Describe the image.",
+                agent_name="image_analysis",
+                asset_id=document.id,
+            ),
+            request_id="request-memory",
+            document=document,
+            owner_id=LEGACY_ACCOUNT_ID,
+        )
+
+    prompt_messages = model.ainvoke.call_args.args[0]
+    system_messages = [message for message in prompt_messages if message.type == "system"]
+    assert result.answer == "A blue swatch."
+    assert len(system_messages) == 2
+    assert "Concise" in system_messages[1].content
 
 
 async def test_image_fraud_reports_triage_limitations_without_calling_a_model(
@@ -131,13 +165,23 @@ async def test_image_specialist_rejects_a_document_asset(tmp_path: Path) -> None
 async def test_stock_research_combines_live_snapshot_and_user_context() -> None:
     market_data = SimpleNamespace(
         snapshot=AsyncMock(
-            return_value={"provider": "Finnhub", "symbol": "AAPL", "quote": {"current": 1}, "warnings": ["News is unavailable"]}
+            return_value={
+                "provider": "Finnhub",
+                "symbol": "AAPL",
+                "quote": {"current": 1},
+                "warnings": ["News is unavailable"],
+            }
         )
     )
     model = SimpleNamespace(ainvoke=AsyncMock(return_value=SimpleNamespace(content="Research.")))
     with patch("app.services.task_runner.llm_service.get_chat_model", return_value=model):
         result = await _runner(market_data=market_data).run(
-            TaskRequest(prompt="Assess risks.", target="stock_research", symbol="aapl", context="Company notes."),
+            TaskRequest(
+                prompt="Assess risks.",
+                target="stock_research",
+                symbol="aapl",
+                context="Company notes.",
+            ),
             request_id="request-stock",
         )
 
@@ -221,7 +265,9 @@ async def test_rag_task_preserves_hybrid_citation_provenance() -> None:
         ],
         retrieval={"strategy": "hybrid_rrf"},
     )
-    model = SimpleNamespace(ainvoke=AsyncMock(return_value=SimpleNamespace(content="Grounded answer.")))
+    model = SimpleNamespace(
+        ainvoke=AsyncMock(return_value=SimpleNamespace(content="Grounded answer."))
+    )
     with (
         patch(
             "app.services.hybrid_vector_store.hybrid_vector_store_service.search_with_provenance",

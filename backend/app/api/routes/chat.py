@@ -542,6 +542,7 @@ async def get_conversation(
         "messages": [
             {
                 "id": msg.id,
+                "client_turn_id": msg.client_turn_id,
                 "role": msg.role,
                 "content": msg.content,
                 "agent_type": msg.agent_type,

@@ -11,6 +11,7 @@ from typing import Any
 import structlog
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
+from app.agents.memory_context import memory_context_message
 from app.agents.state import AgentState
 from app.services.llm import llm_service
 
@@ -41,6 +42,9 @@ async def chat_agent_node(state: AgentState) -> dict[str, Any]:
     llm = llm_service.get_chat_model()
 
     messages = [SystemMessage(content=CHAT_SYSTEM_PROMPT)]
+    memory_message = memory_context_message(state)
+    if memory_message is not None:
+        messages.append(memory_message)
     messages.extend(state["messages"])
 
     # If no messages from user yet, add the current input
@@ -67,6 +71,9 @@ async def chat_agent_stream(state: AgentState):
     llm = llm_service.get_chat_model()
 
     messages = [SystemMessage(content=CHAT_SYSTEM_PROMPT)]
+    memory_message = memory_context_message(state)
+    if memory_message is not None:
+        messages.append(memory_message)
     messages.extend(state["messages"])
 
     if not any(isinstance(m, HumanMessage) for m in state["messages"]):
