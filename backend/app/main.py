@@ -50,10 +50,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     from app.agents.registry import AgentRegistry
     from app.prompt_store import PromptStore
+    from app.services.task_runner import TaskRunner
 
     profile_dir = Path(__file__).parent / "prompts"
     prompts = PromptStore(profile_dir)
     app.state.agent_registry = AgentRegistry(profile_dir, prompts)
+    app.state.task_runner = TaskRunner(app.state.agent_registry, prompts)
 
     # Ensure data directories exist
     Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
@@ -115,13 +117,14 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
 
     # API routes
-    from app.api.routes import agents, chat, documents, meetings, rag, sql, tools
+    from app.api.routes import agents, chat, documents, meetings, rag, sql, tasks, tools
 
     app.include_router(agents.router, prefix="/api/v1", tags=["Agents"])
     app.include_router(chat.router, prefix="/api/v1", tags=["Chat"])
     app.include_router(documents.router, prefix="/api/v1", tags=["Documents"])
     app.include_router(sql.router, prefix="/api/v1", tags=["SQL"])
     app.include_router(rag.router, prefix="/api/v1", tags=["RAG"])
+    app.include_router(tasks.router, prefix="/api/v1", tags=["Agents"])
     app.include_router(tools.router, prefix="/api/v1", tags=["Tools"])
     app.include_router(meetings.router, prefix="/api/v1", tags=["Meetings"])
 

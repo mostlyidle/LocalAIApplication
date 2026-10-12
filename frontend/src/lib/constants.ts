@@ -9,7 +9,7 @@ export const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
 export const ACCEPTED_FILE_TYPES = [
   ".pdf", ".docx", ".xlsx", ".pptx", ".csv",
-  ".html", ".md", ".txt", ".png", ".jpg", ".jpeg", ".tiff", ".bmp",
+  ".html", ".md", ".txt", ".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".webp",
 ];
 
 export const AGENT_LABELS: Record<string, string> = {

@@ -40,6 +40,7 @@ class DocumentFormat(StrEnum):
     JPEG = "jpeg"
     TIFF = "tiff"
     BMP = "bmp"
+    WEBP = "webp"
 
     @classmethod
     def from_extension(cls, ext: str) -> DocumentFormat:
@@ -57,7 +58,7 @@ class DocumentFormat(StrEnum):
 
     @property
     def is_image(self) -> bool:
-        return self in {self.PNG, self.JPG, self.JPEG, self.TIFF, self.BMP}
+        return self in {self.PNG, self.JPG, self.JPEG, self.TIFF, self.BMP, self.WEBP}
 
     @property
     def is_office(self) -> bool:
