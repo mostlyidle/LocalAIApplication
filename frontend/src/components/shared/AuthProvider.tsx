@@ -5,6 +5,7 @@ import type { FormEvent, ReactNode } from "react";
 import { getCurrentAccount, login, logout } from "@/lib/api";
 import type { AuthAccount } from "@/lib/api";
 import { setCsrfToken } from "@/lib/auth-session";
+import { ACTIVE_CONVERSATION_STORAGE_PREFIX } from "@/lib/constants";
 
 interface AuthContextValue {
   account: AuthAccount | null;
@@ -74,12 +75,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await logout();
       setCsrfToken(null);
+      if (account && typeof window !== "undefined") {
+        window.localStorage.removeItem(`${ACTIVE_CONVERSATION_STORAGE_PREFIX}${account.id}`);
+      }
       setAccount(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Sign out failed.");
       throw reason;
     }
-  }, []);
+  }, [account]);
 
   return (
     <AuthContext.Provider value={{ account, loading, error, signIn, signOut }}>

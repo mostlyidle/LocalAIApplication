@@ -6,6 +6,7 @@ const sameOriginWebSocketBase =
     : `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}`;
 export const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || sameOriginWebSocketBase;
 export const WS_CHAT = `${WS_BASE}/api/v1/chat/stream`;
+export const ACTIVE_CONVERSATION_STORAGE_PREFIX = "local-ai-active-conversation:";
 
 export const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 

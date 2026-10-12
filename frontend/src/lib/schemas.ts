@@ -65,7 +65,21 @@ export const conversationsListSchema = z.array(conversationSummarySchema)
 export const conversationDetailSchema = z.object({
   id: z.string(),
   title: z.string(),
-  messages: z.array(z.unknown()),
+  messages: z.array(z.object({
+    id: z.string(),
+    role: z.enum(["user", "assistant", "system", "tool"]),
+    content: z.string(),
+    agent_type: z.string().nullable().optional(),
+    execution: z.unknown().nullable().optional(),
+    created_at: z.string(),
+    tool_calls: z.array(z.object({
+      id: z.string(),
+      tool_name: z.string(),
+      tool_input: z.unknown().optional(),
+      tool_output: z.string().nullable().optional(),
+      duration_ms: z.number().nullable().optional(),
+    }).passthrough()).default([]),
+  }).passthrough()),
 });
 
 // ---------------------------------------------------------------------------
