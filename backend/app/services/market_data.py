@@ -20,7 +20,13 @@ class MarketDataRateLimitError(MarketDataError):
 class FinnhubMarketDataClient:
     """Small adapter for Finnhub's documented REST endpoints."""
 
-    def __init__(self, *, api_key: str | None, cache_seconds: int) -> None:
+    def __init__(
+        self,
+        *,
+        api_key: str | None,
+        cache_seconds: int,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
         self._api_key = api_key
         self._cache_seconds = max(cache_seconds, 0)
         self._cache: dict[str, tuple[datetime, dict[str, Any]]] = {}
@@ -28,6 +34,7 @@ class FinnhubMarketDataClient:
         self._client = httpx.AsyncClient(
             base_url="https://finnhub.io/api/v1",
             timeout=15.0,
+            transport=transport,
             limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
         )
 

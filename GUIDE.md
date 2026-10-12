@@ -420,7 +420,7 @@ curl -sS http://127.0.0.1:8000/api/v1/health | python3 -m json.tool
 
 The endpoint returns HTTP 200 even when dependencies are down. For a meeting,
 `meeting_ready` must be `true`; `local_asr` and `app_database` are required. Ollama and
-ChromaDB are marked optional for meeting answers. On backend startup, any meeting left
+Qdrant is marked optional for meeting answers. On backend startup, any meeting left
 `active` by a previous backend process is marked `failed`; its persisted transcript remains,
 but missing audio cannot be recovered. Start a new meeting after a restart.
 
@@ -478,7 +478,7 @@ does not validate Windows audio or packaging.
 
 Ollama and RAG are optional for the meeting workflow. Ollama supplies private answer
 suggestions for detected system-source questions; RAG is disabled by default and can be
-enabled with `MEETING_ENABLE_RAG=true` when the local Chroma store is available. If either is
+enabled with `MEETING_ENABLE_RAG=true` when local Qdrant is available. If either is
 unavailable, a visible degraded event is emitted while transcription continues.
 
 ### Windows limitation
@@ -580,7 +580,7 @@ frontend browser endpoints are in `frontend/.env.local`. The checked-in
 | `ASR_MODEL_NAME`         | `small.en`                        | Required offline ASR model name                 |
 | `MEETING_AUDIO_QUEUE_SIZE` | `128`                           | Maximum queued processor items                  |
 | `MEETING_PCM_WINDOW_MS`  | `2000`                            | Rolling local transcription window in ms        |
-| `MEETING_ENABLE_RAG`     | `false`                           | Enable optional local Chroma retrieval          |
+| `MEETING_ENABLE_RAG`     | `false`                           | Enable optional local Qdrant hybrid retrieval   |
 
 #### Databases
 
@@ -593,7 +593,7 @@ frontend browser endpoints are in `frontend/.env.local`. The checked-in
 
 | Variable              | Default | Description                                    |
 |-----------------------|---------|------------------------------------------------|
-| `CHROMA_PERSIST_DIR`  | `./data/chroma` | ChromaDB persistent storage location   |
+| `CHROMA_PERSIST_DIR`  | `./data/chroma` | Legacy Chroma source for explicit migrations |
 | `QDRANT_URL`          | `http://localhost:6333` | Qdrant endpoint for hybrid retrieval |
 | `FASTEMBED_CACHE_PATH` | `./data/fastembed` | Local BM25/query model cache directory |
 | `RAG_BM25_LANGUAGE`   | `english` | BM25 language used for new collections |
@@ -601,6 +601,17 @@ frontend browser endpoints are in `frontend/.env.local`. The checked-in
 | `RAG_CHUNK_OVERLAP`   | `200`   | Overlap between adjacent chunks                |
 | `RAG_TOP_K`           | `5`     | Number of results returned per search          |
 | `RAG_SCORE_THRESHOLD` | `0.4`   | Legacy dense-search threshold; hybrid RRF ignores it |
+
+#### Optional Specialist Services
+
+| Variable | Default | Description |
+|---|---|---|
+| `FINNHUB_API_KEY` | unset | Enables live Finnhub quotes and news for stock research; data access follows your Finnhub plan. |
+| `MARKET_DATA_CACHE_SECONDS` | `60` | Per-symbol live-data cache duration. |
+| `COMFYUI_URL` | `http://localhost:8188` | Local ComfyUI API for exported workflow submissions. |
+| `AGENT_WORKSPACE_ROOT` | `./workspace` | Root for bounded, read-only software-engineer review. |
+| `AGENT_WORKSPACE_HOST_PATH` | `./workspace` (Docker) | Host project directory mounted read-only into the backend. |
+| `GRAFANA_ADMIN_PASSWORD` | local placeholder | Set a private value before using optional monitoring. |
 
 #### Document Upload
 
@@ -680,7 +691,9 @@ pnpm dev
 
 The main conversational interface with streaming responses. The orchestrator automatically routes queries to the appropriate specialist agent.
 
-- **Streaming**: Real-time token-by-token responses via WebSocket
+- **Agent profiles**: Choose Auto or a catalogued agent; specialist controls appear for RAG collection, ticker, workspace path, model settings, or ComfyUI workflow.
+- **Execution details**: Assistant messages retain citations, artifacts, and limitations in history.
+- **Streaming**: Real-time token responses via WebSocket; bounded tasks emit their completed answer through the same chat stream.
 - **Markdown rendering**: Assistant responses render with full Markdown support (code blocks, tables, lists, links)
 - **Tool call visibility**: See which tools the agent invokes and their inputs/outputs
 - **Conversation history**: Conversations are persisted to the database and listed in the sidebar
@@ -695,6 +708,16 @@ Natural language to SQL -- ask questions about your data in plain English.
 - **Schema browser**: Explore tables, columns, types, and primary keys
 - **Database selector**: Switch between multiple registered database connections
 - **Safety**: Only SELECT queries allowed by default. Automatic LIMIT enforcement. All generated SQL is validated before execution.
+
+### Specialist Agents
+
+The chat profile selector also exposes vision analysis, image-fraud triage, stock
+research, read-only software review, document analytics, and image generation.
+Vision and document tasks use uploaded asset IDs resolved by the backend. Stock
+research requires an optional Finnhub key; its quote/news data is external. The
+software reviewer reads a bounded set of text files under `AGENT_WORKSPACE_ROOT`
+and does not modify files or run commands. Image-fraud output is triage only.
+Image generation submits a user-provided ComfyUI API workflow and returns its job ID.
 
 ### Document Intelligence
 
@@ -827,15 +850,17 @@ The LangGraph orchestrator classifies user intent and routes to specialist agent
 
 ## Docker Deployment
 
-Docker Compose is provided for containerized deployment with three profiles.
+Docker Compose is provided for containerized deployment with optional infrastructure,
+application, full-stack, and observability profiles.
 
 ### Profiles
 
 | Profile  | Services                            | Use Case                               |
 |----------|-------------------------------------|----------------------------------------|
-| `infra`  | Ollama + Qdrant + ChromaDB          | Run infrastructure in containers       |
+| `infra`  | Ollama + Qdrant + ChromaDB migration source | Run infrastructure in containers |
 | `app`    | Backend + Frontend                  | Run application in containers          |
 | `full`   | All application and infrastructure services | Full containerized deployment |
+| `observability` | Prometheus + Grafana | Scrape backend HTTP metrics and view dashboards |
 
 ### Quick Docker Start
 
@@ -848,6 +873,9 @@ make docker-infra
 
 # Application only (use native Ollama + Docker Qdrant)
 make docker-app
+
+# Optional local metrics and Grafana (start with app or full profile too)
+docker compose --profile app --profile observability up -d --build
 
 # Stop everything
 make docker-down
@@ -864,6 +892,8 @@ workflow; use `make dev-desktop` for that workflow.
 Docker uses `.env.docker` which differs from `.env.example` in:
 - `OLLAMA_BASE_URL=http://ollama:11434` (Docker service name)
 - `QDRANT_URL=http://qdrant:6333` (Docker service name)
+- `COMFYUI_URL=http://host.docker.internal:8188` by default for host ComfyUI
+- `AGENT_WORKSPACE_ROOT=/workspace`; set `AGENT_WORKSPACE_HOST_PATH` to a host project directory
 
 ### Exposed Ports
 
@@ -873,6 +903,12 @@ Docker uses `.env.docker` which differs from `.env.example` in:
 | Backend   | 8000      | 8000           |
 | Qdrant    | 6333      | 6333           |
 | ChromaDB (migration source) | 8100 | 8000 |
+| Prometheus (optional) | 9090 | 9090 |
+| Grafana (optional) | 3001 | 3000 |
+
+The backend exposes request metrics at `/metrics`. Prometheus and Grafana are optional
+and do not affect chat or meeting readiness. Change `GRAFANA_ADMIN_PASSWORD` before
+using the observability profile beyond a local development machine.
 | Ollama    | 11434     | 11434          |
 
 ---

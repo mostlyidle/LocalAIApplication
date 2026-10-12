@@ -310,6 +310,44 @@ async def health_check() -> HealthResponse:
             )
         )
 
+    # Optional specialists are surfaced separately from enabled profiles.
+    # Finnhub reports configuration only; no rate-limited market request is made here.
+    services.append(
+        ServiceHealth(
+            name="finnhub_market_data",
+            healthy=bool(settings.finnhub_api_key),
+            message=(
+                "API key configured"
+                if settings.finnhub_api_key
+                else "FINNHUB_API_KEY is not configured"
+            ),
+            optional_for_answers=True,
+        )
+    )
+    try:
+        start = time.perf_counter()
+        async with httpx.AsyncClient(timeout=2.5) as client:
+            response = await client.get(f"{settings.comfyui_url.rstrip('/')}/system_stats")
+        healthy = response.status_code == 200
+        services.append(
+            ServiceHealth(
+                name="comfyui",
+                healthy=healthy,
+                message="ComfyUI is reachable" if healthy else f"Unexpected status: {response.status_code}",
+                latency_ms=round((time.perf_counter() - start) * 1000, 2),
+                optional_for_answers=True,
+            )
+        )
+    except httpx.HTTPError as exc:
+        services.append(
+            ServiceHealth(
+                name="comfyui",
+                healthy=False,
+                message=str(exc),
+                optional_for_answers=True,
+            )
+        )
+
     # Check Qdrant
     try:
         start = time.perf_counter()
