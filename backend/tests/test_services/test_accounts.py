@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.account_admin import _create_account, _reset_password
-from app.models.db_models import Account, AccountSession
+from app.account_admin import _assign_legacy_records, _create_account, _reset_password
+from app.models.db_models import (
+    LEGACY_ACCOUNT_ID,
+    Account,
+    AccountSession,
+    Conversation,
+    Document,
+    Meeting,
+)
 from app.services.accounts import hash_password, normalize_username, verify_password
 
 
@@ -64,3 +73,91 @@ async def test_operator_password_reset_revokes_sessions(async_engine, monkeypatc
     assert account is not None
     assert account_session is not None and account_session.revoked_at is not None
     assert verify_password("replacement secure password", account.password_hash)
+
+
+async def test_legacy_assignment_defaults_to_dry_run_and_applies_explicit_records(
+    async_engine, monkeypatch
+) -> None:
+    factory = async_sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
+    monkeypatch.setattr("app.account_admin.get_app_session_factory", lambda: factory)
+    async with factory() as session:
+        account = Account(
+            id="11111111-1111-4111-8111-111111111111",
+            username="alice",
+            display_name="Alice",
+            password_hash="!test!",
+        )
+        session.add_all(
+            [
+                account,
+                Conversation(id="legacy-chat", title="Private conversation"),
+                Document(
+                    id="legacy-doc",
+                    filename="private.txt",
+                    format="txt",
+                    size_bytes=10,
+                    storage_path="/tmp/private.txt",
+                ),
+                Meeting(
+                    id="legacy-meeting",
+                    consent_policy_version="v1",
+                    consent_attested_at=datetime.now(UTC),
+                ),
+            ]
+        )
+        await session.commit()
+
+    selected = {
+        "conversations": ["legacy-chat"],
+        "documents": ["legacy-doc"],
+        "meetings": ["legacy-meeting"],
+    }
+    preview = await _assign_legacy_records("alice", **selected)
+    assert all(
+        counts == {"selected": 1, "to_assign": 1, "already_assigned": 0}
+        for counts in preview.values()
+    )
+
+    async with factory() as session:
+        assert (await session.get(Conversation, "legacy-chat")).owner_id == LEGACY_ACCOUNT_ID
+        assert (await session.get(Document, "legacy-doc")).owner_id == LEGACY_ACCOUNT_ID
+        assert (await session.get(Meeting, "legacy-meeting")).owner_id == LEGACY_ACCOUNT_ID
+
+    await _assign_legacy_records("alice", **selected, apply=True)
+    async with factory() as session:
+        assert (await session.get(Conversation, "legacy-chat")).owner_id == account.id
+        assert (await session.get(Document, "legacy-doc")).owner_id == account.id
+        assert (await session.get(Meeting, "legacy-meeting")).owner_id == account.id
+
+
+async def test_legacy_assignment_rejects_records_owned_by_another_account(
+    async_engine, monkeypatch
+) -> None:
+    factory = async_sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
+    monkeypatch.setattr("app.account_admin.get_app_session_factory", lambda: factory)
+    async with factory() as session:
+        session.add_all(
+            [
+                Account(
+                    id="11111111-1111-4111-8111-111111111111",
+                    username="alice",
+                    display_name="Alice",
+                    password_hash="!test!",
+                ),
+                Account(
+                    id="22222222-2222-4222-8222-222222222222",
+                    username="bob",
+                    display_name="Bob",
+                    password_hash="!test!",
+                ),
+                Conversation(
+                    id="bobs-chat",
+                    owner_id="22222222-2222-4222-8222-222222222222",
+                    title="Bob's conversation",
+                ),
+            ]
+        )
+        await session.commit()
+
+    with pytest.raises(ValueError, match="belong to another account"):
+        await _assign_legacy_records("alice", conversations=["bobs-chat"])

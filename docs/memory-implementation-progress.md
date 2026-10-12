@@ -8,7 +8,7 @@ Use this file to resume the approved implementation without repeating completed 
 - Stage: 1 of 5, identity and ownership
 - Branch: `feature/account-memory-stage1`
 - Status: in progress; do not expose this checkpoint as a shared-account deployment yet
-- Pushed checkpoints: `9ed6362` (account schema and legacy quarantine), `5863058` (operator-managed credentials), `221f466` (plan and resume notes), `14c6f91` (session endpoints), `c2caa64` (chat/document ownership and stable CSRF), `2bc4743` (meeting ownership), `5852d9d` (WebSocket revalidation), `f63bbbe` (agent API authentication), `1e9def0` (account-owned RAG collections), `cafa5c9` (account-owned named SQL connections), `c10f23d` (block unscoped direct file tools), `51b4ffd` (filesystem path containment)
+- Pushed checkpoints: `9ed6362` (account schema and legacy quarantine), `5863058` (operator-managed credentials), `221f466` (plan and resume notes), `14c6f91` (session endpoints), `c2caa64` (chat/document ownership and stable CSRF), `2bc4743` (meeting ownership), `5852d9d` (WebSocket revalidation), `f63bbbe` (agent API authentication), `1e9def0` (account-owned RAG collections), `cafa5c9` (account-owned named SQL connections), `c10f23d` (block unscoped direct file tools), `51b4ffd` (filesystem path containment), `a50af37` (account-owned agent workspaces)
 
 ## Completed checkpoint
 
@@ -36,19 +36,20 @@ Use this file to resume the approved implementation without repeating completed 
 - Blocked direct `/tools/execute` calls to document and filesystem tools because their file paths are not account-scoped. Safe direct tools and account-scoped document workflows remain available. Added route tests; all 16 tool-route tests pass. Ruff and formatting pass with the same unrelated legacy lint rules excluded, and `git diff --check` is clean.
 - Fixed filesystem path containment to use resolved path ancestry rather than string prefixes, preventing sibling directories such as `data-private` from matching an allowed `data` root. Added a regression test; all 21 filesystem-tool tests pass. Focused Ruff/format checks pass with unrelated pre-existing lint findings excluded.
 - Scoped software-review workspace access to the authenticated account directory under `AGENT_WORKSPACE_ROOT/<account-id>`. Missing assignments fail closed with 422. Added workspace helper, task-runner, and route coverage, and updated README operator instructions. The combined focused workspace/task set passes 23 tests.
+- Added `account_admin assign-legacy`, which previews explicitly selected quarantined conversations/documents/meetings by default and requires `--apply` to transfer them. Missing and foreign-owned IDs are rejected; repeat assignment to the same account is safe. Added README CLI instructions and tests for dry-run, apply, and foreign-owner rejection. RAG collections remain separately quarantined; this command does not transfer them.
 - The first `uv run` attempt could not reach PyPI to build the project environment. Reused the repository's existing `.venv` directly for the successful checks.
 - The implementation time estimate in the plan is explicitly non-binding and does not limit the scope or completion criteria.
 
 ## Not implemented yet
 
 - Direct MCP process/resource access remains outside the HTTP account session boundary, including SQL and RAG MCP tools. Path-based direct HTTP tool execution is now blocked, but MCP server process access still needs an explicit trust boundary.
-- Dry-run and explicit legacy data assignment/import command.
+- Explicit legacy assignment/import for RAG collection ownership.
 - Frontend sign-in and shared-deployment network boundary.
 
 ## Resume here
 
 1. Define the local MCP trust boundary. HTTP direct calls to path-based document/filesystem tools are blocked; MCP servers run separately and are not protected by the app's account session. The API's configured `default` SQL connection is explicitly shared; custom connections are private.
-2. Add dry-run and explicit assignment for quarantined legacy records.
+2. Add an explicit, ownership-aware assignment flow for selected quarantined legacy RAG collections.
 3. Add frontend sign-in and the shared-deployment network boundary.
 4. Replace the temporary legacy-owner defaults after every creation path supplies the authenticated account.
 
