@@ -70,6 +70,7 @@ class TaskRunner:
             if owner_id and target in {
                 "image_analysis",
                 "document",
+                "rag",
                 "stock_research",
                 "software_engineer",
             }:
@@ -244,8 +245,14 @@ class TaskRunner:
         from app.services.rag_context import prepare_rag_context
 
         context = await prepare_rag_context(
-            request, execution, self._prompts, history=history, owner_id=owner_id
+            request,
+            execution,
+            self._prompts,
+            history=history,
+            owner_id=owner_id,
+            memory_context=self._memory_context.get(),
         )
+        self._memory_context.set(context.memory_context)
         answer = (
             await self._answer(execution, prompt_values=context.prompt_values)
             if context.citations

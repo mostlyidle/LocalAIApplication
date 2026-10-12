@@ -72,6 +72,8 @@ def _attach_memory_sources(
         return execution
     result = dict(execution or {})
     artifacts = result.get("artifacts")
+    if isinstance(artifacts, dict) and "memory_sources" in artifacts:
+        return result
     result["artifacts"] = {
         **(artifacts if isinstance(artifacts, dict) else {}),
         "memory_sources": sources,
