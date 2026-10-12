@@ -25,6 +25,9 @@ def mlx_model(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """Provide a local model layout and deterministic fake MLX modules."""
     monkeypatch.setattr("app.services.transcription.platform.system", lambda: "Darwin")
     monkeypatch.setattr("app.services.transcription.platform.machine", lambda: "arm64")
+    monkeypatch.setattr(
+        "app.services.transcription.platform.mac_ver", lambda: ("26.0", (), "arm64")
+    )
     (tmp_path / "config.json").write_text("{}")
     (tmp_path / "weights.npz").write_bytes(b"fixture")
     core = types.ModuleType("mlx.core")
@@ -57,6 +60,17 @@ def test_requires_provisioned_local_model(mlx_model: Path) -> None:
         MLXWhisperTranscriptionEngine("mlx-community/whisper-small.en")
     with pytest.raises(ValueError, match="weights"):
         MLXWhisperTranscriptionEngine(mlx_model.parent)
+
+
+def test_older_macos_has_actionable_cpu_fallback(
+    mlx_model: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.services.transcription.platform.mac_ver", lambda: ("14.0", (), "arm64")
+    )
+    with pytest.raises(ValueError, match="macOS 26"):
+        MLXWhisperTranscriptionEngine(mlx_model)
 
 
 async def test_normalizes_pcm_and_maps_segments(mlx_model: Path) -> None:
@@ -94,6 +108,16 @@ async def test_load_is_shared_across_concurrent_readiness(mlx_model: Path) -> No
     await asyncio.gather(*(engine.load() for _ in range(5)))
     holder = sys.modules["mlx_whisper.transcribe"].ModelHolder
     holder.get_model.assert_called_once_with(str(mlx_model), "float16")
+
+
+async def test_failed_native_load_is_not_retried(mlx_model: Path) -> None:
+    holder = sys.modules["mlx_whisper.transcribe"].ModelHolder
+    holder.get_model.side_effect = RuntimeError("Metal unavailable")
+    engine = MLXWhisperTranscriptionEngine(mlx_model)
+    for _ in range(2):
+        with pytest.raises(RuntimeError, match="Metal unavailable"):
+            await engine.load()
+    holder.get_model.assert_called_once()
 
 
 async def test_cancelled_worker_stays_serialized(mlx_model: Path) -> None:

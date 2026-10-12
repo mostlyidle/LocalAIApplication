@@ -8,6 +8,7 @@ from typing import Any
 import chromadb
 import structlog
 
+from app.api.middleware.error_handler import InputValidationError
 from app.config import settings
 
 logger = structlog.get_logger(__name__)
@@ -46,7 +47,10 @@ class VectorStoreService:
                 )
         return self._client
 
-    def _get_or_create_collection(self, name: str | None = None) -> chromadb.Collection:
+    def _get_or_create_collection(
+        self, name: str | None = None, identity: dict[str, str] | None = None,
+        dimension: int | None = None,
+    ) -> chromadb.Collection:
         """Get an existing collection or create a new one (sync).
 
         Args:
@@ -57,10 +61,33 @@ class VectorStoreService:
         """
         client = self._get_client()
         collection_name = name or settings.chroma_collection_name
-        return client.get_or_create_collection(
+        metadata: dict[str, Any] = {"hnsw:space": "cosine", **(identity or {})}
+        if dimension is not None:
+            metadata["embedding_dimension"] = dimension
+        collection = client.get_or_create_collection(
             name=collection_name,
-            metadata={"hnsw:space": "cosine"},
+            metadata=metadata,
         )
+        if identity is not None:
+            stored = collection.metadata or {}
+            tagged = "embedding_model" in stored
+            if tagged and (
+                any(stored.get(key) != value for key, value in identity.items())
+                or stored.get("embedding_dimension") != dimension
+            ):
+                raise InputValidationError(
+                    "Collection uses different embedding weights or formatting. "
+                    "Re-ingest into a new collection; the existing index was not modified."
+                )
+            if not tagged and collection.count() > 0:
+                if identity["embedding_model"] != "nomic-embed-text:latest":
+                    raise InputValidationError(
+                        "Legacy collection has no embedding identity. Use nomic-embed-text "
+                        "or re-ingest into a new collection for the selected model."
+                    )
+            elif not tagged:
+                collection.modify(metadata={**stored, **metadata})
+        return collection
 
     async def add_documents(
         self,
@@ -85,11 +112,21 @@ class VectorStoreService:
 
         from app.services.embeddings import embedding_service
 
+        identity = await embedding_service.get_identity()
         embeddings = await embedding_service.embed_texts(texts)
+        if not embeddings or len(embeddings) != len(texts) or not embeddings[0]:
+            raise InputValidationError("Embedding service returned incomplete vectors.")
+        dimension = len(embeddings[0])
+        if any(len(vector) != dimension for vector in embeddings):
+            raise InputValidationError("Embedding service returned inconsistent vector dimensions.")
+        if await embedding_service.get_identity() != identity:
+            raise InputValidationError(
+                "Embedding weights changed during ingestion. Retry with pinned weights."
+            )
 
         def _add() -> None:
-            col = self._get_or_create_collection(collection)
-            col.add(
+            col = self._get_or_create_collection(collection, identity, dimension)
+            col.upsert(
                 documents=texts,
                 embeddings=embeddings,
                 metadatas=metadatas,
@@ -125,12 +162,17 @@ class VectorStoreService:
         from app.services.embeddings import embedding_service
 
         k = top_k or settings.rag_top_k
-        threshold = score_threshold or settings.rag_score_threshold
+        threshold = settings.rag_score_threshold if score_threshold is None else score_threshold
 
+        identity = await embedding_service.get_identity()
         query_embedding = await embedding_service.embed_text(query)
+        if await embedding_service.get_identity() != identity:
+            raise InputValidationError(
+                "Embedding weights changed during search. Retry with pinned weights."
+            )
 
         def _query() -> dict[str, Any]:
-            col = self._get_or_create_collection(collection)
+            col = self._get_or_create_collection(collection, identity, len(query_embedding))
             return col.query(
                 query_embeddings=[query_embedding],
                 n_results=k,
