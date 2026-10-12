@@ -45,6 +45,7 @@ from app.models.schemas import (
     ToolCallInfo,
 )
 from app.services.auth import AuthenticatedSession  # noqa: TC001
+from app.services.memory_outbox import enqueue_conversation_recall
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()
@@ -110,6 +111,12 @@ async def send_message(
             )
         if conversation.title == "New Conversation":
             conversation.title = body.content[:80].strip()
+        await enqueue_conversation_recall(
+            db,
+            owner_id=owner_id,
+            conversation=conversation,
+            source_message_id=assistant_msg.id,
+        )
         await db.commit()
         await _maybe_refresh_conversation_summary(db, conversation_id, owner_id)
         return ChatMessageResponse(
@@ -180,6 +187,12 @@ async def send_message(
     if conversation.title == "New Conversation":
         conversation.title = body.content[:80].strip()
 
+    await enqueue_conversation_recall(
+        db,
+        owner_id=owner_id,
+        conversation=conversation,
+        source_message_id=assistant_msg.id,
+    )
     await db.commit()
     await _maybe_refresh_conversation_summary(db, conversation_id, owner_id)
 
@@ -864,6 +877,12 @@ async def _persist_ws_messages(
             if conversation.title == "New Conversation":
                 conversation.title = user_content[:80].strip()
 
+            await enqueue_conversation_recall(
+                db,
+                owner_id=owner_id,
+                conversation=conversation,
+                source_message_id=assistant_msg.id,
+            )
             await db.commit()
             await _maybe_refresh_conversation_summary(db, conversation_id, owner_id)
 

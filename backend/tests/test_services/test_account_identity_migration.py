@@ -84,6 +84,9 @@ def test_upgrade_quarantines_existing_records(
         conversation_columns = {
             column[1] for column in connection.execute(text("PRAGMA table_info(conversations)"))
         }
+        outbox_columns = {
+            column[1] for column in connection.execute(text("PRAGMA table_info(memory_outbox_jobs)"))
+        }
         recall_excluded = connection.execute(
             text("SELECT exclude_from_memory FROM conversations WHERE id = 'legacy-chat'")
         ).scalar_one()
@@ -104,3 +107,13 @@ def test_upgrade_quarantines_existing_records(
         "summary_revision",
     } <= conversation_columns
     assert recall_excluded == 0
+    assert {
+        "owner_id",
+        "conversation_id",
+        "source_message_id",
+        "memory_epoch",
+        "status",
+        "attempts",
+        "available_at",
+        "lease_until",
+    } <= outbox_columns
