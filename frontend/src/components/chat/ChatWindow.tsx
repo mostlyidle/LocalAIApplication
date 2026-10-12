@@ -497,6 +497,8 @@ export function ChatWindow() {
               message={msg}
               canRemember={!isStreaming}
               onRemember={rememberMessage}
+              onOpenConversation={(sourceId) => void selectConversation(sourceId)}
+              canOpenSources={!isStreaming && !restoringConversation}
             />
           ))}
           {/* Active tool calls during streaming */}

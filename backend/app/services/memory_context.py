@@ -17,7 +17,40 @@ if TYPE_CHECKING:
 MAX_MEMORY_CONTEXT_CHARS = 4_000
 MAX_MEMORY_ITEMS = 20
 MAX_MEMORY_ITEM_CHARS = 800
+MAX_MEMORY_SOURCES = 4
 logger = structlog.get_logger(__name__)
+
+
+def memory_sources_from_context(context: str | None) -> list[dict[str, str]]:
+    """Return conversation labels and IDs for recalled chat entries only."""
+    if not context:
+        return []
+    try:
+        items = json.loads(context)
+    except (TypeError, ValueError):
+        return []
+    if not isinstance(items, list):
+        return []
+
+    sources: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict) or item.get("type") != "past_conversation":
+            continue
+        conversation_id = item.get("conversation_id")
+        if not isinstance(conversation_id, str) or not conversation_id or conversation_id in seen:
+            continue
+        title = item.get("title")
+        sources.append(
+            {
+                "conversation_id": conversation_id,
+                "title": title[:160] if isinstance(title, str) and title else "Past conversation",
+            }
+        )
+        seen.add(conversation_id)
+        if len(sources) == MAX_MEMORY_SOURCES:
+            break
+    return sources
 
 
 async def load_account_memory_context(

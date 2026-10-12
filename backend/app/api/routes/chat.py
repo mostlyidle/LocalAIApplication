@@ -51,6 +51,7 @@ from app.models.schemas import (
     ToolCallInfo,
 )
 from app.services.auth import AuthenticatedSession  # noqa: TC001
+from app.services.memory_context import memory_sources_from_context
 from app.services.memory_outbox import enqueue_conversation_recall
 
 logger = structlog.get_logger(__name__)
@@ -61,6 +62,21 @@ MIN_UNSUMMARIZED_MESSAGES = 10
 MAX_SUMMARY_BATCH_MESSAGES = 20
 MAX_SUMMARY_INPUT_CHARACTERS = 20_000
 MAX_SUMMARY_CHARACTERS = 8_000
+
+
+def _attach_memory_sources(
+    execution: dict[str, Any] | None, context: str | None
+) -> dict[str, Any] | None:
+    sources = memory_sources_from_context(context)
+    if not sources:
+        return execution
+    result = dict(execution or {})
+    artifacts = result.get("artifacts")
+    result["artifacts"] = {
+        **(artifacts if isinstance(artifacts, dict) else {}),
+        "memory_sources": sources,
+    }
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -158,7 +174,9 @@ async def send_message(
     assistant_content = _extract_response_content(result)
     agent_used = result.get("metadata", {}).get("agent_used")
     tool_calls_data = result.get("tool_calls", [])
-    execution_metadata = result.get("metadata", {}).get("execution")
+    execution_metadata = _attach_memory_sources(
+        result.get("metadata", {}).get("execution"), result.get("memory_context")
+    )
 
     # Persist user message
     user_msg = Message(
@@ -388,7 +406,13 @@ async def chat_stream(
                     agent_used = event.get("agent")
                 elif evt_type == "done":
                     completion_metadata = event.get("metadata", {})
-                    execution_metadata = completion_metadata.get("execution")
+                    state = event.get("state")
+                    execution_metadata = _attach_memory_sources(
+                        completion_metadata.get("execution"),
+                        state.get("memory_context") if isinstance(state, dict) else None,
+                    )
+                    if execution_metadata is not None:
+                        completion_metadata["execution"] = execution_metadata
                     if agent_used is None:
                         agent_used = completion_metadata.get("agent_used")
 
@@ -702,12 +726,14 @@ async def _execute_selected_profile(
                 if state is None:
                     raise RuntimeError("Agent stream did not return a final state.")
         metadata = state.get("metadata", {})
+        memory_sources = memory_sources_from_context(state.get("memory_context"))
         return AgentResult(
             agent=profile.name,
             answer=_extract_response_content(state),
             artifacts={
                 **({"retrieval": metadata["retrieval"]} if metadata.get("retrieval") else {}),
                 **({"tool_calls": state["tool_calls"]} if state.get("tool_calls") else {}),
+                **({"memory_sources": memory_sources} if memory_sources else {}),
             },
             metadata=ExecutionMetadata(
                 request_id=str(uuid.uuid4()),
