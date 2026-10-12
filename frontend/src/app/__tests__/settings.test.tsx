@@ -70,7 +70,7 @@ describe("SettingsPage", () => {
     mockGetHealth.mockResolvedValue({
       status: "healthy",
       ollama: { status: "ok" },
-      chromadb: { status: "ok" },
+      qdrant: { status: "ok" },
       database: { status: "ok" },
     });
     mockGetTools.mockResolvedValue({
@@ -101,7 +101,7 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
     await waitFor(() => {
       expect(screen.getByText("Ollama")).toBeInTheDocument();
-      expect(screen.getByText("ChromaDB")).toBeInTheDocument();
+      expect(screen.getByText("Qdrant")).toBeInTheDocument();
       expect(screen.getByText("Database")).toBeInTheDocument();
     });
   });

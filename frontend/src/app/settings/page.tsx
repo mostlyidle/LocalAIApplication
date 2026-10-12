@@ -26,7 +26,7 @@ import * as api from "@/lib/api";
 interface HealthData {
   status: string;
   ollama: { status: string };
-  chromadb: { status: string };
+  qdrant: { status: string };
   database: { status: string };
 }
 
@@ -126,11 +126,11 @@ export default function SettingsPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 rounded-md border px-3 py-2">
-                  <StatusIcon status={health.chromadb.status} />
+                  <StatusIcon status={health.qdrant.status} />
                   <div>
-                    <div className="text-sm font-medium">ChromaDB</div>
+                    <div className="text-sm font-medium">Qdrant</div>
                     <div className="text-[10px] text-muted-foreground">
-                      {health.chromadb.status}
+                      {health.qdrant.status}
                     </div>
                   </div>
                 </div>

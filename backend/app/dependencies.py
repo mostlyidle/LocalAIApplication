@@ -37,9 +37,9 @@ def get_embeddings() -> EmbeddingService:
 
 def get_vector_store() -> VectorStoreService:
     """Provide the vector store service singleton."""
-    from app.services.vector_store import VectorStoreService, vector_store_service  # noqa: F811
+    from app.services.hybrid_vector_store import hybrid_vector_store_service
 
-    return vector_store_service
+    return hybrid_vector_store_service
 
 
 def get_document_parser() -> DocumentParserService:

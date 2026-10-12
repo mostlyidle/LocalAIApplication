@@ -16,7 +16,7 @@ export const healthSchema = z.object({
   return {
     ...data,
     ollama: serviceStatus("ollama"),
-    chromadb: serviceStatus("chromadb"),
+    qdrant: serviceStatus("qdrant"),
     database: serviceStatus("app_database"),
   };
 });
@@ -145,11 +145,13 @@ export const ragSearchResultSchema = z.object({
     z.object({
       content: z.string(),
       score: z.number(),
+      score_type: z.string().optional(),
       metadata: z.record(z.string(), z.unknown()),
     })
   ),
   query: z.string(),
   total_results: z.number(),
+  retrieval: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const ragIngestSchema = z.object({
