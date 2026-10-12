@@ -77,6 +77,18 @@ async def test_comfyui_submits_workflow_once_and_returns_queue_id() -> None:
     assert requests[0].read() == b'{"prompt":{"1":{"class_type":"SaveImage","inputs":{}}}}'
 
 
+async def test_comfyui_reports_unavailable_server() -> None:
+    client = ComfyUIClient(
+        "http://comfyui.test",
+        transport=httpx.MockTransport(lambda _: httpx.Response(503)),
+    )
+    try:
+        with pytest.raises(RuntimeError, match="ComfyUI is unavailable"):
+            await client.submit({"1": {"class_type": "SaveImage", "inputs": {}}})
+    finally:
+        await client.close()
+
+
 async def test_finnhub_preserves_partial_provider_failure_warnings() -> None:
     def respond(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/quote"):
