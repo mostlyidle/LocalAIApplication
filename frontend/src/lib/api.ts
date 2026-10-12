@@ -136,6 +136,9 @@ export async function createMemory(input: {
   kind: MemoryRecord["kind"];
   content: string;
   project_scope?: string;
+  source_conversation_id?: string;
+  source_message_id?: string;
+  source_client_turn_id?: string;
 }) {
   return apiFetch("/memory", {
     method: "POST",

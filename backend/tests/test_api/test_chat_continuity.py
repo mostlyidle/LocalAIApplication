@@ -99,6 +99,23 @@ async def test_orchestrator_appends_current_message_to_history() -> None:
     assert len(history) == 2
 
 
+async def test_orchestrator_loads_memory_separately_from_user_history() -> None:
+    with (
+        patch(
+            "app.services.memory_context.load_account_memory_context",
+            AsyncMock(return_value='[{"type":"preference","content":"Concise"}]'),
+        ),
+        patch(
+            "app.agents.orchestrator.orchestrator_graph.ainvoke", AsyncMock(return_value={})
+        ) as invoke,
+    ):
+        await run_agent("Hello", "conversation", owner_id=LEGACY_ACCOUNT_ID)
+
+    state = invoke.call_args.args[0]
+    assert state["memory_context"] == '[{"type":"preference","content":"Concise"}]'
+    assert [message.content for message in state["messages"]] == ["Hello"]
+
+
 async def test_stream_excludes_classifier_tokens_and_keeps_current_turn() -> None:
     from langchain_core.messages import AIMessageChunk
 

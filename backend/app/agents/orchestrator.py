@@ -104,7 +104,9 @@ async def classify_intent(state: AgentState) -> dict[str, Any]:
 
     # LLM-based classification
     llm = llm_service.get_chat_model(
-        temperature=0.0, max_tokens=64, format=RouterDecision.model_json_schema(),
+        temperature=0.0,
+        max_tokens=64,
+        format=RouterDecision.model_json_schema(),
     )
 
     classification_messages = [
@@ -295,6 +297,10 @@ async def run_agent(
         attachments=attachments,
         owner_id=owner_id,
     )
+    if owner_id:
+        from app.services.memory_context import load_account_memory_context
+
+        state["memory_context"] = await load_account_memory_context(owner_id)
     if forced_agent:
         state["forced_agent"] = forced_agent
 
@@ -339,6 +345,10 @@ async def stream_agent(
         attachments=attachments,
         owner_id=owner_id,
     )
+    if owner_id:
+        from app.services.memory_context import load_account_memory_context
+
+        state["memory_context"] = await load_account_memory_context(owner_id)
     if forced_agent:
         state["forced_agent"] = forced_agent
 
@@ -395,7 +405,11 @@ async def stream_agent(
             final_state = data.get("output", {})
             if not answer_emitted:
                 messages = final_state.get("messages", [])
-                if messages and getattr(messages[-1], "type", None) == "ai" and messages[-1].content:
+                if (
+                    messages
+                    and getattr(messages[-1], "type", None) == "ai"
+                    and messages[-1].content
+                ):
                     yield {"type": "token", "content": str(messages[-1].content)}
             yield {
                 "type": "done",

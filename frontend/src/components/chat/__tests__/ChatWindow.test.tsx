@@ -13,6 +13,7 @@ const mockConnect = vi.fn();
 const mockLoadConversation = vi.fn();
 const mockGetConversation = vi.fn();
 const mockGetConversations = vi.fn();
+const mockCreateMemory = vi.fn();
 const localStorageValues = new Map<string, string>();
 
 Object.defineProperty(window, "localStorage", {
@@ -26,7 +27,7 @@ Object.defineProperty(window, "localStorage", {
 });
 
 let mockChatState = {
-  messages: [] as { id: string; role: string; content: string; timestamp: string }[],
+  messages: [] as { id: string; clientTurnId?: string; role: string; content: string; timestamp: string }[],
   streamingContent: "",
   activeToolCalls: [] as { toolName: string; toolInput: string }[],
   isConnected: true,
@@ -46,6 +47,7 @@ vi.mock("@/hooks/useChat", () => ({
 const mockUploadDocument = vi.fn();
 const mockGetAgentCatalog = vi.fn();
 vi.mock("@/lib/api", () => ({
+  createMemory: (...args: unknown[]) => mockCreateMemory(...args),
   uploadDocument: (...args: unknown[]) => mockUploadDocument(...args),
   getAgentCatalog: (...args: unknown[]) => mockGetAgentCatalog(...args),
   getConversation: (...args: unknown[]) => mockGetConversation(...args),
@@ -58,8 +60,11 @@ vi.mock("@/components/shared/AuthProvider", () => ({
 
 // Mock child components to simplify rendering
 vi.mock("../MessageBubble", () => ({
-  MessageBubble: ({ message }: { message: { content: string } }) => (
-    <div data-testid="message-bubble">{message.content}</div>
+  MessageBubble: ({ message, onRemember }: { message: { id: string; content: string }; onRemember?: (message: unknown) => void }) => (
+    <div data-testid="message-bubble">
+      {message.content}
+      {onRemember && <button onClick={() => onRemember(message)}>Remember this</button>}
+    </div>
   ),
 }));
 
@@ -106,6 +111,7 @@ describe("ChatWindow", () => {
     mockGetAgentCatalog.mockResolvedValue({ agents: [] });
     mockGetConversation.mockResolvedValue({ id: "conversation-1", title: "Saved", messages: [] });
     mockGetConversations.mockResolvedValue({ conversations: [] });
+    mockCreateMemory.mockResolvedValue({ id: "saved-memory" });
   });
 
   it("restores the active account conversation after refresh", async () => {
@@ -157,6 +163,31 @@ describe("ChatWindow", () => {
         }],
       }),
     ], "conversation-1"));
+  });
+
+  it("previews a chat message and saves it with its client-turn source", async () => {
+    mockChatState = {
+      ...mockChatState,
+      conversationId: "conversation-1",
+      messages: [{
+        id: "turn-1",
+        clientTurnId: "turn-1",
+        role: "user",
+        content: "My preferred color is cobalt blue.",
+        timestamp: "2026-10-12T10:00:00Z",
+      }],
+    };
+    render(<ChatWindow />);
+    fireEvent.click(await screen.findByRole("button", { name: "Remember this" }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByLabelText("Memory text")).toHaveValue("My preferred color is cobalt blue.");
+    fireEvent.click(screen.getByRole("button", { name: "Save memory" }));
+    await waitFor(() => expect(mockCreateMemory).toHaveBeenCalledWith({
+      kind: "fact",
+      content: "My preferred color is cobalt blue.",
+      source_conversation_id: "conversation-1",
+      source_client_turn_id: "turn-1",
+    }));
   });
 
   it("browses and opens an owned saved conversation", async () => {

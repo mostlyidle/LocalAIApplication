@@ -227,9 +227,19 @@ describe("API Client", () => {
       };
       const spy = mockFetchSuccess(record);
       globalThis.fetch = spy;
-      await createMemory({ kind: "fact", content: "Uses blue" });
+      await createMemory({
+        kind: "fact",
+        content: "Uses blue",
+        source_conversation_id: "conversation-1",
+        source_client_turn_id: "turn-1",
+      });
       await updateMemory("m1", { revision: 1, content: "Uses cobalt blue" });
-      expect(JSON.parse(spy.mock.calls[0][1].body)).toEqual({ kind: "fact", content: "Uses blue" });
+      expect(JSON.parse(spy.mock.calls[0][1].body)).toEqual({
+        kind: "fact",
+        content: "Uses blue",
+        source_conversation_id: "conversation-1",
+        source_client_turn_id: "turn-1",
+      });
       expect(JSON.parse(spy.mock.calls[1][1].body)).toEqual({ revision: 1, content: "Uses cobalt blue" });
       const deleteSpy = mockFetchSuccess(undefined, 204);
       globalThis.fetch = deleteSpy;

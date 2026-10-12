@@ -6,12 +6,16 @@ import { AGENT_LABELS, AGENT_COLORS } from "@/lib/constants";
 import type { ChatMessage } from "@/types/chat";
 import { ToolCallDisplay } from "./ToolCallDisplay";
 import { MarkdownContent } from "./MarkdownContent";
+import { BookmarkPlus } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface MessageBubbleProps {
   message: ChatMessage;
+  onRemember?: (message: ChatMessage) => void;
+  canRemember?: boolean;
 }
 
-export function MessageBubble({ message }: MessageBubbleProps) {
+export function MessageBubble({ message, onRemember, canRemember = true }: MessageBubbleProps) {
   const isUser = message.role === "user";
 
   return (
@@ -46,6 +50,17 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           </div>
         ) : (
           <MarkdownContent content={message.content} className="text-sm leading-relaxed" />
+        )}
+        {isUser && onRemember && canRemember && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            className="mt-1 h-6 px-1 text-[10px] text-primary-foreground/80 hover:text-primary-foreground"
+            onClick={() => onRemember(message)}
+          >
+            <BookmarkPlus className="h-3 w-3" /> Remember this
+          </Button>
         )}
         {message.toolCalls && message.toolCalls.length > 0 && (
           <div className="mt-3 space-y-2">

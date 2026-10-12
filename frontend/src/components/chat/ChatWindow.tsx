@@ -7,9 +7,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { useChat } from "@/hooks/useChat";
-import { getAgentCatalog, getConversation, getConversations, uploadDocument } from "@/lib/api";
+import { createMemory, getAgentCatalog, getConversation, getConversations, uploadDocument } from "@/lib/api";
 import { ACCEPTED_FILE_TYPES, ACTIVE_CONVERSATION_STORAGE_PREFIX, MAX_FILE_SIZE } from "@/lib/constants";
 import type { AgentCapability, ChatMessage, ChatTaskOptions } from "@/types/chat";
+import type { MemoryRecord } from "@/lib/schemas";
 import { useAuth } from "@/components/shared/AuthProvider";
 import { MessageBubble } from "./MessageBubble";
 import { StreamingText } from "./StreamingText";
@@ -28,6 +29,7 @@ const IMAGE_TYPES = [".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".webp"];
 function restoreMessages(conversation: Awaited<ReturnType<typeof getConversation>>): ChatMessage[] {
   return conversation.messages.map((message) => ({
     id: message.id,
+    clientTurnId: message.client_turn_id ?? undefined,
     role: message.role,
     content: message.content,
     agentType: message.agent_type ?? undefined,
@@ -75,6 +77,14 @@ export function ChatWindow() {
   const [conversationError, setConversationError] = useState("");
   const [conversations, setConversations] = useState<Awaited<ReturnType<typeof getConversations>>["conversations"]>([]);
   const [restoringConversation, setRestoringConversation] = useState(false);
+  const [memoryDraft, setMemoryDraft] = useState<{
+    message: ChatMessage;
+    content: string;
+    kind: MemoryRecord["kind"];
+    projectScope: string;
+  } | null>(null);
+  const [savingMemory, setSavingMemory] = useState(false);
+  const [memoryError, setMemoryError] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -142,6 +152,34 @@ export function ChatWindow() {
     clearMessages();
     setConversationError("");
     if (conversationStorageKey) window.localStorage.removeItem(conversationStorageKey);
+  };
+
+  const rememberMessage = (message: ChatMessage) => {
+    setMemoryError("");
+    setMemoryDraft({ message, content: message.content, kind: "fact", projectScope: "" });
+  };
+
+  const saveMemory = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!memoryDraft || !memoryDraft.content.trim()) return;
+    setSavingMemory(true);
+    setMemoryError("");
+    try {
+      await createMemory({
+        kind: memoryDraft.kind,
+        content: memoryDraft.content.trim(),
+        ...(memoryDraft.projectScope.trim() ? { project_scope: memoryDraft.projectScope.trim() } : {}),
+        ...(conversationId ? { source_conversation_id: conversationId } : {}),
+        ...(memoryDraft.message.clientTurnId
+          ? { source_client_turn_id: memoryDraft.message.clientTurnId }
+          : { source_message_id: memoryDraft.message.id }),
+      });
+      setMemoryDraft(null);
+    } catch (cause) {
+      setMemoryError(cause instanceof Error ? cause.message : "Could not save this memory.");
+    } finally {
+      setSavingMemory(false);
+    }
   };
 
   const selectConversation = async (id: string) => {
@@ -409,7 +447,12 @@ export function ChatWindow() {
             </div>
           )}
           {messages.map((msg) => (
-            <MessageBubble key={msg.id} message={msg} />
+            <MessageBubble
+              key={msg.id}
+              message={msg}
+              canRemember={!isStreaming}
+              onRemember={rememberMessage}
+            />
           ))}
           {/* Active tool calls during streaming */}
           {activeToolCalls.length > 0 && (
@@ -622,6 +665,47 @@ export function ChatWindow() {
           {isConnected ? "Connected" : "Disconnected"} — Responses are generated locally by Ollama
         </div>
       </div>
+      {memoryDraft && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <form
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="remember-title"
+            onSubmit={saveMemory}
+            className="w-full max-w-lg space-y-4 rounded-lg border bg-background p-5 shadow-lg"
+          >
+            <div>
+              <h2 id="remember-title" className="font-semibold">Remember this</h2>
+              <p className="text-sm text-muted-foreground">Review the exact text your account will save.</p>
+            </div>
+            {memoryError && <p role="alert" className="text-sm text-destructive">{memoryError}</p>}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="space-y-1 text-sm" htmlFor="remember-kind">
+                Type
+                <select id="remember-kind" value={memoryDraft.kind} onChange={(event) => setMemoryDraft({ ...memoryDraft, kind: event.target.value as MemoryRecord["kind"] })} className="h-9 w-full rounded-md border bg-background px-3">
+                  <option value="fact">Fact</option>
+                  <option value="preference">Preference</option>
+                  <option value="project_decision">Project decision</option>
+                </select>
+              </label>
+              <label className="space-y-1 text-sm" htmlFor="remember-project">
+                Project (optional)
+                <input id="remember-project" value={memoryDraft.projectScope} maxLength={128} onChange={(event) => setMemoryDraft({ ...memoryDraft, projectScope: event.target.value })} className="h-9 w-full rounded-md border bg-background px-3" />
+              </label>
+            </div>
+            <label className="block space-y-1 text-sm" htmlFor="remember-content">
+              Memory text
+              <textarea id="remember-content" value={memoryDraft.content} maxLength={4000} rows={4} onChange={(event) => setMemoryDraft({ ...memoryDraft, content: event.target.value })} className="w-full rounded-md border bg-background px-3 py-2" />
+            </label>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setMemoryDraft(null)} disabled={savingMemory}>Cancel</Button>
+              <Button type="submit" disabled={savingMemory || !memoryDraft.content.trim()}>
+                {savingMemory && <Loader2 className="animate-spin" />} Save memory
+              </Button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

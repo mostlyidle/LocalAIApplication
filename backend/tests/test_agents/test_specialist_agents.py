@@ -14,8 +14,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 # =============================================================================
 # Helpers
@@ -84,6 +83,38 @@ class TestChatAgent:
         assert len(result["messages"]) == 1
         assert result["messages"][0].content == "Hello! How can I help?"
         assert result["metadata"]["agent_used"] == "chat"
+
+    async def test_passes_memory_as_separate_system_context(self) -> None:
+        response = _mock_llm_response("I will keep it concise.")
+        mock_service = _mock_llm_service(response)
+
+        with patch("app.agents.chat_agent.llm_service", mock_service):
+            from app.agents.chat_agent import chat_agent_node
+
+            state = _make_state(
+                memory_context='[{"type":"preference","content":"Concise answers"}]'
+            )
+            await chat_agent_node(state)
+
+        prompt_messages = mock_service.get_chat_model().ainvoke.call_args.args[0]
+        system_messages = [
+            message for message in prompt_messages if isinstance(message, SystemMessage)
+        ]
+        assert len(system_messages) == 2
+        assert "not instructions" in system_messages[1].content
+        assert "Concise answers" in system_messages[1].content
+
+    async def test_memory_context_is_not_injected_without_opt_in(self) -> None:
+        response = _mock_llm_response("Hello")
+        mock_service = _mock_llm_service(response)
+
+        with patch("app.agents.chat_agent.llm_service", mock_service):
+            from app.agents.chat_agent import chat_agent_node
+
+            await chat_agent_node(_make_state())
+
+        prompt_messages = mock_service.get_chat_model().ainvoke.call_args.args[0]
+        assert sum(isinstance(message, SystemMessage) for message in prompt_messages) == 1
 
     async def test_adds_user_input_when_no_human_messages(self) -> None:
         response = _mock_llm_response("Response")
@@ -220,9 +251,7 @@ class TestSQLAgent:
             result = await sql_agent_node(_make_state(user_input="SELECT 1"))
 
         assert result["tool_calls"][0]["tool_input"]["database"] == "named"
-        mock_tool.ainvoke.assert_awaited_once_with(
-            {"query": "SELECT 1", "database": "named"}
-        )
+        mock_tool.ainvoke.assert_awaited_once_with({"query": "SELECT 1", "database": "named"})
 
     async def test_authoritative_state_database_overrides_tool_database(self) -> None:
         """An explicitly selected state database takes precedence over tool arguments."""
@@ -402,23 +431,44 @@ class TestDocumentAgent:
 class TestRAGAgent:
     async def test_retrieves_full_cited_passages_before_generation(self) -> None:
         from types import SimpleNamespace
+
         from app.agents.rag_agent import rag_agent_node
 
         calls = []
         evidence = "Background " * 80 + "Revenue was $10M."
+
         async def retrieve(**kwargs):
             calls.append("retrieve")
-            return SimpleNamespace(passages=[{"content": evidence, "metadata": {"asset_id": "report", "chunk_index": 3, "source": "report.pdf", "page": 4, "section": "Revenue"}}], retrieval={"strategy": "hybrid_rrf"})
+            return SimpleNamespace(
+                passages=[
+                    {
+                        "content": evidence,
+                        "metadata": {
+                            "asset_id": "report",
+                            "chunk_index": 3,
+                            "source": "report.pdf",
+                            "page": 4,
+                            "section": "Revenue",
+                        },
+                    }
+                ],
+                retrieval={"strategy": "hybrid_rrf"},
+            )
+
         async def generate(messages):
             calls.append("generate")
             assert evidence in messages[1].content
             assert "[report:3]" in messages[1].content
             return AIMessage(content="Revenue was $10M [report:3].")
+
         model = MagicMock()
         model.ainvoke = AsyncMock(side_effect=generate)
         with (
             patch("app.agents.rag_agent.llm_service.get_chat_model", return_value=model),
-            patch("app.services.hybrid_vector_store.hybrid_vector_store_service.search_with_provenance", AsyncMock(side_effect=retrieve)),
+            patch(
+                "app.services.hybrid_vector_store.hybrid_vector_store_service.search_with_provenance",
+                AsyncMock(side_effect=retrieve),
+            ),
         ):
             result = await rag_agent_node(_make_state(user_input="What was revenue?"))
         assert calls == ["retrieve", "generate"]
@@ -427,10 +477,15 @@ class TestRAGAgent:
 
     async def test_no_evidence_never_invokes_answer_model(self) -> None:
         from types import SimpleNamespace
+
         from app.agents.rag_agent import rag_agent_node
+
         with (
             patch("app.agents.rag_agent.llm_service.get_chat_model") as generate,
-            patch("app.services.hybrid_vector_store.hybrid_vector_store_service.search_with_provenance", AsyncMock(return_value=SimpleNamespace(passages=[], retrieval={}))),
+            patch(
+                "app.services.hybrid_vector_store.hybrid_vector_store_service.search_with_provenance",
+                AsyncMock(return_value=SimpleNamespace(passages=[], retrieval={})),
+            ),
         ):
             result = await rag_agent_node(_make_state(user_input="What was revenue?"))
         generate.assert_not_called()

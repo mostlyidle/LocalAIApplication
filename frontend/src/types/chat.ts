@@ -1,5 +1,6 @@
 export interface ChatMessage {
   id: string;
+  clientTurnId?: string;
   role: "user" | "assistant" | "system" | "tool";
   content: string;
   agentType?: string;

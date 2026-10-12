@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any, NotRequired
 
-from langchain_core.messages import AnyMessage
+from langchain_core.messages import AnyMessage  # noqa: TC002
 from langgraph.graph import add_messages
 from typing_extensions import TypedDict
 
@@ -41,6 +41,7 @@ class AgentState(TypedDict):
     database: NotRequired[str]
     forced_agent: NotRequired[str]
     owner_id: NotRequired[str]
+    memory_context: NotRequired[str]
 
 
 def create_initial_state(
