@@ -54,6 +54,7 @@ const SOCKET_WRITE_TIMEOUT: Duration = Duration::from_millis(500);
 pub struct TransportRequest {
     pub meeting_id: String,
     pub backend_url: String,
+    pub stream_ticket: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -288,6 +289,16 @@ fn validate_request(request: &TransportRequest) -> Result<(), CaptureError> {
     {
         return Err(CaptureError::InvalidRequest("meeting_id is invalid".into()));
     }
+    if !(32..=128).contains(&request.stream_ticket.len())
+        || !request
+            .stream_ticket
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+    {
+        return Err(CaptureError::InvalidRequest(
+            "stream_ticket is invalid".into(),
+        ));
+    }
     let url = Url::parse(&request.backend_url).map_err(|error| {
         CaptureError::InvalidRequest(format!("backend_url is invalid: {error}"))
     })?;
@@ -398,6 +409,11 @@ fn connect_socket(
         "Origin",
         tungstenite::http::HeaderValue::from_static(ORIGIN),
     );
+    let ticket = tungstenite::http::HeaderValue::from_str(&request.stream_ticket)
+        .map_err(|error| WorkerError::Connection(error.to_string()))?;
+    handshake
+        .headers_mut()
+        .insert("x-meeting-stream-ticket", ticket);
     let port = websocket_url
         .port_or_known_default()
         .ok_or_else(|| WorkerError::Connection("backend URL has no usable port".into()))?;
@@ -946,6 +962,7 @@ enum WorkerError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Read;
     use std::net::TcpListener;
 
     #[test]
@@ -953,6 +970,7 @@ mod tests {
         let request = TransportRequest {
             meeting_id: "meeting-1".into(),
             backend_url: "http://127.0.0.1:8000".into(),
+            stream_ticket: "A".repeat(43),
         };
         validate_request(&request).unwrap();
         let url = Url::parse(&request.backend_url).unwrap();
@@ -965,6 +983,7 @@ mod tests {
         let request = TransportRequest {
             meeting_id: "id".into(),
             backend_url: "https://example.test".into(),
+            stream_ticket: "A".repeat(43),
         };
         assert!(validate_request(&request).is_err());
     }
@@ -972,11 +991,48 @@ mod tests {
     #[test]
     fn transport_request_matches_frontend_camel_case() {
         let request: TransportRequest = serde_json::from_str(
-            r#"{"meetingId":"meeting-1","backendUrl":"http://localhost:8000"}"#,
+            r#"{"meetingId":"meeting-1","backendUrl":"http://localhost:8000","streamTicket":"A12345678901234567890123456789012345678901"}"#,
         )
         .unwrap();
         assert_eq!(request.meeting_id, "meeting-1");
         assert_eq!(request.backend_url, "http://localhost:8000");
+        assert_eq!(
+            request.stream_ticket,
+            "A12345678901234567890123456789012345678901"
+        );
+    }
+
+    #[test]
+    fn native_handshake_sends_the_meeting_stream_ticket() {
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let server = thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            socket.set_read_timeout(Some(HANDSHAKE_TIMEOUT)).unwrap();
+            let mut request = Vec::new();
+            let mut buffer = [0_u8; 1024];
+            loop {
+                let count = socket.read(&mut buffer).unwrap();
+                request.extend_from_slice(&buffer[..count]);
+                if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            String::from_utf8(request).unwrap()
+        });
+        let stream_ticket = "A12345678901234567890123456789012345678901";
+        let request = TransportRequest {
+            meeting_id: "meeting-1".into(),
+            backend_url: format!("http://127.0.0.1:{port}"),
+            stream_ticket: stream_ticket.into(),
+        };
+
+        assert!(connect_socket(&request).is_err());
+        let handshake = server.join().unwrap();
+        assert!(handshake.to_ascii_lowercase().contains(&format!(
+            "x-meeting-stream-ticket: {}",
+            stream_ticket.to_ascii_lowercase()
+        )));
     }
 
     #[test]
@@ -1113,6 +1169,7 @@ mod tests {
         let request = TransportRequest {
             meeting_id: "meeting-1".into(),
             backend_url: format!("http://127.0.0.1:{port}"),
+            stream_ticket: "A".repeat(43),
         };
         let started = Instant::now();
 

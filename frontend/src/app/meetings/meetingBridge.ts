@@ -1,4 +1,5 @@
 import { API_V1 } from "@/lib/constants";
+import { getCsrfToken } from "@/lib/auth-session";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { AudioSourceState, CapabilityCheck, DetectedQuestion, TranscriptLine } from "@/types/meeting";
@@ -29,11 +30,25 @@ export async function checkNativeCapabilities(): Promise<CapabilityCheck[]> {
 export async function requestNativePermissions() { if (!isNativeMeetingHost()) throw new Error("Native permissions are unavailable in a browser."); await invoke("request_permissions", { kind: "all" }); }
 export async function openNativePermissionSettings() { if (!isNativeMeetingHost()) throw new Error("Native permission settings are unavailable in a browser."); await invoke("open_permission_settings", { kind: "all" }); }
 export async function ensureMeetingReady(meetingId: string) { const controller = new AbortController(); const timeout = window.setTimeout(() => controller.abort(), 5000); try { const response = await fetch(`${API_V1}/health/ready`, { method: "GET", headers: { "Content-Type": "application/json", "X-Meeting-Id": meetingId }, signal: controller.signal }); if (!response.ok) throw new Error(`Meeting readiness returned ${response.status}.`); const result = await response.json() as { meeting_ready?: boolean; ready?: boolean; reason?: string }; if (result.meeting_ready !== true && result.ready !== true) throw new Error(result.reason || "The meeting is not ready for native capture."); } finally { window.clearTimeout(timeout); } }
-async function api<T>(path: string, options: RequestInit): Promise<T> { const response = await fetch(`${API_V1}${path}`, { ...options, headers: { "Content-Type": "application/json", ...options.headers } }); if (!response.ok) throw new Error(`Meeting service returned ${response.status}.`); return response.json() as Promise<T>; }
+async function api<T>(path: string, options: RequestInit): Promise<T> {
+  const csrfToken = getCsrfToken();
+  const response = await fetch(`${API_V1}${path}`, {
+    ...options,
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.method !== "GET" && csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+      ...options.headers,
+    },
+  });
+  if (!response.ok) throw new Error(`Meeting service returned ${response.status}.`);
+  return response.json() as Promise<T>;
+}
 export async function createConsentedMeeting(): Promise<{ id: string; status: string }> { return api("/meetings", { method: "POST", body: JSON.stringify({ consent_policy_version: "meeting-consent-v1", consent_attested_at: new Date().toISOString() }) }); }
+export async function createMeetingStreamTicket(meetingId: string): Promise<{ ticket: string }> { return api(`/meetings/${meetingId}/stream-ticket`, { method: "POST", body: JSON.stringify({}) }); }
 export async function startNativeCapture() { await invoke("start_capture", { request: { source: "microphone", deviceId: null } }); await invoke("start_capture", { request: { source: "system", deviceId: null } }); }
 export async function stopNativeCapture() { await invoke("stop_capture", { source: "microphone" }); await invoke("stop_capture", { source: "system" }); }
-export async function startMeetingTransport(meetingId: string) { if (!isNativeMeetingHost()) throw new Error("Native meeting transport is unavailable in a browser."); await invoke("start_meeting_transport", { request: { meetingId, backendUrl: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000" } }); }
+export async function startMeetingTransport(meetingId: string, streamTicket: string) { if (!isNativeMeetingHost()) throw new Error("Native meeting transport is unavailable in a browser."); await invoke("start_meeting_transport", { request: { meetingId, streamTicket, backendUrl: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000" } }); }
 export async function stopMeetingTransport(): Promise<{ phase?: string; error?: string }> { if (!isNativeMeetingHost()) return {}; return invoke("stop_meeting_transport"); }
 export async function stopMeeting(meetingId: string) { return api(`/meetings/${meetingId}/stop`, { method: "POST", body: JSON.stringify({}) }); }
 export async function deleteMeeting(meetingId: string) { return api(`/meetings/${meetingId}`, { method: "DELETE" }); }

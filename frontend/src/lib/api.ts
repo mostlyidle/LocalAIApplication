@@ -1,4 +1,5 @@
 import { API_V1 } from "./constants";
+import { getCsrfToken } from "./auth-session";
 import type { z } from "zod";
 import {
   healthSchema,
@@ -36,10 +37,14 @@ async function apiFetch<T>(
   schema?: z.ZodType<T>,
 ): Promise<T> {
   const url = `${API_V1}${path}`;
+  const method = options?.method ?? "GET";
+  const csrfToken = getCsrfToken();
   const res = await fetch(url, {
     ...options,
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
+      ...(method !== "GET" && csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
       ...options?.headers,
     },
   });
@@ -53,6 +58,8 @@ async function apiFetch<T>(
     );
   }
 
+  if (res.status === 204) return undefined as T;
+
   const data = await res.json();
 
   if (schema) {
@@ -60,6 +67,32 @@ async function apiFetch<T>(
   }
 
   return data as T;
+}
+
+export interface AuthAccount {
+  id: string;
+  username: string;
+  display_name: string;
+}
+
+export interface AuthSessionResponse {
+  account: AuthAccount;
+  csrf_token: string;
+}
+
+export async function login(username: string, password: string) {
+  return apiFetch<AuthSessionResponse>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ username, password }),
+  });
+}
+
+export async function getCurrentAccount() {
+  return apiFetch<AuthSessionResponse>("/auth/me");
+}
+
+export async function logout() {
+  return apiFetch<void>("/auth/logout", { method: "POST" });
 }
 
 // --- Chat ---
@@ -91,7 +124,13 @@ export async function uploadDocument(file: File) {
   const formData = new FormData();
   formData.append("file", file);
   const url = `${API_V1}/documents/upload`;
-  const res = await fetch(url, { method: "POST", body: formData });
+  const csrfToken = getCsrfToken();
+  const res = await fetch(url, {
+    method: "POST",
+    body: formData,
+    credentials: "include",
+    headers: csrfToken ? { "X-CSRF-Token": csrfToken } : {},
+  });
   if (!res.ok) {
     const body = await res.json().catch(() => null);
     throw new ApiError(
