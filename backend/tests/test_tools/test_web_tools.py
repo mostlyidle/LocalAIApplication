@@ -30,6 +30,18 @@ from app.tools.web_tools import (
 class TestExtractTextFromHtml:
     """Tests for the HTML text extraction utility."""
 
+    def test_article_excludes_navigation(self) -> None:
+        paragraph = "Local models process private documents without uploading their contents. "
+        html = f"<nav>Subscribe Buy Subscribe</nav><article><h1>Local AI</h1><p>{paragraph * 8}</p></article><footer>Cookie preferences</footer>"
+        result = extract_text_from_html(html)
+        assert "private documents" in result
+        assert "Subscribe" not in result
+        assert "Cookie preferences" not in result
+
+    def test_sparse_page_falls_back(self) -> None:
+        with patch("trafilatura.extract", return_value=None):
+            assert extract_text_from_html("<p>Short useful answer</p>") == "Short useful answer"
+
     def test_basic_paragraph(self):
         """Extracts text from a simple HTML paragraph."""
         html = "<html><body><p>Hello World</p></body></html>"

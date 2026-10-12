@@ -7,15 +7,18 @@ and automatically append LIMIT clauses to prevent unbounded result sets.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from typing import Any
 
-import sqlparse
+import sqlglot
 import structlog
 from langchain_core.tools import tool
 from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlglot import exp
+from sqlglot.errors import ParseError, UnsupportedError
 
 from app.api.middleware.error_handler import SQLExecutionError, UnsafeQueryError
 from app.config import settings
@@ -23,29 +26,20 @@ from app.services.database import get_sql_engine
 
 logger = structlog.get_logger(__name__)
 
-# Keywords that indicate destructive SQL operations
-FORBIDDEN_KEYWORDS: set[str] = {
-    "DROP",
-    "DELETE",
-    "TRUNCATE",
-    "ALTER",
-    "INSERT",
-    "UPDATE",
-    "CREATE",
-    "GRANT",
-    "REVOKE",
-    "REPLACE",
-    "MERGE",
-    "INTO",
-}
-
-
-def validate_query(sql: str, allow_writes: bool | None = None) -> str:
+def validate_query(
+    sql: str,
+    allow_writes: bool | None = None,
+    *,
+    database: str = "default",
+    dialect: str | None = None,
+) -> str:
     """Validate and sanitize a SQL query before execution.
 
     Args:
         sql: The SQL query string to validate.
         allow_writes: Whether to permit write operations. Defaults to settings.
+        database: Registered connection whose dialect should be used.
+        dialect: Explicit dialect for offline validation and tests.
 
     Returns:
         The validated (and possibly amended) SQL string.
@@ -54,55 +48,51 @@ def validate_query(sql: str, allow_writes: bool | None = None) -> str:
         UnsafeQueryError: If the query contains forbidden keywords in read-only mode.
     """
     writes_allowed = allow_writes if allow_writes is not None else settings.sql_allow_writes
-    cleaned = sqlparse.format(sql, strip_comments=True).strip().rstrip(";").strip()
-
-    parsed = sqlparse.parse(cleaned)
-    if not parsed:
+    engine_dialect = dialect or get_sql_engine(name=database).dialect.name
+    dialect = {"postgresql": "postgres", "mssql": "tsql", "mariadb": "mysql"}.get(
+        engine_dialect, engine_dialect
+    )
+    try:
+        parsed = sqlglot.parse(sql, read=dialect)
+    except (ParseError, ValueError) as exc:
+        raise UnsafeQueryError("Empty or unparsable SQL query for the selected database.") from exc
+    if not parsed or all(statement is None for statement in parsed):
         raise UnsafeQueryError("Empty or unparsable SQL query.")
     if len(parsed) != 1:
         raise UnsafeQueryError("Only one SQL statement is allowed per query.")
-
-    for statement in parsed:
-        stmt_type = statement.get_type()
-        if not writes_allowed and stmt_type and stmt_type.upper() != "SELECT":
-            raise UnsafeQueryError(
-                f"Only SELECT queries are allowed. Got: {stmt_type}. "
-                "Enable write mode in settings to allow mutations."
-            )
-
-        # Check for forbidden keywords in the token stream
-        if not writes_allowed:
-            for token in statement.flatten():
-                if token.ttype is not None and token.value.upper() in FORBIDDEN_KEYWORDS:
-                    raise UnsafeQueryError(
-                        f"Query contains forbidden keyword: {token.value.upper()}"
-                    )
-
-    # Inspect the outer statement, not strings, comments, or nested queries.
     statement = parsed[0]
-    if statement.get_type() == "SELECT":
-        limit_index = next(
-            (
-                index
-                for index, token in enumerate(statement.tokens)
-                if token.ttype in sqlparse.tokens.Keyword and token.normalized == "LIMIT"
-            ),
-            None,
+    assert statement is not None
+    is_select = isinstance(statement, (exp.Select, exp.SetOperation))
+    if not writes_allowed and (
+        not is_select
+        or any(
+            isinstance(node, (exp.DML, exp.DDL, exp.Into, exp.Lock))
+            for node in statement.walk()
         )
-        if limit_index is None:
-            cleaned = f"{cleaned} LIMIT {settings.sql_max_rows}"
-        else:
-            _, count = statement.token_next(limit_index)
-            if not (
-                count is not None
-                and count.ttype in sqlparse.tokens.Number.Integer
-                and 0 <= int(count.value) <= settings.sql_max_rows
-            ):
-                cleaned = (
-                    f"SELECT * FROM ({cleaned}\n) AS limited_query LIMIT {settings.sql_max_rows}"
-                )
+    ):
+        raise UnsafeQueryError("Only read-only SELECT queries are allowed, including CTE bodies.")
+    if isinstance(statement, exp.Command):
+        raise UnsafeQueryError("Unsupported SQL command.")
 
-    return cleaned + ";"
+    if is_select:
+        limit = statement.args.get("limit")
+        count = (
+            limit.args.get("expression") or limit.args.get("count") if limit is not None else None
+        )
+        # Percentage/WITH TIES and non-literal limits do not bound result rows.
+        options = limit.args.get("limit_options") if limit is not None else None
+        safe_count = (
+            isinstance(count, exp.Literal)
+            and count.is_int
+            and 0 <= int(count.this) <= settings.sql_max_rows
+            and not (options and (options.args.get("percent") or options.args.get("with_ties")))
+        )
+        if not safe_count:
+            statement = statement.limit(settings.sql_max_rows)
+    try:
+        return statement.sql(dialect=dialect, comments=False, unsupported_level="RAISE") + ";"
+    except UnsupportedError as exc:
+        raise UnsafeQueryError("Query is unsupported by the selected database dialect.") from exc
 
 
 async def introspect_schema(database: str = "default") -> dict[str, Any]:
@@ -165,12 +155,20 @@ async def execute_query(
     Raises:
         SQLExecutionError: If the query fails at the DB level.
     """
-    sql = validate_query(sql)
     engine = get_sql_engine(name=database)
+    sql = validate_query(sql, dialect=engine.dialect.name)
     start = time.perf_counter()
 
     try:
-        async with AsyncSession(engine, expire_on_commit=False) as session:
+        async with (
+            asyncio.timeout(settings.sql_query_timeout_seconds),
+            AsyncSession(engine, expire_on_commit=False) as session,
+        ):
+            if engine.dialect.name == "sqlite":
+                mode = "OFF" if settings.sql_allow_writes else "ON"
+                await session.execute(text(f"PRAGMA query_only={mode}"))
+            elif not settings.sql_allow_writes and engine.dialect.name == "postgresql":
+                await session.execute(text("SET TRANSACTION READ ONLY"))
             result = await session.execute(text(sql))
             columns = list(result.keys()) if result.returns_rows else []
             rows = (
@@ -192,8 +190,10 @@ async def execute_query(
                 "row_count": len(rows),
                 "execution_time_ms": round(duration_ms, 2),
             }
+    except TimeoutError as exc:
+        raise SQLExecutionError("Query execution timed out. Use a smaller query.") from exc
     except Exception as exc:
-        logger.error("sql_execution_failed", error=str(exc), sql=sql[:200])
+        logger.exception("sql_execution_failed")
         raise SQLExecutionError(f"Query execution failed: {exc}") from exc
 
 
@@ -232,7 +232,7 @@ async def sql_query_tool(
     Returns:
         JSON containing columns, typed rows, row count, and execution time.
     """
-    validated = validate_query(sql)
+    validated = validate_query(sql, database=database)
     result = await execute_query(validated, database)
 
     return json.dumps(result, default=str)
@@ -255,7 +255,7 @@ async def sql_schema_tool(database: str = "default") -> str:
 
 
 @tool
-async def sql_validate_tool(sql: str) -> str:
+async def sql_validate_tool(sql: str, database: str = "default") -> str:
     """Validate a SQL query for safety without executing it.
 
     Checks for forbidden keywords, ensures it's a SELECT query,
@@ -263,12 +263,13 @@ async def sql_validate_tool(sql: str) -> str:
 
     Args:
         sql: The SQL query to validate.
+        database: Registered connection to validate against.
 
     Returns:
         The validated/amended query, or an error message.
     """
     try:
-        validated = validate_query(sql)
+        validated = validate_query(sql, database=database)
         return f"Valid query: {validated}"
     except UnsafeQueryError as exc:
         return f"UNSAFE: {exc.message}"
