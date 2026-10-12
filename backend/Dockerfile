@@ -37,7 +37,7 @@ COPY alembic.ini ./
 FROM builder AS test
 RUN uv sync --frozen --extra dev --no-install-project
 COPY tests/ tests/
-CMD ["pytest", "-q"]
+CMD ["/app/.venv/bin/pytest", "-q"]
 
 # ---------------------------------------------------------------------------
 # Stage 2: Runtime — slim image with only what's needed
