@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 
 // Must import after mocking fetch
 import {
@@ -23,8 +23,11 @@ import {
   getHealth,
   getTools,
   getAgentCatalog,
+  login,
+  logout,
   ApiError,
 } from "../api";
+import { setCsrfToken } from "../auth-session";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -56,6 +59,7 @@ describe("API Client", () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
+    setCsrfToken(null);
     vi.restoreAllMocks();
   });
 
@@ -70,6 +74,7 @@ describe("API Client", () => {
 
       const [, init] = spy.mock.calls[0];
       expect(init.headers["Content-Type"]).toBe("application/json");
+      expect(init.credentials).toBe("include");
     });
 
     it("throws ApiError with code from response body on non-200", async () => {
@@ -110,6 +115,16 @@ describe("API Client", () => {
   // ---- Chat -----------------------------------------------------------------
 
   describe("Chat endpoints", () => {
+    it("sends the session CSRF token with mutations", async () => {
+      const spy = mockFetchSuccess({ deleted: true });
+      globalThis.fetch = spy;
+      setCsrfToken("session-csrf");
+
+      await deleteConversation("c1");
+
+      expect(spy.mock.calls[0][1].headers["X-CSRF-Token"]).toBe("session-csrf");
+    });
+
     it("sendMessage posts to /chat with message and conversationId", async () => {
       const spy = mockFetchSuccess({ content: "hi", conversation_id: "c1", agent_used: "chat" });
       globalThis.fetch = spy;
@@ -183,8 +198,9 @@ describe("API Client", () => {
       const [, init] = spy.mock.calls[0];
       expect(init.method).toBe("POST");
       expect(init.body).toBeInstanceOf(FormData);
-      // Should NOT have Content-Type (browser sets it with boundary)
-      expect(init.headers).toBeUndefined();
+      expect(init.credentials).toBe("include");
+      // The browser sets Content-Type with the multipart boundary.
+      expect(init.headers["Content-Type"]).toBeUndefined();
     });
 
     it("uploadDocument throws ApiError on failure", async () => {
@@ -253,6 +269,31 @@ describe("API Client", () => {
 
       await deleteDocument("d1");
       expect(spy.mock.calls[0][1].method).toBe("DELETE");
+    });
+  });
+
+  describe("Authentication endpoints", () => {
+    it("logs in using credentials and returns the account CSRF token", async () => {
+      const spy = mockFetchSuccess({
+        account: { id: "account-1", username: "alice", display_name: "Alice" },
+        csrf_token: "csrf-1",
+      });
+      globalThis.fetch = spy;
+
+      const session = await login("alice", "password");
+
+      expect(session.csrf_token).toBe("csrf-1");
+      expect(JSON.parse(spy.mock.calls[0][1].body)).toEqual({ username: "alice", password: "password" });
+      expect(spy.mock.calls[0][1].credentials).toBe("include");
+    });
+
+    it("accepts the empty 204 response from logout", async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, status: 204 });
+      setCsrfToken("csrf-1");
+
+      await expect(logout()).resolves.toBeUndefined();
+      const fetchMock = globalThis.fetch as unknown as ReturnType<typeof vi.fn>;
+      expect(fetchMock.mock.calls[0][1].headers["X-CSRF-Token"]).toBe("csrf-1");
     });
   });
 

@@ -77,6 +77,10 @@ def test_upgrade_quarantines_existing_records(
         session = connection.execute(
             text("SELECT csrf_token, revoked_at FROM account_sessions WHERE id = 'legacy-session'")
         ).one()
+        ticket_columns = {
+            column[1]
+            for column in connection.execute(text("PRAGMA table_info(meeting_stream_tickets)"))
+        }
 
     assert account == 0
     assert rows == {
@@ -86,3 +90,4 @@ def test_upgrade_quarantines_existing_records(
     }
     assert session.csrf_token == "!reauthentication-required!"
     assert session.revoked_at is not None
+    assert {"token_hash", "meeting_id", "session_id", "expires_at"} <= ticket_columns

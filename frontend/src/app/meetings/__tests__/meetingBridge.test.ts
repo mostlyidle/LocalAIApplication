@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { adapters, ensureMeetingReady, listenToMeetingEvents, permissionReady } from "../meetingBridge";
+import { adapters, createMeetingStreamTicket, ensureMeetingReady, listenToMeetingEvents, permissionReady } from "../meetingBridge";
+import { setCsrfToken } from "@/lib/auth-session";
 
 const listen = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/event", () => ({ listen }));
@@ -13,6 +14,27 @@ describe("meeting bridge contracts", () => {
     if (ready) await expect(ensureMeetingReady("m-1")).resolves.toBeUndefined();
     else await expect(ensureMeetingReady("m-1")).rejects.toThrow("not ready");
     expect(fetchMock).toHaveBeenCalledWith(expect.stringMatching(/\/api\/v1\/health\/ready$/), expect.objectContaining({ signal: expect.any(AbortSignal) }));
+  });
+
+  it("requests a meeting stream ticket with the session CSRF token", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ticket: "native-ticket" }), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    setCsrfToken("session-csrf");
+
+    await expect(createMeetingStreamTicket("meeting-1")).resolves.toEqual({
+      ticket: "native-ticket",
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringMatching(/\/api\/v1\/meetings\/meeting-1\/stream-ticket$/),
+      expect.objectContaining({
+        credentials: "include",
+        headers: expect.objectContaining({ "X-CSRF-Token": "session-csrf" }),
+      }),
+    );
+    setCsrfToken(null);
   });
 
   it("allows optional health services to remain degraded when meeting_ready is true", async () => {

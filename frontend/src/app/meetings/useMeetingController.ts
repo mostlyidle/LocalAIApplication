@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { AudioSourceState, CapabilityCheck, MeetingController, MeetingFixture, MeetingPhase } from "@/types/meeting";
-import { adapters, checkNativeCapabilities, createConsentedMeeting, deleteMeeting, ensureMeetingReady, isNativeMeetingHost, listenToMeetingEvents, openNativePermissionSettings, requestNativePermissions, startMeetingTransport, startNativeCapture, stopMeeting, stopMeetingResources, stopMeetingTransport, stopNativeCapture } from "./meetingBridge";
+import { adapters, checkNativeCapabilities, createConsentedMeeting, createMeetingStreamTicket, deleteMeeting, ensureMeetingReady, isNativeMeetingHost, listenToMeetingEvents, openNativePermissionSettings, requestNativePermissions, startMeetingTransport, startNativeCapture, stopMeeting, stopMeetingResources, stopMeetingTransport, stopNativeCapture } from "./meetingBridge";
 import type { MeetingEventSubscription } from "./meetingBridge";
 
 const emptyMeeting: MeetingFixture = { title: "Untitled meeting", startedAt: "", durationSeconds: 0, transcript: [], questions: [] };
@@ -55,7 +55,7 @@ export function useMeetingController(): MeetingController {
     startupRef.current = operation;
     setLoading(true); setError(null);
     let createdId: string | null = null;
-    const completion = (async () => { try { await eventSubscription.current?.ready; ensureActive(); await requestNativePermissions(); ensureActive(); const created = await createConsentedMeeting(); createdId = created.id; operation.id = createdId; ensureActive(); meetingIdRef.current = createdId; setMeetingId(createdId); await ensureMeetingReady(createdId); ensureActive(); await startNativeCapture(); ensureActive(); await startMeetingTransport(createdId); ensureActive(); setMeeting({ ...emptyMeeting, startedAt: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) }); setSources(unavailable); }
+    const completion = (async () => { try { await eventSubscription.current?.ready; ensureActive(); await requestNativePermissions(); ensureActive(); const created = await createConsentedMeeting(); createdId = created.id; operation.id = createdId; ensureActive(); meetingIdRef.current = createdId; setMeetingId(createdId); await ensureMeetingReady(createdId); ensureActive(); const ticket = await createMeetingStreamTicket(createdId); ensureActive(); await startNativeCapture(); ensureActive(); await startMeetingTransport(createdId, ticket.ticket); ensureActive(); setMeeting({ ...emptyMeeting, startedAt: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) }); setSources(unavailable); }
       catch (cause) { operation.cancelled = operation.cancelled || !active(); if (createdId) await rollbackStartup(operation); if (active()) { meetingIdRef.current = null; setMeetingId(null); setError(cause instanceof Error ? cause.message : "Could not start the meeting."); } }
       finally { startInFlightRef.current = false; if (active()) setLoading(false); if (startupRef.current === operation) startupRef.current = null; } })();
     operation.completion = completion;
