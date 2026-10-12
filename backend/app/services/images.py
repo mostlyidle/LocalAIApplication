@@ -1,5 +1,7 @@
 """Local image inspection and lightweight manipulation triage."""
 
+from __future__ import annotations
+
 import io
 from pathlib import Path
 
@@ -15,12 +17,12 @@ class ImageInspectionError(ValueError):
 def inspect_image(path: Path) -> dict[str, object]:
     try:
         with Image.open(path) as image:
-            image.verify()
-        with Image.open(path) as image:
             if image.width * image.height > MAX_IMAGE_PIXELS:
                 raise ImageInspectionError(
                     f"Image exceeds the {MAX_IMAGE_PIXELS:,}-pixel processing limit."
                 )
+            image.verify()
+        with Image.open(path) as image:
             return {
                 "format": image.format,
                 "width": image.width,
@@ -28,6 +30,10 @@ def inspect_image(path: Path) -> dict[str, object]:
                 "mode": image.mode,
                 "exif_fields": len(image.getexif()),
             }
+    except Image.DecompressionBombError as exc:
+        raise ImageInspectionError(
+            f"Image exceeds the {MAX_IMAGE_PIXELS:,}-pixel processing limit."
+        ) from exc
     except (UnidentifiedImageError, OSError) as exc:
         raise ImageInspectionError("The upload is not a readable image.") from exc
 

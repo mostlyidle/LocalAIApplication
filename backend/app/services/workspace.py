@@ -45,6 +45,8 @@ def read_workspace(root: Path, requested: str | None) -> tuple[str, list[str]]:
     candidate = (root / requested).resolve() if requested else root
     if not candidate.is_relative_to(root):
         raise WorkspaceInputError("The selected path must stay inside the configured workspace.")
+    if any(part in EXCLUDED_DIRS or part.startswith(".") for part in candidate.relative_to(root).parts):
+        raise WorkspaceInputError("The selected workspace path is excluded from source review.")
     if not candidate.exists() or not candidate.is_dir():
         raise WorkspaceInputError("The selected workspace path does not exist or is not a folder.")
 
@@ -68,7 +70,17 @@ def read_workspace(root: Path, requested: str | None) -> tuple[str, list[str]]:
     total = 0
     for path in files[:MAX_FILES]:
         resolved = path.resolve()
-        if not resolved.is_relative_to(root) or path.name.lower() in EXCLUDED_NAMES:
+        if not resolved.is_relative_to(root):
+            continue
+        if (
+            resolved.name.lower() in EXCLUDED_NAMES
+            or resolved.name.startswith(".")
+            or resolved.suffix.lower() not in ALLOWED_SUFFIXES
+            or any(
+                part in EXCLUDED_DIRS or part.startswith(".")
+                for part in resolved.relative_to(root).parts[:-1]
+            )
+        ):
             continue
         try:
             with resolved.open("r", encoding="utf-8") as source_file:

@@ -41,3 +41,23 @@ def test_workspace_reader_rejects_symlink_escape(tmp_path: Path) -> None:
 
     with pytest.raises(WorkspaceInputError, match="No supported readable"):
         read_workspace(root, ".")
+
+
+@pytest.mark.parametrize("target", [".env", ".git/config.py", "node_modules/secret.py"])
+def test_workspace_reader_rejects_symlinks_to_excluded_targets(tmp_path: Path, target: str) -> None:
+    secret = tmp_path / target
+    secret.parent.mkdir(parents=True, exist_ok=True)
+    secret.write_text("TOKEN=private", encoding="utf-8")
+    (tmp_path / "config.txt").symlink_to(secret)
+    (tmp_path / "safe.py").write_text("safe", encoding="utf-8")
+
+    content, sources = read_workspace(tmp_path, None)
+
+    assert sources == ["safe.py"]
+    assert "private" not in content
+
+
+def test_workspace_reader_rejects_explicit_excluded_subdirectory(tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+    with pytest.raises(WorkspaceInputError, match="excluded"):
+        read_workspace(tmp_path, ".git")

@@ -53,7 +53,7 @@ class FinnhubMarketDataClient:
             if cached and now - cached[0] < timedelta(seconds=self._cache_seconds):
                 return {**cached[1], "cache_hit": True}
 
-        quote, company, news = await asyncio.gather(
+        quote, company_result, news_result = await asyncio.gather(
             self._get("quote", {"symbol": normalized}),
             self._get_optional("stock/profile2", {"symbol": normalized}),
             self._get_optional(
@@ -65,6 +65,8 @@ class FinnhubMarketDataClient:
                 },
             ),
         )
+        company, company_warning = company_result
+        news, news_warning = news_result
         if not isinstance(quote, dict) or not isinstance(quote.get("c"), int | float) or quote["c"] <= 0:
             raise MarketDataError(f"The provider returned no current quote for {normalized}.")
         quote_time = quote.get("t")
@@ -100,16 +102,17 @@ class FinnhubMarketDataClient:
                 if isinstance(item, dict)
             ],
             "cache_hit": False,
+            "warnings": [warning for warning in (company_warning, news_warning) if warning],
         }
         async with self._lock:
             self._cache[normalized] = (now, snapshot)
         return snapshot
 
-    async def _get_optional(self, endpoint: str, params: dict[str, str]) -> Any:
+    async def _get_optional(self, endpoint: str, params: dict[str, str]) -> tuple[Any, str | None]:
         try:
-            return await self._get(endpoint, params)
-        except MarketDataError:
-            return None
+            return await self._get(endpoint, params), None
+        except MarketDataError as exc:
+            return None, f"{endpoint} is unavailable: {exc}"
 
     async def _get(self, endpoint: str, params: dict[str, str]) -> Any:
         try:

@@ -38,6 +38,21 @@ def _image_document(tmp_path: Path) -> Document:
     )
 
 
+@pytest.mark.parametrize("agent", ["image_analysis", "image_fraud"])
+async def test_image_specialists_normalize_pillow_size_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, agent: str
+) -> None:
+    document = _image_document(tmp_path)
+    monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 10)
+    with pytest.raises(HTTPException) as error:
+        await _runner().run(
+            TaskRequest(prompt="Inspect image", agent_name=agent, asset_id=document.id),
+            request_id="oversized", document=document,
+        )
+    assert error.value.status_code == 422
+    assert "pixel processing limit" in error.value.detail
+
+
 async def test_image_analysis_uses_profile_model_and_uploaded_image_bytes(
     tmp_path: Path,
 ) -> None:
@@ -114,7 +129,7 @@ async def test_image_specialist_rejects_a_document_asset(tmp_path: Path) -> None
 async def test_stock_research_combines_live_snapshot_and_user_context() -> None:
     market_data = SimpleNamespace(
         snapshot=AsyncMock(
-            return_value={"provider": "Finnhub", "symbol": "AAPL", "quote": {"current": 1}}
+            return_value={"provider": "Finnhub", "symbol": "AAPL", "quote": {"current": 1}, "warnings": ["News is unavailable"]}
         )
     )
     model = SimpleNamespace(ainvoke=AsyncMock(return_value=SimpleNamespace(content="Research.")))
@@ -129,6 +144,7 @@ async def test_stock_research_combines_live_snapshot_and_user_context() -> None:
     assert "Finnhub" in prompt
     assert "Company notes." in prompt
     assert result.artifacts["market_data"]["symbol"] == "AAPL"
+    assert result.limitations == ["News is unavailable"]
 
 
 async def test_image_generation_submits_bounded_workflow() -> None:

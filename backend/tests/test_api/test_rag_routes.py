@@ -16,6 +16,45 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from httpx import AsyncClient
 
+from app.services.rag_store import (
+    RagCollectionConflictError,
+    RagCollectionSchemaError,
+    RagStoreUnavailableError,
+)
+
+
+@pytest.mark.parametrize("error, expected", [
+    (RagCollectionConflictError("Embedding mismatch"), 409),
+    (RagCollectionSchemaError("Loader collection is protected"), 422),
+    (RagStoreUnavailableError("Store is unavailable"), 503),
+])
+@pytest.mark.parametrize("operation", ["ingest", "delete"])
+async def test_rag_operations_surface_domain_errors(
+    client: AsyncClient, db_session, tmp_path: Path, error: Exception, expected: int, operation: str
+) -> None:
+    from app.dependencies import get_document_parser, get_vector_store
+    from app.models.db_models import Document
+
+    store = AsyncMock()
+    store.add_documents.side_effect = error
+    store.delete_collection.side_effect = error
+    client._transport.app.dependency_overrides[get_vector_store] = lambda: store
+    if operation == "delete":
+        response = await client.delete("/api/v1/rag/collections/loader")
+    else:
+        path = tmp_path / "report.txt"
+        path.write_text("evidence", encoding="utf-8")
+        db_session.add(Document(id="error-doc", filename=path.name, format="text", size_bytes=8, storage_path=str(path)))
+        await db_session.commit()
+        parser = SimpleNamespace(
+            parse=AsyncMock(return_value=SimpleNamespace(text="evidence")),
+            chunk_document=MagicMock(return_value=[{"text": "evidence", "metadata": {}}]),
+        )
+        client._transport.app.dependency_overrides[get_document_parser] = lambda: parser
+        response = await client.post("/api/v1/rag/ingest", json={"document_id": "error-doc"})
+    assert response.status_code == expected
+    assert response.json()["error"]["message"] == str(error)
+
 
 # =============================================================================
 # POST /rag/search
