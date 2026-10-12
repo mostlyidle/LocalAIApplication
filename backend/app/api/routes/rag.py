@@ -58,17 +58,31 @@ async def search_documents(
 
     Returns ranked results with relevance scores and source citations.
     """
-    results = await vector_store.search(
-        query=body.query,
-        collection=body.collection,
-        top_k=body.top_k,
-        score_threshold=body.score_threshold,
-    )
+    retrieval: dict[str, Any] = {}
+    search_with_provenance = getattr(vector_store, "search_with_provenance", None)
+    if search_with_provenance is not None:
+        result = await search_with_provenance(
+            query=body.query,
+            collection=body.collection,
+            top_k=body.top_k,
+            score_threshold=body.score_threshold,
+            agent_name=body.agent_name,
+        )
+        results = result.passages
+        retrieval = result.retrieval
+    else:
+        results = await vector_store.search(
+            query=body.query,
+            collection=body.collection,
+            top_k=body.top_k,
+            score_threshold=body.score_threshold,
+        )
 
     search_results = [
         RAGSearchResult(
             content=r["content"],
             score=r["score"],
+            score_type=r.get("score_type", "cosine"),
             source=r.get("metadata", {}).get("source", "unknown"),
             page=r.get("metadata", {}).get("page"),
             section=r.get("metadata", {}).get("section"),
@@ -88,6 +102,7 @@ async def search_documents(
         query=body.query,
         results=search_results,
         total_results=len(search_results),
+        retrieval=retrieval,
     )
 
 
@@ -109,7 +124,7 @@ async def ingest_document(
 
     The document must already be uploaded (via /documents/upload). This
     endpoint parses the document, splits into chunks, generates embeddings,
-    and stores them in the specified ChromaDB collection.
+    and stores them in the specified Qdrant collection.
     """
     # Fetch document record
     stmt = select(Document).where(Document.id == body.document_id)

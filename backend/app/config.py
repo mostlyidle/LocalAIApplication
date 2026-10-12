@@ -28,8 +28,15 @@ class Settings(BaseSettings):
     ollama_chat_model: str = "llama3.1:8b"
     ollama_vision_model: str = "llama3.2-vision:11b"
     ollama_embedding_model: str = "nomic-embed-text"
+    ollama_embedding_revision: str = "nomic-embed-text-v1"
+    ollama_embedding_dimension: int = 768
     ollama_request_timeout: int = 120
     ollama_num_parallel: int = 2
+
+    # ── Hybrid vector store ─────────────────────────────────────────────
+    qdrant_url: str = "http://localhost:6333"
+    fastembed_cache_path: Path = Path("./data/fastembed")
+    rag_bm25_language: str = "english"
 
     # ── Meeting transcription ───────────────────────────────────────────
     asr_model_dir: str | None = None

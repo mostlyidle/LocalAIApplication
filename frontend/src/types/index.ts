@@ -5,7 +5,7 @@ export * from "./sql";
 export interface HealthStatus {
   status: string;
   ollama: { status: string; models?: string[] };
-  chromadb: { status: string };
+  qdrant: { status: string };
   database: { status: string };
 }
 

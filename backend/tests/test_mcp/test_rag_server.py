@@ -38,7 +38,7 @@ class TestSearchKnowledgeBase:
         ]
 
         with patch(
-            "app.services.vector_store.vector_store_service.search",
+            "app.services.hybrid_vector_store.hybrid_vector_store_service.search",
             new_callable=AsyncMock,
             return_value=mock_results,
         ):
@@ -52,7 +52,7 @@ class TestSearchKnowledgeBase:
 
     async def test_no_results(self):
         with patch(
-            "app.services.vector_store.vector_store_service.search",
+            "app.services.hybrid_vector_store.hybrid_vector_store_service.search",
             new_callable=AsyncMock,
             return_value=[],
         ):
@@ -62,7 +62,7 @@ class TestSearchKnowledgeBase:
 
     async def test_search_error(self):
         with patch(
-            "app.services.vector_store.vector_store_service.search",
+            "app.services.hybrid_vector_store.hybrid_vector_store_service.search",
             new_callable=AsyncMock,
             side_effect=RuntimeError("ChromaDB unavailable"),
         ):
@@ -72,20 +72,20 @@ class TestSearchKnowledgeBase:
 
     async def test_custom_parameters(self):
         with patch(
-            "app.services.vector_store.vector_store_service.search",
+            "app.services.hybrid_vector_store.hybrid_vector_store_service.search",
             new_callable=AsyncMock,
             return_value=[],
         ) as mock_search:
             await search_knowledge_base("q", collection="custom", top_k=10, score_threshold=0.8)
 
         mock_search.assert_awaited_once_with(
-            query="q", collection="custom", top_k=10, score_threshold=0.8
+            query="q", collection="custom", top_k=10, score_threshold=0.8, agent_name="rag"
         )
 
     async def test_content_truncated_at_500_chars(self):
         long_content = "x" * 1000
         with patch(
-            "app.services.vector_store.vector_store_service.search",
+            "app.services.hybrid_vector_store.hybrid_vector_store_service.search",
             new_callable=AsyncMock,
             return_value=[
                 {
@@ -132,7 +132,7 @@ class TestIngestDocument:
                 return_value=mock_chunks,
             ),
             patch(
-                "app.services.vector_store.vector_store_service.add_documents",
+            "app.services.hybrid_vector_store.hybrid_vector_store_service.add_documents",
                 new_callable=AsyncMock,
                 return_value=1,
             ),
@@ -160,7 +160,7 @@ class TestIngestDocument:
                 return_value=parsed,
             ),
             patch(
-                "app.services.vector_store.vector_store_service.add_documents",
+                "app.services.hybrid_vector_store.hybrid_vector_store_service.add_documents",
                 new_callable=AsyncMock,
                 return_value=2,
             ) as add_documents,
@@ -231,7 +231,7 @@ class TestListCollections:
 
     async def test_returns_collections_json(self):
         with patch(
-            "app.services.vector_store.vector_store_service.list_collections",
+            "app.services.hybrid_vector_store.hybrid_vector_store_service.list_collections",
             new_callable=AsyncMock,
             return_value=[{"name": "documents", "count": 42}],
         ):
@@ -242,7 +242,7 @@ class TestListCollections:
 
     async def test_empty_collections(self):
         with patch(
-            "app.services.vector_store.vector_store_service.list_collections",
+            "app.services.hybrid_vector_store.hybrid_vector_store_service.list_collections",
             new_callable=AsyncMock,
             return_value=[],
         ):
@@ -252,7 +252,7 @@ class TestListCollections:
 
     async def test_error_handling(self):
         with patch(
-            "app.services.vector_store.vector_store_service.list_collections",
+            "app.services.hybrid_vector_store.hybrid_vector_store_service.list_collections",
             new_callable=AsyncMock,
             side_effect=RuntimeError("DB error"),
         ):
@@ -271,7 +271,7 @@ class TestDeleteCollection:
 
     async def test_successful_deletion(self):
         with patch(
-            "app.services.vector_store.vector_store_service.delete_collection",
+            "app.services.hybrid_vector_store.hybrid_vector_store_service.delete_collection",
             new_callable=AsyncMock,
             return_value=True,
         ):
@@ -281,7 +281,7 @@ class TestDeleteCollection:
 
     async def test_collection_not_found(self):
         with patch(
-            "app.services.vector_store.vector_store_service.delete_collection",
+            "app.services.hybrid_vector_store.hybrid_vector_store_service.delete_collection",
             new_callable=AsyncMock,
             return_value=False,
         ):
@@ -291,7 +291,7 @@ class TestDeleteCollection:
 
     async def test_deletion_error(self):
         with patch(
-            "app.services.vector_store.vector_store_service.delete_collection",
+            "app.services.hybrid_vector_store.hybrid_vector_store_service.delete_collection",
             new_callable=AsyncMock,
             side_effect=RuntimeError("Permission denied"),
         ):
