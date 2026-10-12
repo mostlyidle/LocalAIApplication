@@ -60,6 +60,35 @@ async def test_rag_rejects_context_that_cannot_hold_one_complete_passage() -> No
     assert "Increase" in error.value.detail
 
 
+async def test_rag_omits_oversized_memory_before_document_evidence() -> None:
+    registry, prompts = profiles()
+    request = TaskRequest(
+        prompt="When?", agent_name="rag", inference={"context_window": 1024, "max_output_tokens": 64}
+    )
+    profile = registry.get("rag")
+    execution = AgentExecution(profile, registry.resolve_inference(profile, request))
+    search = SimpleNamespace(
+        passages=[
+            {"content": "The deadline is Friday.", "metadata": {"asset_id": "guide", "chunk_index": 0}}
+        ],
+        retrieval={},
+    )
+    memory = '[{"type":"past_conversation","conversation_id":"old-chat","title":"Old chat","content":"' + "personal context " * 500 + '"}]'
+
+    with patch(
+        "app.services.hybrid_vector_store.hybrid_vector_store_service.search_with_provenance",
+        AsyncMock(return_value=search),
+    ):
+        context = await prepare_rag_context(
+            request, execution, prompts, memory_context=memory
+        )
+
+    assert context.memory_context == ""
+    assert context.citations[0]["asset_id"] == "guide"
+    assert "Friday" in context.prompt_values["passages"]
+    assert any("Personal memory was omitted" in item for item in context.limitations)
+
+
 async def test_rag_context_rejects_another_accounts_collection(
     db_session: AsyncSession, async_engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:

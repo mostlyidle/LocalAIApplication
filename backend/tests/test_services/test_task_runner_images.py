@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi import HTTPException
 from PIL import Image
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.agents.registry import AgentRegistry
 from app.models.db_models import LEGACY_ACCOUNT_ID, Document
@@ -252,7 +253,9 @@ async def test_software_engineer_rejects_unassigned_account_workspace(
         )
 
 
-async def test_rag_task_preserves_hybrid_citation_provenance() -> None:
+async def test_rag_task_preserves_hybrid_citation_provenance(
+    db_session: AsyncSession, async_engine, monkeypatch: pytest.MonkeyPatch
+) -> None:
     search = SimpleNamespace(
         passages=[
             {
@@ -271,17 +274,31 @@ async def test_rag_task_preserves_hybrid_citation_provenance() -> None:
     model = SimpleNamespace(
         ainvoke=AsyncMock(return_value=SimpleNamespace(content="Grounded answer."))
     )
+    maker = async_sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
+    monkeypatch.setattr("app.services.database.get_app_session_factory", lambda: maker)
+    memory = '[{"type":"past_conversation","conversation_id":"rag-source","title":"Policy notes","content":"The user prefers concise answers."}]'
     with (
         patch(
             "app.services.hybrid_vector_store.hybrid_vector_store_service.search_with_provenance",
             new_callable=AsyncMock,
             return_value=search,
         ) as search_with_provenance,
+        patch(
+            "app.services.memory_context.load_account_memory_context",
+            new_callable=AsyncMock,
+            return_value=memory,
+        ),
+            patch(
+                "app.services.rag_access.collection_access",
+                new_callable=AsyncMock,
+                return_value="owned",
+            ),
         patch("app.services.task_runner.llm_service.get_chat_model", return_value=model),
     ):
         result = await _runner().run(
             TaskRequest(prompt="What is relevant?", agent_name="rag_v2", collection="manuals"),
             request_id="request-rag",
+            owner_id=LEGACY_ACCOUNT_ID,
         )
 
     search_with_provenance.assert_awaited_once()
@@ -290,3 +307,8 @@ async def test_rag_task_preserves_hybrid_citation_provenance() -> None:
     assert result.artifacts["citations"][0]["filename"] == "guide.pdf"
     assert result.artifacts["citations"][0]["page"] == 3
     assert result.artifacts["citations"][0]["score_type"] == "rrf"
+    assert result.artifacts["memory_sources"] == [
+        {"conversation_id": "rag-source", "title": "Policy notes"}
+    ]
+    model_messages = model.ainvoke.call_args.args[0]
+    assert memory in model_messages[1].content
