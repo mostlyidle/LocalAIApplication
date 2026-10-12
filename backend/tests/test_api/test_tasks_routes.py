@@ -48,3 +48,28 @@ async def test_task_route_does_not_accept_a_filesystem_path_as_an_asset_id(
     )
 
     assert response.status_code == 404
+
+
+async def test_task_route_hides_another_accounts_uploaded_asset(
+    client: AsyncClient, db_session
+) -> None:
+    document = Document(
+        id="foreign-asset",
+        filename="private.txt",
+        format="txt",
+        size_bytes=5,
+        storage_path="/tmp/private.txt",
+        owner_id="another-account",
+    )
+    db_session.add(document)
+    await db_session.commit()
+    runner = AsyncMock()
+    client._transport.app.state.task_runner = runner
+
+    response = await client.post(
+        "/api/v1/tasks",
+        json={"prompt": "Analyze it", "target": "document", "asset_id": document.id},
+    )
+
+    assert response.status_code == 404
+    runner.run.assert_not_awaited()

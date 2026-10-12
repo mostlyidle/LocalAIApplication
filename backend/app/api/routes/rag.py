@@ -9,14 +9,13 @@ Provides:
 
 from __future__ import annotations
 
-import uuid
 from pathlib import Path
 from typing import Any
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession  # noqa: TC002 - FastAPI resolves this at runtime
 
 from app.api.middleware.error_handler import NotFoundError
 from app.api.middleware.rate_limiting import limiter
@@ -24,6 +23,7 @@ from app.config import settings
 from app.dependencies import (
     DocumentParserService,
     VectorStoreService,
+    get_authenticated_session,
     get_db,
     get_document_parser,
     get_vector_store,
@@ -37,6 +37,7 @@ from app.models.schemas import (
     RAGSearchResponse,
     RAGSearchResult,
 )
+from app.services.auth import AuthenticatedSession  # noqa: TC001
 from app.services.rag_store import (
     RagCollectionConflictError,
     RagCollectionSchemaError,
@@ -57,7 +58,8 @@ router = APIRouter()
 async def search_documents(
     request: Request,
     body: RAGSearchRequest,
-    vector_store: VectorStoreService = Depends(get_vector_store),
+    _authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    vector_store: VectorStoreService = Depends(get_vector_store),  # noqa: B008
 ) -> RAGSearchResponse:
     """Perform semantic search across ingested documents.
 
@@ -130,9 +132,10 @@ async def search_documents(
 async def ingest_document(
     request: Request,
     body: RAGIngestRequest,
-    db: AsyncSession = Depends(get_db),
-    parser: DocumentParserService = Depends(get_document_parser),
-    vector_store: VectorStoreService = Depends(get_vector_store),
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    parser: DocumentParserService = Depends(get_document_parser),  # noqa: B008
+    vector_store: VectorStoreService = Depends(get_vector_store),  # noqa: B008
 ) -> dict[str, Any]:
     """Parse a document and ingest its chunks into the vector store.
 
@@ -141,7 +144,10 @@ async def ingest_document(
     and stores them in the specified Qdrant collection.
     """
     # Fetch document record
-    stmt = select(Document).where(Document.id == body.document_id)
+    stmt = select(Document).where(
+        Document.id == body.document_id,
+        Document.owner_id == authenticated.account.id,
+    )
     result = await db.execute(stmt)
     doc = result.scalar_one_or_none()
 
@@ -211,7 +217,8 @@ async def ingest_document(
 
 @router.get("/rag/collections", response_model=list[CollectionInfo])
 async def list_collections(
-    vector_store: VectorStoreService = Depends(get_vector_store),
+    _authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    vector_store: VectorStoreService = Depends(get_vector_store),  # noqa: B008
 ) -> list[CollectionInfo]:
     """List all vector store collections with document counts."""
     collections = await vector_store.list_collections()
@@ -234,7 +241,8 @@ async def list_collections(
 @router.delete("/rag/collections/{name}")
 async def delete_collection(
     name: str,
-    vector_store: VectorStoreService = Depends(get_vector_store),
+    _authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    vector_store: VectorStoreService = Depends(get_vector_store),  # noqa: B008
 ) -> dict[str, Any]:
     """Delete a vector store collection and all its data."""
     deleted = await vector_store.delete_collection(name)

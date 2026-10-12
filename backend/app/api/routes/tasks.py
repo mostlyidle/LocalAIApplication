@@ -11,9 +11,10 @@ from sqlalchemy import select
 from app.api.middleware.error_handler import NotFoundError
 from app.api.middleware.rate_limiting import limiter
 from app.config import settings
-from app.dependencies import get_db
+from app.dependencies import get_authenticated_session, get_db
 from app.models.db_models import Document
 from app.models.profile_schemas import AgentResult, TaskRequest
+from app.services.auth import AuthenticatedSession  # noqa: TC001
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,12 +27,18 @@ router = APIRouter()
 async def run_task(
     body: TaskRequest,
     request: Request,
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> AgentResult:
     """Execute a bounded agent task; uploaded assets are resolved by database ID."""
     document = None
     if body.asset_id:
-        result = await db.execute(select(Document).where(Document.id == body.asset_id))
+        result = await db.execute(
+            select(Document).where(
+                Document.id == body.asset_id,
+                Document.owner_id == authenticated.account.id,
+            )
+        )
         document = result.scalar_one_or_none()
         if document is None:
             raise NotFoundError("Document", body.asset_id)
