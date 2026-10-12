@@ -37,6 +37,7 @@ async def test_task_route_resolves_uploaded_asset_id(
     call = runner.run.await_args
     assert call.kwargs["document"].id == document.id
     assert call.kwargs["request_id"]
+    assert call.kwargs["owner_id"] == document.owner_id
 
 
 async def test_task_route_does_not_accept_a_filesystem_path_as_an_asset_id(

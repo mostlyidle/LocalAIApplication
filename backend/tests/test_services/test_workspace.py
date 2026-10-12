@@ -3,7 +3,24 @@ from pathlib import Path
 
 import pytest
 
-from app.services.workspace import WorkspaceInputError, read_workspace
+from app.services.workspace import WorkspaceInputError, account_workspace_root, read_workspace
+
+
+def test_account_workspace_root_selects_only_the_accounts_assigned_folder(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    account_id = "11111111-1111-4111-8111-111111111111"
+    assigned = root / account_id
+    assigned.mkdir(parents=True)
+    (root / "other-account").mkdir()
+
+    assert account_workspace_root(root, account_id) == assigned.resolve()
+
+
+def test_account_workspace_root_rejects_unassigned_or_missing_account(tmp_path: Path) -> None:
+    with pytest.raises(WorkspaceInputError, match="No workspace is assigned"):
+        account_workspace_root(tmp_path, "unassigned-account")
+    with pytest.raises(WorkspaceInputError, match="authenticated account"):
+        account_workspace_root(tmp_path, None)
 
 
 def test_workspace_reader_selects_supported_files_and_skips_secrets(tmp_path: Path) -> None:

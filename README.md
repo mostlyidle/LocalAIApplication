@@ -143,7 +143,7 @@ task '{"agent_name":"rag_v2","prompt":"What is the warranty period?","collection
 
 ### Software engineer
 
-With Docker, the host `./workspace` directory is mounted read-only. Put a project in that directory and pass its relative path. To mount a different host folder, set `AGENT_WORKSPACE_HOST_PATH` in your shell or the Compose root `.env` file before starting the stack.
+With Docker, the host `./workspace` directory is mounted read-only. Software-review tasks are isolated by sign-in account: an operator assigns a workspace by placing it under `./workspace/<account-id>/`, then the user passes a path relative to that account folder. Find the account ID from the authenticated `/api/v1/auth/me` response. To mount a different host folder, set `AGENT_WORKSPACE_HOST_PATH` in your shell or the Compose root `.env` file before starting the stack. Accounts without an assigned folder receive a 422 response.
 
 ```bash
 task '{"agent_name":"software_engineer","prompt":"Review the code for correctness and explain the highest-priority issue.","workspace_path":"my-project","inference":{"model":"qwen2.5-coder:7b"}}'
