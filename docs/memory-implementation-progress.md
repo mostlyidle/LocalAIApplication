@@ -5,10 +5,10 @@ Use this file to resume the approved implementation without repeating completed 
 ## Current position
 
 - Plan: [memory implementation plan](memory-implementation-plan.md)
-- Stage: 1 of 5, identity and ownership
+- Stage: 1 of 5, identity and ownership (implementation complete)
 - Branch: `feature/account-memory-stage1`
-- Status: in progress; do not expose this checkpoint as a shared-account deployment yet
-- Pushed checkpoints: `9ed6362` (account schema and legacy quarantine), `5863058` (operator-managed credentials), `221f466` (plan and resume notes), `14c6f91` (session endpoints), `c2caa64` (chat/document ownership and stable CSRF), `2bc4743` (meeting ownership), `5852d9d` (WebSocket revalidation), `f63bbbe` (agent API authentication), `1e9def0` (account-owned RAG collections), `cafa5c9` (account-owned named SQL connections), `c10f23d` (block unscoped direct file tools), `51b4ffd` (filesystem path containment), `a50af37` (account-owned agent workspaces), `30fc1ef` (dry-run legacy SQL record assignment), `09a6271` (safe explicit SQL/RAG legacy assignment), `e8181dd` (frontend and native meeting authentication), `560353f` (loopback-only Compose ports), `946260e` (remote proxy frontend configuration), `a6d4c50` (required meeting ownership)
+- Status: Stage 1 implementation and regression gates complete. A deployment still requires an operator-selected HTTPS origin and matching reverse-proxy settings before remote users can access it.
+- Pushed checkpoints: `9ed6362` (account schema and legacy quarantine), `5863058` (operator-managed credentials), `221f466` (plan and resume notes), `14c6f91` (session endpoints), `c2caa64` (chat/document ownership and stable CSRF), `2bc4743` (meeting ownership), `5852d9d` (WebSocket revalidation), `f63bbbe` (agent API authentication), `1e9def0` (account-owned RAG collections), `cafa5c9` (account-owned named SQL connections), `c10f23d` (block unscoped direct file tools), `51b4ffd` (filesystem path containment), `a50af37` (account-owned agent workspaces), `30fc1ef` (dry-run legacy SQL record assignment), `09a6271` (safe explicit SQL/RAG legacy assignment), `e8181dd` (frontend and native meeting authentication), `560353f` (loopback-only Compose ports), `946260e` (remote proxy frontend configuration), `a6d4c50` (required meeting ownership), `4eb9f7d` (explicit owner required for private records), `ddc4478` (authenticated WebSocket test coverage)
 
 ## Completed checkpoint
 
@@ -45,19 +45,20 @@ Use this file to resume the approved implementation without repeating completed 
 - Required `owner_id` when the meeting service creates a meeting; its only application route already passes the authenticated account. Service tests now identify their legacy fixture owner explicitly; focused meeting lifecycle tests pass (18 tests).
 - Documented and narrowed built-in MCP usage to operator-only local stdio. SQL, document, and RAG MCP functions are not account-scoped, so they must not be exposed to shared users or over HTTP. `mcp_servers.json` remains trusted operator configuration and is executed at backend startup; discovered tools are not currently wired into agent execution.
 - Removed the legacy-owner ORM defaults from conversations, documents, and meetings after auditing application constructors; each route/service now passes an owner explicitly. Legacy test records specify the quarantine owner. Added DB tests proving missing owners are rejected. The affected API/service set passes 146 tests; Ruff lint passes with documented legacy exclusions. Ruff format still reports pre-existing drift in several touched test modules, which was not swept into this change.
+- Updated unified chat WebSocket tests to provide the same allowed Origin and authenticated session required by production. The full backend suite now passes (738 tests); full frontend suite passes (297 tests). The only backend warning is the existing Qdrant compatibility check because no server is running during unit tests.
 - The first `uv run` attempt could not reach PyPI to build the project environment. Reused the repository's existing `.venv` directly for the successful checks.
 - The implementation time estimate in the plan is explicitly non-binding and does not limit the scope or completion criteria.
 
 ## Not implemented yet
 
-- MCP servers remain inherently outside the HTTP account session boundary. The supported boundary is operator-only local stdio; no authenticated remote MCP adapter is implemented.
-- Remote shared-deployment boundary: frontend can now be built for same-origin HTTPS/WSS proxying, but deployment still needs an operator-supplied hostname, TLS reverse proxy, and matching CORS/WebSocket origin configuration. No real remote hostname is available to verify.
+- The built-in MCP server is intentionally operator-only and local stdio, with no authenticated remote adapter; the shared-user API does not expose these servers. Do not move MCP tools into user-facing agent execution without account-aware authorization.
+- No public hostname or reverse proxy was supplied, so TLS termination and live remote login/WebSocket behavior remain deployment checks rather than verified application behavior.
 
 ## Resume here
 
-1. Complete the MCP isolation decision: keep tools operator-only, remove or defer startup of configured external MCP commands if they are not needed, or add an authenticated adapter before account access. The API's configured `default` SQL connection remains explicitly shared; custom connections are private.
-2. Run the full Stage 1 account-isolation matrix after MCP scope is settled, including REST, WebSockets, direct tools, resources, RAG, SQL, and meetings.
-3. For an actual shared deployment, configure the operator's hostname, TLS reverse proxy, and matching CORS/WebSocket origins; frontend same-origin URL support and native meeting ticket auth are implemented.
+1. Next planned work is Stage 2, conversation continuity, as defined in [memory implementation plan](memory-implementation-plan.md).
+2. Before remote use, configure the public HTTPS hostname, TLS proxy, allowed origins, and direct chat WebSocket route as documented in the README; keep all infrastructure and backend ports private.
+3. Keep built-in MCP tools operator-only local stdio. The configured `default` SQL connection remains explicitly shared; custom SQL connections are account-owned.
 
 Do not run built-in MCP servers through HTTP or expose them to shared users. Direct MCP invocation remains a trusted local-operator capability until an authenticated adapter propagates account identity and enforces each tool's resource ownership.
 
