@@ -33,8 +33,8 @@ as the fallback for sparse pages. HTTPX fetching and link discovery are unchange
 
 Provision an MLX-converted Whisper model before starting the application. For example,
 `hf download mlx-community/whisper-small.en-mlx --local-dir /absolute/path/to/mlx-small.en`.
-The directory must contain `config.json` and `model.safetensors`, `weights.safetensors`, or
-`weights.npz`. This provisioning command uses the network; meeting runtime does not download
+The directory must contain `config.json` and either `weights.safetensors` or `weights.npz`.
+This provisioning command uses the network; meeting runtime does not download
 weights. CTranslate2 weights from faster-whisper are not interchangeable with MLX weights.
 
 In `backend/.env`, set:
