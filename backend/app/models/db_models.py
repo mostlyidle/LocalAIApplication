@@ -113,6 +113,10 @@ class Conversation(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    summary_through_message_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    summary_message_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    summary_revision: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
     messages: Mapped[list[Message]] = relationship(
         "Message",

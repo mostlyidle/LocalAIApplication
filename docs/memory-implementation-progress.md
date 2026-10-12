@@ -7,8 +7,8 @@ Use this file to resume the approved implementation without repeating completed 
 - Plan: [memory implementation plan](memory-implementation-plan.md)
 - Stage: 2 of 5, conversation continuity (in progress); Stage 1 identity and ownership is complete
 - Branch: `feature/account-memory-stage1`
-- Status: Stage 1 implementation and regression gates complete. Stage 2 conversation history/resume and bounded context are implemented; bounded summaries and turn idempotency remain. A deployment still requires an operator-selected HTTPS origin and matching reverse-proxy settings before remote users can access it.
-- Pushed checkpoints: `9ed6362` (account schema and legacy quarantine), `5863058` (operator-managed credentials), `221f466` (plan and resume notes), `14c6f91` (session endpoints), `c2caa64` (chat/document ownership and stable CSRF), `2bc4743` (meeting ownership), `5852d9d` (WebSocket revalidation), `f63bbbe` (agent API authentication), `1e9def0` (account-owned RAG collections), `cafa5c9` (account-owned named SQL connections), `c10f23d` (block unscoped direct file tools), `51b4ffd` (filesystem path containment), `a50af37` (account-owned agent workspaces), `30fc1ef` (dry-run legacy SQL record assignment), `09a6271` (safe explicit SQL/RAG legacy assignment), `e8181dd` (frontend and native meeting authentication), `560353f` (loopback-only Compose ports), `946260e` (remote proxy frontend configuration), `a6d4c50` (required meeting ownership), `4eb9f7d` (explicit owner required for private records), `ddc4478` (authenticated WebSocket test coverage), `63f08b5` (Stage 1 completion notes), `9508b23` (owned conversation history and bounded context)
+- Status: Stage 1 implementation and regression gates complete. Stage 2 now has owned history/resume, bounded context, and persisted summaries; stable client-turn idempotency remains. A deployment still requires an operator-selected HTTPS origin and matching reverse-proxy settings before remote users can access it.
+- Pushed checkpoints: `9ed6362` (account schema and legacy quarantine), `5863058` (operator-managed credentials), `221f466` (plan and resume notes), `14c6f91` (session endpoints), `c2caa64` (chat/document ownership and stable CSRF), `2bc4743` (meeting ownership), `5852d9d` (WebSocket revalidation), `f63bbbe` (agent API authentication), `1e9def0` (account-owned RAG collections), `cafa5c9` (account-owned named SQL connections), `c10f23d` (block unscoped direct file tools), `51b4ffd` (filesystem path containment), `a50af37` (account-owned agent workspaces), `30fc1ef` (dry-run legacy SQL record assignment), `09a6271` (safe explicit SQL/RAG legacy assignment), `e8181dd` (frontend and native meeting authentication), `560353f` (loopback-only Compose ports), `946260e` (remote proxy frontend configuration), `a6d4c50` (required meeting ownership), `4eb9f7d` (explicit owner required for private records), `ddc4478` (authenticated WebSocket test coverage), `63f08b5` (Stage 1 completion notes), `9508b23` (owned conversation history and bounded context), `87b8411` (conversation checkpoint resume log)
 
 ## Completed checkpoint
 
@@ -49,19 +49,21 @@ Use this file to resume the approved implementation without repeating completed 
 - Added an owned conversation history panel and refresh recovery in ChatWindow. Only the active conversation ID is stored locally, keyed by authenticated account; selecting/new-chat/sign-out updates or clears it. Restored messages retain agent, execution, and tool-call metadata. Added UI tests for account-scoped restore, history selection, New Chat, and sign-out cleanup.
 - Bounded agent context loading to the latest 40 messages and 40,000 characters, with deterministic timestamp/ID ordering. Older transcript messages remain available in the saved conversation view but are not sent to the model. Added tests for both limits.
 - Stage 2 slice verification: focused backend chat/API tests pass (72); full frontend suite passes (301), TypeScript passes, targeted ESLint has no errors, and Next.js production build succeeds. Existing React `act(...)` test warnings and one existing `<img>` lint warning remain.
+- Added migration `20261012_11` and per-conversation summaries with an ordered count/message-ID boundary and optimistic revision check. Every 10 newly out-of-window messages, the backend summarizes up to 20 old messages (20,000 input characters) into an 8,000-character maximum summary. Chat context includes that summary plus the capped recent turns. Summary inference is local Ollama, time-limited to 30 seconds, and failures leave the chat response and recent history intact.
+- Verified summary creation, context restoration, failure fallback, and migration upgrade. Full backend suite passes (742 tests); Ruff lint and formatting pass on the changed backend source/migration. Summary generation was mocked in unit tests; live Ollama summary latency still needs full-stack verification.
 - The first `uv run` attempt could not reach PyPI to build the project environment. Reused the repository's existing `.venv` directly for the successful checks.
 - The implementation time estimate in the plan is explicitly non-binding and does not limit the scope or completion criteria.
 
 ## Not implemented yet
 
-- Conversation summaries, stable client-turn IDs/idempotency, and a full account-isolation history UI refresh/restart browser test remain in Stage 2.
+- Stable client-turn IDs/idempotency and a full account-isolation history UI refresh/restart browser test remain in Stage 2.
 - The built-in MCP server is intentionally operator-only and local stdio, with no authenticated remote adapter; the shared-user API does not expose these servers. Do not move MCP tools into user-facing agent execution without account-aware authorization.
 - No public hostname or reverse proxy was supplied, so TLS termination and live remote login/WebSocket behavior remain deployment checks rather than verified application behavior.
 
 ## Resume here
 
-1. Add bounded persisted conversation summaries so older turns remain useful without exceeding the model context cap.
-2. Add a client turn ID to WebSocket chat requests and make persistence idempotent for reconnect/retry without duplicating user/assistant turns.
+1. Add a client turn ID to WebSocket chat requests and make persistence idempotent for reconnect/retry without duplicating user/assistant turns.
+2. Verify summary latency and resume behavior with the real Docker/Ollama stack and a browser restart, while checking the account-isolation gate.
 3. Before remote use, configure the public HTTPS hostname, TLS proxy, allowed origins, and direct chat WebSocket route as documented in the README; keep all infrastructure and backend ports private. Keep built-in MCP tools operator-only local stdio; the configured `default` SQL connection remains explicitly shared.
 
 Do not run built-in MCP servers through HTTP or expose them to shared users. Direct MCP invocation remains a trusted local-operator capability until an authenticated adapter propagates account identity and enforces each tool's resource ownership.
