@@ -21,7 +21,9 @@ Use this file to resume the approved implementation without repeating completed 
 - Started an isolated backend against a temporary migrated SQLite database while reusing the healthy project Ollama and Qdrant containers. A fresh app process reclaimed expired processing leases for both summary indexing and vector cleanup; Ollama generated the summary, Qdrant retained only the active summary vector, a semantic query returned its source, the authenticated conversation-exclusion endpoint immediately removed it from recall, and authenticated delete-all disabled recall, removed SQL summaries, completed owner-vector cleanup, and left the Qdrant memory collection empty. The temporary account/database were removed; shared project containers remain running.
 - Added deterministic stale-lease recovery tests for both summary and vector cleanup workers. `pytest tests/test_services/test_memory_recall_worker.py -q` passes (10 tests); Ruff and `git diff --check` pass.
 - Fixed Stage 5 review gap: conversational and direct RAG profiles now receive relevant account memory in a separate untrusted system message. RAG budgeting counts that message and drops it when needed to preserve a complete cited document passage. Source attribution is recorded only when memory was actually passed to the answer model. Focused RAG/profile tests pass (41), and the full backend suite passes (778); targeted Ruff checks pass. Existing formatting drift in three older RAG files was left untouched.
-- **Resume next:** Stage 5 full-stack release gates: verify memory isolation between two accounts through the app, run the remaining profile and chat/direct-task scenarios that consume memory, and record any provider-specific gaps. Then complete the release-gate checklist in the plan.
+- Ran a real Ollama/Qdrant two-account isolation check with a temporary SQLite schema: Alice's unique synthetic summary was indexed and recalled for Alice, while Bob's equally opted-in account returned no memory. The test owner vector and temporary database were removed afterward.
+- Expanded TaskRunner tests to cover memory injection for image analysis, document analysis, RAG, stock research, and software review. Deterministic image fraud and image generation remain memory-free because neither consumes personal prompt context. Full backend suite passes (779); targeted Ruff and `git diff --check` pass.
+- **Resume next:** finish Stage 5 with browser-based account switching/source-link checks, then verify remaining chat, SQL, and web profile behavior and provider-specific gaps. Playwright Chromium may need provisioning; report any provider that cannot be exercised without external credentials or services.
 
 ## Completed checkpoint
 
@@ -83,14 +85,14 @@ Use this file to resume the approved implementation without repeating completed 
 
 ## Not implemented yet
 
-- Stage 5 still needs the broader two-account isolation matrix and memory-aware verification across remaining agent profiles and direct-task paths.
+- Stage 5 still needs browser-based account switching/source-link checks and memory-aware verification across SQL/web chat profiles. Provider integrations that require external credentials or services must be recorded as gaps if unavailable.
 - The built-in MCP server is intentionally operator-only and local stdio, with no authenticated remote adapter; the shared-user API does not expose these servers. Do not move MCP tools into user-facing agent execution without account-aware authorization.
 - No public hostname or reverse proxy was supplied, so TLS termination and live remote login/WebSocket behavior remain deployment checks rather than verified application behavior.
 
 ## Resume here
 
-1. Verify that a second account cannot retrieve the first account's synthetic recall source through the live app and through the agent context loaders.
-2. Run the remaining memory-aware profile and direct-task checks from the release plan, then update acceptance status and remaining external-provider gaps.
+1. Run browser-based account switching and recalled-source navigation checks; provision Playwright Chromium if available under the existing environment permissions.
+2. Verify SQL and web chat profile memory behavior and record any remaining external-provider gaps.
 3. Before remote use, configure the public HTTPS hostname, TLS proxy, allowed origins, and direct chat WebSocket route as documented in the README; keep all infrastructure and backend ports private. Keep built-in MCP tools operator-only local stdio; the configured `default` SQL connection remains explicitly shared.
 
 Do not run built-in MCP servers through HTTP or expose them to shared users. Direct MCP invocation remains a trusted local-operator capability until an authenticated adapter propagates account identity and enforces each tool's resource ownership.
