@@ -2,7 +2,7 @@ import { ChatWindow } from "@/components/chat/ChatWindow";
 
 export default function ChatPage() {
   return (
-    <div className="h-[calc(100vh-3.5rem)]">
+    <div className="h-full min-h-0">
       <ChatWindow />
     </div>
   );
