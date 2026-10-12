@@ -725,6 +725,25 @@ not similarity percentages.
 3. Select documents and click **Ingest** to add them to a collection
 4. Use the search bar to query your knowledge base
 
+#### Migrating an existing Chroma collection
+
+The application never migrates collections at startup. Inspect the old index,
+then review a dry-run before running a copy:
+
+```bash
+cd backend
+uv run python -m app.rag_migrate inventory --source-path ./data/chroma
+uv run python -m app.rag_migrate migrate \
+  --source-path ./data/chroma \
+  --source-collection documents \
+  --destination-collection documents
+```
+
+Migration is dry-run by default. After reviewing the report and confirming the
+source path, collection, Qdrant endpoint, and Ollama model, append `--execute`
+to the second command. The source remains intact; failed copies keep their
+destination for inspection, so a retry needs a fresh destination collection.
+
 ### Web Research Agent
 
 Scrape and summarize web content locally without API keys.

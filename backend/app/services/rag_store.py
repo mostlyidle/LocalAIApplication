@@ -34,6 +34,7 @@ PROVENANCE_STRING_FIELDS = (
     "pipeline_fingerprint",
     "section",
     "source",
+    "source_chunk_id",
 )
 PROVENANCE_PAGE_FIELDS = ("page", "page_start", "page_end")
 
@@ -487,6 +488,38 @@ class RagStore:
             lambda: self._client.count(collection_name=collection, exact=False)
         )
         return int(response.count)
+
+    async def collection_source_chunk_payloads(
+        self, collection: str
+    ) -> dict[str, dict[str, object]]:
+        """Return source-ID keyed citation fields for migration verification."""
+        payloads: dict[str, dict[str, object]] = {}
+        offset: str | int | None = None
+        while True:
+            records, offset = await self._call(
+                lambda selected_offset=offset: self._client.scroll(
+                    collection_name=collection,
+                    limit=256,
+                    offset=selected_offset,
+                    with_payload=[
+                        "source_chunk_id",
+                        "filename",
+                        "source",
+                        "page",
+                        "page_start",
+                        "page_end",
+                        "section",
+                    ],
+                    with_vectors=False,
+                )
+            )
+            for record in records:
+                payload = record.payload if isinstance(record.payload, dict) else {}
+                source_id = payload.get("source_chunk_id")
+                if isinstance(source_id, str):
+                    payloads[source_id] = dict(payload)
+            if offset is None:
+                return payloads
 
     async def delete_collection(self, collection: str) -> bool:
         capabilities = await self.capabilities(collection)
