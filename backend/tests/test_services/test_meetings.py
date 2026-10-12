@@ -13,7 +13,7 @@ from pydantic import ValidationError
 from sqlalchemy import func, select
 
 from app.api.middleware.error_handler import ConsentRequiredError, MeetingProtocolError
-from app.models.db_models import DetectedQuestion, Meeting, TranscriptSegment
+from app.models.db_models import LEGACY_ACCOUNT_ID, DetectedQuestion, Meeting, TranscriptSegment
 from app.models.enums import AudioSource, MeetingStatus
 from app.models.schemas import (
     AudioEnvelopeError,
@@ -98,6 +98,7 @@ class TestMeetingService:
         with pytest.raises(ConsentRequiredError):
             await service.create_meeting(
                 db_session,
+                owner_id=LEGACY_ACCOUNT_ID,
                 consent_policy_version="",
                 consent_attested_at=datetime.now(UTC),
             )
@@ -108,6 +109,7 @@ class TestMeetingService:
         service = MeetingService(transcription_engine=FakeTranscriptionEngine())
         meeting = await service.create_meeting(
             db_session,
+            owner_id=LEGACY_ACCOUNT_ID,
             consent_policy_version="meeting-consent-v1",
             consent_attested_at=datetime.now(UTC),
         )
@@ -147,6 +149,7 @@ class TestMeetingService:
         service = MeetingService(transcription_engine=UnreadyEngine())
         meeting = await service.create_meeting(
             db_session,
+            owner_id=LEGACY_ACCOUNT_ID,
             consent_policy_version="v1",
             consent_attested_at=datetime.now(UTC),
         )
@@ -181,6 +184,7 @@ class TestMeetingService:
         )
         meeting = await service.create_meeting(
             db_session,
+            owner_id=LEGACY_ACCOUNT_ID,
             consent_policy_version="v1",
             consent_attested_at=datetime.now(UTC),
         )
@@ -219,6 +223,7 @@ class TestMeetingService:
         service = MeetingService(transcription_engine=FakeTranscriptionEngine())
         meeting = await service.create_meeting(
             db_session,
+            owner_id=LEGACY_ACCOUNT_ID,
             consent_policy_version="v1",
             consent_attested_at=datetime.now(UTC),
         )
@@ -237,6 +242,7 @@ class TestMeetingService:
         service = MeetingService(transcription_engine=FakeTranscriptionEngine())
         meeting = await service.create_meeting(
             db_session,
+            owner_id=LEGACY_ACCOUNT_ID,
             consent_policy_version="v1",
             consent_attested_at=datetime.now(UTC),
         )

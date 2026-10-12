@@ -11,7 +11,7 @@ from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import func, select
 
 from app.api.middleware.error_handler import MeetingProtocolError
-from app.models.db_models import DetectedQuestion, Meeting, TranscriptSegment
+from app.models.db_models import LEGACY_ACCOUNT_ID, DetectedQuestion, Meeting, TranscriptSegment
 from app.models.enums import AudioSource, MeetingStatus
 from app.models.schemas import AudioEnvelopeHeader, MeetingServerEvent
 from app.services.meeting_answers import FakeAnswerGenerator, MeetingAnswerService
@@ -53,6 +53,7 @@ async def test_fake_engine_persists_system_transcript_question_and_answer(db_ses
     )
     meeting = await service.create_meeting(
         db_session,
+        owner_id=LEGACY_ACCOUNT_ID,
         consent_policy_version="v1",
         consent_attested_at=datetime.now(UTC),
     )
@@ -97,6 +98,7 @@ async def test_microphone_transcript_does_not_trigger_question_answer(db_session
     )
     meeting = await service.create_meeting(
         db_session,
+        owner_id=LEGACY_ACCOUNT_ID,
         consent_policy_version="v1",
         consent_attested_at=datetime.now(UTC),
     )
@@ -132,6 +134,7 @@ async def test_answer_failure_emits_degraded_event_and_fallback_answer(db_sessio
     )
     meeting = await service.create_meeting(
         db_session,
+        owner_id=LEGACY_ACCOUNT_ID,
         consent_policy_version="v1",
         consent_attested_at=datetime.now(UTC),
     )
@@ -190,6 +193,7 @@ async def test_concurrent_consumers_allocate_persisted_sequences_atomically(db_s
     )
     meeting = await service.create_meeting(
         db_session,
+        owner_id=LEGACY_ACCOUNT_ID,
         consent_policy_version="v1",
         consent_attested_at=datetime.now(UTC),
     )
@@ -222,6 +226,7 @@ async def test_reconnect_continues_sequence_from_persisted_segments(db_session):
     )
     meeting = await service.create_meeting(
         db_session,
+        owner_id=LEGACY_ACCOUNT_ID,
         consent_policy_version="v1",
         consent_attested_at=datetime.now(UTC),
     )
@@ -280,6 +285,7 @@ async def test_disconnect_aborts_long_inference_before_reconnect(db_session):
     service = MeetingService(transcription_engine=SlowEngine())
     meeting = await service.create_meeting(
         db_session,
+        owner_id=LEGACY_ACCOUNT_ID,
         consent_policy_version="v1",
         consent_attested_at=datetime.now(UTC),
     )
@@ -322,6 +328,7 @@ async def test_stop_releases_claim_but_drains_final_events_before_return(db_sess
     )
     meeting = await service.create_meeting(
         db_session,
+        owner_id=LEGACY_ACCOUNT_ID,
         consent_policy_version="v1",
         consent_attested_at=datetime.now(UTC),
     )
