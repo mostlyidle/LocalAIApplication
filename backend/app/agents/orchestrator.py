@@ -344,6 +344,7 @@ async def stream_agent(
         HumanMessage(content=_build_classification_input(user_input, attachments or []))
     )
 
+    answer_emitted = False
     async for event in orchestrator_graph.astream_events(state, version="v2"):
         kind = event.get("event", "")
         data = event.get("data", {})
@@ -362,6 +363,7 @@ async def stream_agent(
         ):
             chunk = data.get("chunk")
             if chunk and hasattr(chunk, "content") and chunk.content:
+                answer_emitted = True
                 yield {
                     "type": "token",
                     "content": str(chunk.content),
@@ -387,7 +389,12 @@ async def stream_agent(
         # Emit completion
         if kind == "on_chain_end" and event.get("name") == "LangGraph":
             final_state = data.get("output", {})
+            if not answer_emitted:
+                messages = final_state.get("messages", [])
+                if messages and getattr(messages[-1], "type", None) == "ai" and messages[-1].content:
+                    yield {"type": "token", "content": str(messages[-1].content)}
             yield {
                 "type": "done",
                 "metadata": final_state.get("metadata", {}),
+                "state": final_state,
             }

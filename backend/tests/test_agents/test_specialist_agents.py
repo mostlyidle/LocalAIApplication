@@ -400,47 +400,42 @@ class TestDocumentAgent:
 
 
 class TestRAGAgent:
-    async def test_basic_response(self) -> None:
-        response = _mock_llm_response("Based on retrieved context...")
-        mock_service = _mock_llm_service(response)
+    async def test_retrieves_full_cited_passages_before_generation(self) -> None:
+        from types import SimpleNamespace
+        from app.agents.rag_agent import rag_agent_node
 
-        with patch("app.agents.rag_agent.llm_service", mock_service):
-            from app.agents.rag_agent import rag_agent_node
-
-            state = _make_state(user_input="Find info about revenue")
-            result = await rag_agent_node(state)
-
-        assert result["current_agent"] == "rag"
-        assert result["metadata"]["agent_used"] == "rag"
-
-    async def test_search_tool_call(self) -> None:
-        tool_call_response = _mock_llm_response(
-            "", tool_calls=[{"name": "rag_search_tool", "args": {"query": "revenue"}, "id": "tc1"}]
-        )
-        final_response = _mock_llm_response("Revenue was $10M [Source: report.pdf]")
-
-        mock_chat_model = MagicMock()
-        mock_chat_model.ainvoke = AsyncMock(side_effect=[tool_call_response, final_response])
-        mock_chat_model.bind_tools = MagicMock(return_value=mock_chat_model)
-
-        mock_service = MagicMock()
-        mock_service.get_chat_model = MagicMock(return_value=mock_chat_model)
-
-        mock_tool = AsyncMock()
-        mock_tool.name = "rag_search_tool"
-        mock_tool.ainvoke = AsyncMock(return_value="Result 1: Revenue was $10M")
-
+        calls = []
+        evidence = "Background " * 80 + "Revenue was $10M."
+        async def retrieve(**kwargs):
+            calls.append("retrieve")
+            return SimpleNamespace(passages=[{"content": evidence, "metadata": {"asset_id": "report", "chunk_index": 3, "source": "report.pdf", "page": 4, "section": "Revenue"}}], retrieval={"strategy": "hybrid_rrf"})
+        async def generate(messages):
+            calls.append("generate")
+            assert evidence in messages[1].content
+            assert "[report:3]" in messages[1].content
+            return AIMessage(content="Revenue was $10M [report:3].")
+        model = MagicMock()
+        model.ainvoke = AsyncMock(side_effect=generate)
         with (
-            patch("app.agents.rag_agent.llm_service", mock_service),
-            patch("app.agents.rag_agent.rag_tools", [mock_tool]),
+            patch("app.agents.rag_agent.llm_service.get_chat_model", return_value=model),
+            patch("app.services.hybrid_vector_store.hybrid_vector_store_service.search_with_provenance", AsyncMock(side_effect=retrieve)),
         ):
-            from app.agents.rag_agent import rag_agent_node
+            result = await rag_agent_node(_make_state(user_input="What was revenue?"))
+        assert calls == ["retrieve", "generate"]
+        assert result["metadata"]["execution"]["artifacts"]["citations"][0]["section"] == "Revenue"
+        assert result["metadata"]["execution"]["artifacts"]["citations"][0]["chunk_index"] == 3
 
-            state = _make_state(user_input="What was the revenue?")
-            result = await rag_agent_node(state)
-
-        assert len(result["tool_calls"]) == 1
-        assert result["tool_calls"][0]["tool_name"] == "rag_search_tool"
+    async def test_no_evidence_never_invokes_answer_model(self) -> None:
+        from types import SimpleNamespace
+        from app.agents.rag_agent import rag_agent_node
+        with (
+            patch("app.agents.rag_agent.llm_service.get_chat_model") as generate,
+            patch("app.services.hybrid_vector_store.hybrid_vector_store_service.search_with_provenance", AsyncMock(return_value=SimpleNamespace(passages=[], retrieval={}))),
+        ):
+            result = await rag_agent_node(_make_state(user_input="What was revenue?"))
+        generate.assert_not_called()
+        assert "could not find" in result["messages"][0].content
+        assert result["metadata"]["execution"]["artifacts"]["citations"] == []
 
 
 # =============================================================================

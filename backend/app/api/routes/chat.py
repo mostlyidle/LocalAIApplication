@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import structlog
@@ -22,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.agents.orchestrator import run_agent, stream_agent
+from app.api.middleware.error_handler import AppError
 from app.api.middleware.rate_limiting import limiter
 from app.config import settings
 from app.dependencies import get_db
@@ -121,6 +123,7 @@ async def send_message(
     assistant_content = _extract_response_content(result)
     agent_used = result.get("metadata", {}).get("agent_used")
     tool_calls_data = result.get("tool_calls", [])
+    execution_metadata = result.get("metadata", {}).get("execution")
 
     # Persist user message
     user_msg = Message(
@@ -136,6 +139,7 @@ async def send_message(
         role=MessageRole.ASSISTANT,
         content=assistant_content,
         agent_type=agent_used,
+        execution_metadata=json.dumps(execution_metadata) if execution_metadata else None,
     )
     db.add(assistant_msg)
     await db.flush()
@@ -167,6 +171,7 @@ async def send_message(
         conversation_id=conversation_id,
         content=assistant_content,
         agent_used=agent_used,
+        execution=execution_metadata,
         tool_calls=[
             ToolCallInfo(
                 tool_name=tc.get("tool_name", ""),
@@ -255,73 +260,59 @@ async def chat_stream(websocket: WebSocket) -> None:
             stream_error = "Agent error: response failed. Check the backend and Ollama, then retry."
             execution_metadata: dict[str, Any] | None = None
 
+            async def consume_event(event: dict[str, Any]) -> None:
+                nonlocal agent_used, completion_metadata, execution_metadata
+                if event.get("type") != "done":
+                    await websocket.send_json(event)
+                evt_type = event.get("type")
+                if evt_type == "token":
+                    token_chunks.append(event.get("content", ""))
+                elif evt_type == "tool_call":
+                    tool_calls_data.append({"tool_name": event.get("tool", ""), "tool_input": event.get("input", {}), "tool_output": None})
+                elif evt_type == "tool_result":
+                    for tc in reversed(tool_calls_data):
+                        if tc["tool_name"] == event.get("tool", "") and tc["tool_output"] is None:
+                            tc["tool_output"] = event.get("output")
+                            break
+                elif evt_type == "agent_switch":
+                    agent_used = event.get("agent")
+                elif evt_type == "done":
+                    completion_metadata = event.get("metadata", {})
+                    execution_metadata = completion_metadata.get("execution")
+                    if agent_used is None:
+                        agent_used = completion_metadata.get("agent_used")
+
             try:
                 if body.agent_name:
                     selected = await _execute_selected_profile(
                         websocket.app,
                         body.model_copy(update={"conversation_id": conversation_id}),
+                        on_event=consume_event,
                     )
                     agent_used = selected.agent
-                    token_chunks.append(selected.answer)
-                    tool_calls_data = selected.artifacts.get("tool_calls", [])
+                    selected_calls = selected.artifacts.get("tool_calls", [])
+                    if selected_calls and not tool_calls_data:
+                        for tc in selected_calls:
+                            await consume_event({"type": "tool_call", "tool": tc.get("tool_name", ""), "input": tc.get("tool_input", {})})
+                            await consume_event({"type": "tool_result", "tool": tc.get("tool_name", ""), "output": tc.get("tool_output")})
+                    if not token_chunks:
+                        await consume_event({"type": "token", "content": selected.answer})
                     execution_metadata = selected.model_dump(mode="json")
-                    completion_metadata = {
-                        "agent_used": selected.agent,
-                        "execution": execution_metadata,
-                    }
-                    for tc in tool_calls_data:
-                        await websocket.send_json(
-                            {
-                                "type": "tool_call",
-                                "tool": tc.get("tool_name", ""),
-                                "input": tc.get("tool_input", {}),
-                            }
-                        )
-                        await websocket.send_json(
-                            {
-                                "type": "tool_result",
-                                "tool": tc.get("tool_name", ""),
-                                "output": tc.get("tool_output"),
-                            }
-                        )
-                    await websocket.send_json({"type": "token", "content": selected.answer})
+                    completion_metadata = {"agent_used": selected.agent, "execution": execution_metadata}
                 else:
                     existing_messages = await _load_ws_history(conversation_id)
                     attachment_paths = await _resolve_uploaded_paths(attachments)
                     async for event in stream_agent(
-                        user_input=content,
-                        conversation_id=conversation_id,
-                        attachments=attachment_paths,
-                        existing_messages=existing_messages,
+                        user_input=content, conversation_id=conversation_id,
+                        attachments=attachment_paths, existing_messages=existing_messages,
                     ):
-                        if event.get("type") != "done":
-                            await websocket.send_json(event)
-                        evt_type = event.get("type")
-                        if evt_type == "token":
-                            token_chunks.append(event.get("content", ""))
-                        elif evt_type == "tool_call":
-                            tool_calls_data.append(
-                                {
-                                    "tool_name": event.get("tool", ""),
-                                    "tool_input": event.get("input", {}),
-                                    "tool_output": None,
-                                }
-                            )
-                        elif evt_type == "tool_result":
-                            tool_name = event.get("tool", "")
-                            for tc in reversed(tool_calls_data):
-                                if tc["tool_name"] == tool_name and tc["tool_output"] is None:
-                                    tc["tool_output"] = event.get("output")
-                                    break
-                        elif evt_type == "agent_switch":
-                            agent_used = event.get("agent")
-                        elif evt_type == "done":
-                            completion_metadata = event.get("metadata", {})
-                            if agent_used is None:
-                                agent_used = event.get("metadata", {}).get("agent_used")
+                        await consume_event(event)
             except HTTPException as exc:
                 logger.info("profile_task_rejected", detail=exc.detail)
                 stream_error = str(exc.detail)
+                stream_failed = True
+            except AppError as exc:
+                stream_error = exc.message
                 stream_failed = True
             except Exception:
                 logger.exception("stream_error")
@@ -479,7 +470,8 @@ async def delete_conversation(
 
 
 async def _execute_selected_profile(
-    app, body: ChatMessageRequest, *, db: AsyncSession | None = None
+    app, body: ChatMessageRequest, *, db: AsyncSession | None = None,
+    on_event: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
 ) -> AgentResult:
     """Dispatch an explicit chat profile through the shared registry and services."""
     registry = app.state.agent_registry
@@ -518,13 +510,23 @@ async def _execute_selected_profile(
         from app.services.llm import llm_service
 
         with llm_service.inference_context(inference):
-            state = await run_agent(
-                user_input=body.content,
-                conversation_id=conversation_id,
-                attachments=attachment_paths,
-                existing_messages=existing,
-                forced_agent=profile.target,
-            )
+            if on_event is None:
+                state = await run_agent(
+                    user_input=body.content, conversation_id=conversation_id,
+                    attachments=attachment_paths, existing_messages=existing, forced_agent=profile.target,
+                )
+            else:
+                state = None
+                async for event in stream_agent(
+                    user_input=body.content, conversation_id=conversation_id,
+                    attachments=attachment_paths, existing_messages=existing, forced_agent=profile.target,
+                ):
+                    if event.get("type") == "done":
+                        state = event.get("state")
+                    else:
+                        await on_event(event)
+                if state is None:
+                    raise RuntimeError("Agent stream did not return a final state.")
         metadata = state.get("metadata", {})
         return AgentResult(
             agent=profile.name,
@@ -572,6 +574,10 @@ async def _execute_selected_profile(
         if document is None:
             raise HTTPException(status_code=404, detail="Uploaded asset was not found.")
     kwargs = {"history": prior_turns} if profile.target == "rag" else {}
+    if on_event is not None:
+        async def emit_token(text: str) -> None:
+            await on_event({"type": "token", "content": text})
+        kwargs["on_token"] = emit_token
     return await app.state.task_runner.run(
         task, request_id=str(uuid.uuid4()), document=document, **kwargs,
     )
