@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import type { ChatMessage, ToolCall } from "@/types/chat";
+import type { ChatMessage, ChatTaskOptions, ToolCall } from "@/types/chat";
 import { useWebSocket } from "./useWebSocket";
 
 export function useChat() {
@@ -50,6 +50,7 @@ export function useChat() {
               : undefined,
           toolCalls: activeToolCallsRef.current as ToolCall[],
           timestamp: new Date().toISOString(),
+          execution: metadata.execution as ChatMessage["execution"],
         };
         setMessages((msgs) => [...msgs, assistantMsg]);
       }
@@ -89,7 +90,7 @@ export function useChat() {
     });
 
   const sendMessage = useCallback(
-    (content: string, attachments: string[] = []) => {
+    (content: string, attachments: string[] = [], taskOptions?: ChatTaskOptions) => {
       const userMsg: ChatMessage = {
         id: crypto.randomUUID(),
         role: "user",
@@ -102,7 +103,8 @@ export function useChat() {
       streamingContentRef.current = "";
       setActiveToolCalls([]);
       activeToolCallsRef.current = [];
-      wsSend(content, attachments, conversationIdRef.current);
+      if (taskOptions) wsSend(content, attachments, conversationIdRef.current, taskOptions);
+      else wsSend(content, attachments, conversationIdRef.current);
     },
     [wsSend]
   );

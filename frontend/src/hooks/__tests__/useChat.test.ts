@@ -101,6 +101,23 @@ describe("useChat", () => {
     expect(result.current.streamingContent).toBe("Hello world");
   });
 
+  it("attaches execution artifacts to the completed assistant message", () => {
+    const { result } = renderHook(() => useChat());
+    act(() => {
+      capturedOptions.onToken?.("Grounded result");
+      capturedOptions.onDone?.({
+        execution: {
+          agent: "rag_v2",
+          artifacts: { citations: [{ filename: "guide.pdf", page: 2 }] },
+          limitations: [],
+        },
+      });
+    });
+
+    expect(result.current.messages[0].execution?.agent).toBe("rag_v2");
+    expect(result.current.messages[0].execution?.artifacts?.citations).toHaveLength(1);
+  });
+
   it("handleToolCall adds to activeToolCalls", () => {
     const { result } = renderHook(() => useChat());
 

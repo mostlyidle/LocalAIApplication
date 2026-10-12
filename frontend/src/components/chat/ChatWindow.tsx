@@ -7,8 +7,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { useChat } from "@/hooks/useChat";
-import { uploadDocument } from "@/lib/api";
+import { getAgentCatalog, uploadDocument } from "@/lib/api";
 import { ACCEPTED_FILE_TYPES, MAX_FILE_SIZE } from "@/lib/constants";
+import type { AgentCapability, ChatTaskOptions } from "@/types/chat";
 import { MessageBubble } from "./MessageBubble";
 import { StreamingText } from "./StreamingText";
 import { ToolCallDisplay } from "./ToolCallDisplay";
@@ -36,10 +37,36 @@ export function ChatWindow() {
   } = useChat();
 
   const [input, setInput] = useState("");
+  const [agents, setAgents] = useState<AgentCapability[]>([]);
+  const [selectedAgent, setSelectedAgent] = useState("auto");
+  const [collection, setCollection] = useState("documents");
+  const [symbol, setSymbol] = useState("");
+  const [workspacePath, setWorkspacePath] = useState("");
+  const [context, setContext] = useState("");
+  const [workflowText, setWorkflowText] = useState("");
+  const [selectedModel, setSelectedModel] = useState("");
+  const [temperature, setTemperature] = useState(0.1);
+  const [profileError, setProfileError] = useState("");
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const selectedProfile = agents.find((agent) => agent.name === selectedAgent);
+
+  useEffect(() => {
+    getAgentCatalog()
+      .then((catalog) => setAgents(catalog.agents as AgentCapability[]))
+      .catch(() => setAgents([]));
+  }, []);
+
+  useEffect(() => {
+    setSelectedModel(selectedProfile?.inference?.defaults.model ?? "");
+    setTemperature(selectedProfile?.inference?.defaults.temperature ?? 0.1);
+  }, [
+    selectedAgent,
+    selectedProfile?.inference?.defaults.model,
+    selectedProfile?.inference?.defaults.temperature,
+  ]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -131,7 +158,56 @@ export function ChatWindow() {
       .map((a) => a.uploadedPath!);
 
     const message = trimmed || "Analyze the attached file(s).";
-    sendMessage(message, uploadedIds);
+    setProfileError("");
+    const options: ChatTaskOptions = {};
+    if (selectedProfile) {
+      options.agent_name = selectedProfile.name;
+      if (["image_analysis", "image_fraud"].includes(selectedProfile.target)) {
+        const hasUploadedImage = attachments.some((attachment) =>
+          attachment.uploadedPath && !attachment.error &&
+          IMAGE_TYPES.includes(`.${attachment.file.name.split(".").pop()?.toLowerCase()}`),
+        );
+        if (!hasUploadedImage) {
+          setProfileError("Attach an uploaded image for this profile.");
+          return;
+        }
+      }
+      if (selectedProfile.target === "rag") options.collection = collection.trim() || "documents";
+      if (selectedProfile.target === "stock_research") {
+        if (!symbol.trim()) {
+          setProfileError("Enter a ticker symbol for stock research.");
+          return;
+        }
+        options.symbol = symbol.trim();
+        options.context = context.trim() || undefined;
+      }
+      if (selectedProfile.target === "software_engineer") {
+        options.workspace_path = workspacePath.trim() || undefined;
+      }
+      if (selectedProfile.name === "document_analytics") {
+        options.context = context.trim() || undefined;
+      }
+      if (selectedProfile.target === "image_generation") {
+        try {
+          const parsed: unknown = JSON.parse(workflowText);
+          if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
+            throw new Error("Workflow must be a JSON object.");
+          }
+          options.workflow = parsed as Record<string, unknown>;
+        } catch {
+          setProfileError("Paste a valid ComfyUI API workflow JSON object.");
+          return;
+        }
+      }
+      if (selectedProfile.inference) {
+        options.inference = {
+          model: selectedModel || selectedProfile.inference.defaults.model,
+          temperature,
+        };
+      }
+    }
+    if (selectedProfile) sendMessage(message, uploadedIds, options);
+    else sendMessage(message, uploadedIds);
     setInput("");
     setAttachments([]);
     textareaRef.current?.focus();
@@ -241,6 +317,71 @@ export function ChatWindow() {
 
       {/* Input area */}
       <div className="border-t bg-background p-4">
+        {profileError && <div className="mx-auto mb-2 max-w-3xl text-xs text-destructive">{profileError}</div>}
+        <div className="mx-auto mb-2 flex max-w-3xl flex-wrap items-center gap-2">
+          <label className="text-xs text-muted-foreground" htmlFor="agent-profile">Agent</label>
+          <select
+            id="agent-profile"
+            aria-label="Agent profile"
+            value={selectedAgent}
+            onChange={(event) => { setSelectedAgent(event.target.value); setProfileError(""); }}
+            disabled={isStreaming}
+            className="h-8 rounded-md border bg-background px-2 text-xs"
+          >
+            <option value="auto">Auto select</option>
+            {agents.map((agent) => (
+              <option key={agent.name} value={agent.name}>
+                {agent.name.replaceAll("_", " ")}{agent.default_for_target ? " · default" : ""}
+              </option>
+            ))}
+          </select>
+          {selectedProfile?.inference && (
+            <>
+              <label className="sr-only" htmlFor="agent-model">Model</label>
+              <select
+                id="agent-model"
+                aria-label="Agent model"
+                value={selectedModel}
+                onChange={(event) => setSelectedModel(event.target.value)}
+                disabled={isStreaming}
+                className="h-8 max-w-52 rounded-md border bg-background px-2 text-xs"
+              >
+                {selectedProfile.inference.allowed_models.map((model) => <option key={model}>{model}</option>)}
+              </select>
+              <label className="sr-only" htmlFor="agent-temperature">Temperature</label>
+              <input
+                id="agent-temperature"
+                aria-label="Agent temperature"
+                type="number"
+                min={selectedProfile.inference.limits.temperature.minimum}
+                max={selectedProfile.inference.limits.temperature.maximum}
+                step="0.1"
+                value={temperature}
+                onChange={(event) => setTemperature(Number(event.target.value))}
+                disabled={isStreaming}
+                className="h-8 w-20 rounded-md border bg-background px-2 text-xs"
+              />
+            </>
+          )}
+          {selectedProfile?.target === "rag" && (
+            <input aria-label="RAG collection" value={collection} onChange={(event) => setCollection(event.target.value)} placeholder="Collection" className="h-8 w-36 rounded-md border bg-background px-2 text-xs" />
+          )}
+          {selectedProfile?.target === "stock_research" && (
+            <>
+              <input aria-label="Ticker symbol" value={symbol} onChange={(event) => setSymbol(event.target.value)} placeholder="Ticker (e.g. AAPL)" className="h-8 w-36 rounded-md border bg-background px-2 text-xs" />
+              <input aria-label="Research context" value={context} onChange={(event) => setContext(event.target.value)} placeholder="Optional context" className="h-8 min-w-36 flex-1 rounded-md border bg-background px-2 text-xs" />
+            </>
+          )}
+          {selectedProfile?.target === "software_engineer" && (
+            <input aria-label="Workspace path" value={workspacePath} onChange={(event) => setWorkspacePath(event.target.value)} placeholder="Workspace subpath (optional)" className="h-8 min-w-48 flex-1 rounded-md border bg-background px-2 text-xs" />
+          )}
+          {selectedProfile?.name === "document_analytics" && (
+            <input aria-label="Document context" value={context} onChange={(event) => setContext(event.target.value)} placeholder="Optional text context" className="h-8 min-w-48 flex-1 rounded-md border bg-background px-2 text-xs" />
+          )}
+          {selectedProfile?.target === "image_generation" && (
+            <textarea aria-label="ComfyUI workflow" value={workflowText} onChange={(event) => setWorkflowText(event.target.value)} placeholder="Paste exported ComfyUI API workflow JSON" rows={2} className="min-h-8 min-w-48 flex-1 rounded-md border bg-background px-2 py-1 text-xs" />
+          )}
+        </div>
         <form
           onSubmit={handleSubmit}
           className="mx-auto flex max-w-3xl items-end gap-2"

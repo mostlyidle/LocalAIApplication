@@ -22,6 +22,7 @@ import {
   deleteRAGCollection,
   getHealth,
   getTools,
+  getAgentCatalog,
   ApiError,
 } from "../api";
 
@@ -119,6 +120,16 @@ describe("API Client", () => {
       const [url, init] = spy.mock.calls[0];
       expect(url).toContain("/chat");
       expect(JSON.parse(init.body)).toEqual({ content: "hello", conversation_id: "c1" });
+    });
+
+    it("loads the enabled profile catalog", async () => {
+      const spy = mockFetchSuccess({ agents: [
+        { name: "rag_v2", target: "rag", description: "Hybrid retrieval", default_for_target: false, inference: null },
+      ] });
+      globalThis.fetch = spy;
+      const result = await getAgentCatalog();
+      expect(result.agents[0].name).toBe("rag_v2");
+      expect(spy.mock.calls[0][0]).toContain("/agents");
     });
 
     it("sendMessage works without conversationId", async () => {

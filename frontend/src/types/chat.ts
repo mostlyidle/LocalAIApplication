@@ -6,6 +6,40 @@ export interface ChatMessage {
   toolCalls?: ToolCall[];
   attachments?: string[];
   timestamp: string;
+  execution?: AgentExecutionResult;
+}
+
+export interface AgentExecutionResult {
+  agent?: string;
+  answer?: string;
+  artifacts?: Record<string, unknown>;
+  limitations?: string[];
+  metadata?: Record<string, unknown>;
+}
+
+export interface ChatTaskOptions {
+  agent_name?: string;
+  collection?: string;
+  symbol?: string;
+  workspace_path?: string;
+  context?: string;
+  workflow?: Record<string, unknown>;
+  inference?: {
+    model?: string;
+    temperature?: number;
+  };
+}
+
+export interface AgentCapability {
+  name: string;
+  target: string;
+  description: string;
+  default_for_target: boolean;
+  inference: {
+    allowed_models: string[];
+    defaults: { model: string; temperature: number };
+    limits: { temperature: { minimum: number; maximum: number } };
+  } | null;
 }
 
 export interface ToolCall {
