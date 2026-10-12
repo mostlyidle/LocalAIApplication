@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -81,6 +82,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await init_app_db()
     logger.info("database_initialized")
 
+    from app.services.memory_recall_worker import run_recall_worker
+
+    app.state.memory_recall_worker_stop = asyncio.Event()
+    app.state.memory_recall_worker_task = asyncio.create_task(
+        run_recall_worker(app.state.memory_recall_worker_stop),
+        name="memory-recall-worker",
+    )
+
     reconciled_meetings = await meeting_service.reconcile_active_meetings()
     logger.info("meeting_startup_reconciliation_complete", count=reconciled_meetings)
 
@@ -99,6 +108,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # ── Shutdown ────────────────────────────────────────────────────
     from app.services.database import close_all_sql_engines, close_app_db
     from app.services.hybrid_vector_store import hybrid_vector_store_service
+
+    app.state.memory_recall_worker_stop.set()
+    try:
+        await asyncio.wait_for(app.state.memory_recall_worker_task, timeout=5)
+    except TimeoutError:
+        app.state.memory_recall_worker_task.cancel()
+        await asyncio.gather(app.state.memory_recall_worker_task, return_exceptions=True)
 
     await mcp_client.close()
     await app.state.market_data.close()
@@ -132,7 +148,18 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
 
     # API routes
-    from app.api.routes import agents, auth, chat, documents, meetings, memory, rag, sql, tasks, tools
+    from app.api.routes import (
+        agents,
+        auth,
+        chat,
+        documents,
+        meetings,
+        memory,
+        rag,
+        sql,
+        tasks,
+        tools,
+    )
 
     app.include_router(auth.router, prefix="/api/v1")
     app.include_router(agents.router, prefix="/api/v1", tags=["Agents"])

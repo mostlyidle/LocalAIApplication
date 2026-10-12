@@ -73,7 +73,10 @@ class TestLifespan:
         with (
             patch("app.main.settings") as mock_settings,
             patch("app.services.database.init_app_db", new_callable=AsyncMock),
-            patch("app.services.meetings.meeting_service.reconcile_active_meetings", new_callable=AsyncMock),
+            patch(
+                "app.services.meetings.meeting_service.reconcile_active_meetings",
+                new_callable=AsyncMock,
+            ),
             patch("app.services.database.close_all_sql_engines", new_callable=AsyncMock),
             patch("app.services.database.close_app_db", new_callable=AsyncMock),
         ):
@@ -99,7 +102,10 @@ class TestLifespan:
         with (
             patch("app.main.settings") as mock_settings,
             patch("app.services.database.init_app_db", mock_init),
-            patch("app.services.meetings.meeting_service.reconcile_active_meetings", new_callable=AsyncMock),
+            patch(
+                "app.services.meetings.meeting_service.reconcile_active_meetings",
+                new_callable=AsyncMock,
+            ),
             patch("app.services.database.close_all_sql_engines", new_callable=AsyncMock),
             patch("app.services.database.close_app_db", new_callable=AsyncMock),
         ):
@@ -151,11 +157,16 @@ class TestLifespan:
         """Lifespan should close DB connections on shutdown."""
         mock_close_sql = AsyncMock()
         mock_close_app = AsyncMock()
+        mock_recall_worker = AsyncMock()
 
         with (
             patch("app.main.settings") as mock_settings,
             patch("app.services.database.init_app_db", new_callable=AsyncMock),
-            patch("app.services.meetings.meeting_service.reconcile_active_meetings", new_callable=AsyncMock),
+            patch(
+                "app.services.meetings.meeting_service.reconcile_active_meetings",
+                new_callable=AsyncMock,
+            ),
+            patch("app.services.memory_recall_worker.run_recall_worker", mock_recall_worker),
             patch("app.services.database.close_all_sql_engines", mock_close_sql),
             patch("app.services.database.close_app_db", mock_close_app),
         ):
@@ -175,6 +186,8 @@ class TestLifespan:
             # After context manager exits, shutdown should have run
             mock_close_sql.assert_awaited_once()
             mock_close_app.assert_awaited_once()
+            mock_recall_worker.assert_awaited_once()
+            assert mock_recall_worker.await_args.args[0].is_set()
 
 
 class TestConfigureLogging:

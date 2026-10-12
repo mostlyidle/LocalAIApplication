@@ -2,12 +2,23 @@
 
 from __future__ import annotations
 
-import pytest
-from httpx import AsyncClient
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import TYPE_CHECKING
 
-from app.models.db_models import LEGACY_ACCOUNT_ID, Account, Conversation, Memory, Message
+import pytest
+from sqlalchemy import select
+
+if TYPE_CHECKING:
+    from httpx import AsyncClient
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.db_models import (
+    LEGACY_ACCOUNT_ID,
+    Account,
+    Conversation,
+    ConversationRecallSummary,
+    MemoryOutboxJob,
+    Message,
+)
 
 
 async def _ensure_account(db: AsyncSession) -> Account:
@@ -253,6 +264,36 @@ async def test_settings_are_independent_and_delete_all_advances_epoch(
         json={"past_chat_recall_enabled": True},
         headers={"X-CSRF-Token": "test-csrf-token"},
     )
+    conversation = Conversation(id="delete-all-recall-chat", owner_id=account.id)
+    source = Message(
+        id="delete-all-recall-source",
+        conversation_id=conversation.id,
+        role="assistant",
+        content="A past reply",
+    )
+    db_session.add_all(
+        [
+            conversation,
+            source,
+            MemoryOutboxJob(
+                id="delete-all-recall-job",
+                owner_id=account.id,
+                conversation_id=conversation.id,
+                source_message_id=source.id,
+                memory_epoch=account.memory_epoch,
+                available_at=account.created_at,
+            ),
+            ConversationRecallSummary(
+                id="delete-all-recall-summary",
+                owner_id=account.id,
+                conversation_id=conversation.id,
+                source_message_id=source.id,
+                memory_epoch=account.memory_epoch,
+                content="A derived summary",
+            ),
+        ]
+    )
+    await db_session.commit()
 
     cleared = await client.delete("/api/v1/memory", headers={"X-CSRF-Token": "test-csrf-token"})
     current = await db_session.scalar(select(Account).where(Account.id == account.id))
@@ -265,3 +306,5 @@ async def test_settings_are_independent_and_delete_all_advances_epoch(
     }
     assert current.memory_epoch == 1
     assert (await client.get("/api/v1/memory")).json()["total"] == 0
+    assert await db_session.scalar(select(MemoryOutboxJob.id)) is None
+    assert await db_session.scalar(select(ConversationRecallSummary.id)) is None
