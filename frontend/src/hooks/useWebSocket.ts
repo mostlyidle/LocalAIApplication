@@ -137,10 +137,16 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   }, [clearReconnectTimer, clearPendingMessage]);
 
   const sendMessage = useCallback(
-    (content: string, attachments: string[] = [], conversationId?: string, taskOptions?: ChatTaskOptions) => {
+    (
+      content: string,
+      attachments: string[] = [],
+      conversationId?: string,
+      taskOptions?: ChatTaskOptions,
+      clientTurnId?: string,
+    ) => {
       const payload = JSON.stringify({
         type: "message", content, attachments, conversation_id: conversationId,
-        ...taskOptions,
+        client_turn_id: clientTurnId, ...taskOptions,
       });
       if (streamingRef.current) return;
       streamingRef.current = true;

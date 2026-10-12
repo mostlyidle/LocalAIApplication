@@ -70,6 +70,16 @@ describe("useWebSocket", () => {
     expect(result.current.isStreaming).toBe(false);
   });
 
+  it("includes the client turn ID in the WebSocket request", async () => {
+    const { result } = renderHook(() => useWebSocket());
+    act(() => result.current.connect());
+    await act(async () => { vi.advanceTimersByTime(1); });
+    act(() => result.current.sendMessage("Retry safely", [], "conversation-1", undefined, "turn-1"));
+
+    const payload = JSON.parse(MockWebSocket.instances[0].send.mock.calls[0][0]);
+    expect(payload.client_turn_id).toBe("turn-1");
+  });
+
   it("includes selected profile inputs in the WebSocket request", async () => {
     const { result } = renderHook(() => useWebSocket());
     act(() => result.current.connect());

@@ -91,8 +91,11 @@ export function useChat() {
 
   const sendMessage = useCallback(
     (content: string, attachments: string[] = [], taskOptions?: ChatTaskOptions) => {
+      const clientTurnId = crypto.randomUUID();
+      const conversationIdForTurn = conversationIdRef.current ?? crypto.randomUUID();
+      conversationIdRef.current = conversationIdForTurn;
       const userMsg: ChatMessage = {
-        id: crypto.randomUUID(),
+        id: clientTurnId,
         role: "user",
         content,
         attachments: attachments.length > 0 ? attachments : undefined,
@@ -103,8 +106,7 @@ export function useChat() {
       streamingContentRef.current = "";
       setActiveToolCalls([]);
       activeToolCallsRef.current = [];
-      if (taskOptions) wsSend(content, attachments, conversationIdRef.current, taskOptions);
-      else wsSend(content, attachments, conversationIdRef.current);
+      wsSend(content, attachments, conversationIdForTurn, taskOptions, clientTurnId);
     },
     [wsSend]
   );

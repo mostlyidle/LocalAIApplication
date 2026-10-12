@@ -54,10 +54,12 @@ describe("useChat", () => {
     });
     expect(result.current.messages).toHaveLength(1);
     act(() => result.current.sendMessage("What is my name?"));
-    expect(mockWsSend).toHaveBeenLastCalledWith("What is my name?", [], "conversation-1");
+    const followUp = mockWsSend.mock.calls.at(-1);
+    expect(followUp?.slice(0, 3)).toEqual(["What is my name?", [], "conversation-1"]);
+    expect(followUp?.[4]).toBe(result.current.messages.at(-1)?.id);
     act(() => result.current.clearMessages());
     act(() => result.current.sendMessage("New topic"));
-    expect(mockWsSend).toHaveBeenLastCalledWith("New topic", [], undefined);
+    expect(mockWsSend.mock.calls.at(-1)?.slice(0, 2)).toEqual(["New topic", []]);
   });
 
   it("sendMessage adds user message and calls wsSend", () => {
@@ -71,7 +73,11 @@ describe("useChat", () => {
     expect(result.current.messages[0].role).toBe("user");
     expect(result.current.messages[0].content).toBe("Hello world");
     expect(result.current.messages[0].attachments).toBeUndefined();
-    expect(mockWsSend).toHaveBeenCalledWith("Hello world", [], undefined);
+    const [content, attachments, conversationId, taskOptions, clientTurnId] = mockWsSend.mock.calls[0];
+    expect([content, attachments]).toEqual(["Hello world", []]);
+    expect(conversationId).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(taskOptions).toBeUndefined();
+    expect(clientTurnId).toBe(result.current.messages[0].id);
   });
 
   it("sendMessage forwards attachments to wsSend", () => {
@@ -84,7 +90,9 @@ describe("useChat", () => {
     expect(result.current.messages).toHaveLength(1);
     expect(result.current.messages[0].content).toBe("Analyze this");
     expect(result.current.messages[0].attachments).toEqual(["doc-1", "doc-2"]);
-    expect(mockWsSend).toHaveBeenCalledWith("Analyze this", ["doc-1", "doc-2"], undefined);
+    expect(mockWsSend.mock.calls[0]?.slice(0, 2)).toEqual([
+      "Analyze this", ["doc-1", "doc-2"],
+    ]);
   });
 
   it("handleToken appends to streamingContent", () => {
