@@ -47,7 +47,11 @@ The command prompts for a password. To reassign quarantined legacy records, firs
 ```bash
 docker compose exec backend python -m app.account_admin assign-legacy --username alice --conversation CONVERSATION_ID --document DOCUMENT_ID --meeting MEETING_ID
 docker compose exec backend python -m app.account_admin assign-legacy --username alice --conversation CONVERSATION_ID --document DOCUMENT_ID --meeting MEETING_ID --apply
+docker compose exec backend python -m app.account_admin assign-legacy --username alice --rag-collection COLLECTION_NAME
+docker compose exec backend python -m app.account_admin assign-legacy --username alice --rag-collection COLLECTION_NAME --apply
 ```
+
+Legacy RAG collections must exist and use a supported schema. Dataloader-owned collections remain shared and cannot be assigned.
 
 Useful Docker commands:
 

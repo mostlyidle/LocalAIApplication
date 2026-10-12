@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from sqlalchemy import select
@@ -16,7 +17,9 @@ from app.models.db_models import (
     Conversation,
     Document,
     Meeting,
+    RagCollection,
 )
+from app.services.rag_store import CollectionCapabilities
 from app.services.accounts import hash_password, normalize_username, verify_password
 
 
@@ -161,3 +164,71 @@ async def test_legacy_assignment_rejects_records_owned_by_another_account(
 
     with pytest.raises(ValueError, match="belong to another account"):
         await _assign_legacy_records("alice", conversations=["bobs-chat"])
+
+
+async def test_legacy_rag_assignment_is_dry_run_then_registers_collection(
+    async_engine, monkeypatch
+) -> None:
+    factory = async_sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
+    monkeypatch.setattr("app.account_admin.get_app_session_factory", lambda: factory)
+    async with factory() as session:
+        account = Account(
+            id="11111111-1111-4111-8111-111111111111",
+            username="alice",
+            display_name="Alice",
+            password_hash="!test!",
+        )
+        session.add(account)
+        await session.commit()
+
+    capabilities = CollectionCapabilities(mode="hybrid")
+    with patch(
+        "app.services.hybrid_vector_store.hybrid_vector_store_service.collection_capabilities",
+        new_callable=AsyncMock,
+        return_value=capabilities,
+    ):
+        preview = await _assign_legacy_records("alice", rag_collections=["old_manuals"])
+        assert preview["rag_collections"] == {
+            "selected": 1,
+            "to_assign": 1,
+            "already_assigned": 0,
+        }
+        async with factory() as session:
+            assert await session.get(RagCollection, "old_manuals") is None
+
+        await _assign_legacy_records("alice", rag_collections=["old_manuals"], apply=True)
+
+    async with factory() as session:
+        registry = await session.get(RagCollection, "old_manuals")
+        assert registry is not None and registry.owner_id == account.id
+
+
+async def test_legacy_rag_assignment_rejects_shared_loader_collection(
+    async_engine, monkeypatch
+) -> None:
+    factory = async_sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
+    monkeypatch.setattr("app.account_admin.get_app_session_factory", lambda: factory)
+    async with factory() as session:
+        session.add(
+            Account(
+                id="11111111-1111-4111-8111-111111111111",
+                username="alice",
+                display_name="Alice",
+                password_hash="!test!",
+            )
+        )
+        await session.commit()
+
+    capabilities = CollectionCapabilities(mode="hybrid", loader_owned=True)
+    with (
+        patch(
+            "app.services.hybrid_vector_store.hybrid_vector_store_service.collection_capabilities",
+            new_callable=AsyncMock,
+            return_value=capabilities,
+        ),
+        pytest.raises(ValueError, match="shared and cannot be assigned"),
+    ):
+        await _assign_legacy_records("alice", rag_collections=["loader_docs"], apply=True)
+
+    async with factory() as session:
+        assert await session.get(RagCollection, "loader_docs") is None
