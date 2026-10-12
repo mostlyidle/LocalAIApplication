@@ -231,6 +231,31 @@ class MemoryOutboxJob(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
 
+class ConversationRecallSummary(Base):
+    """Bounded derived text for cross-conversation retrieval, scoped to its source chat."""
+
+    __tablename__ = "conversation_recall_summaries"
+    __table_args__ = (
+        UniqueConstraint("conversation_id", name="uq_recall_summary_conversation"),
+        Index("ix_recall_summaries_owner_epoch", "owner_id", "memory_epoch"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
+    owner_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("accounts.id", ondelete="RESTRICT"), index=True
+    )
+    conversation_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("conversations.id", ondelete="CASCADE")
+    )
+    source_message_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("messages.id", ondelete="CASCADE")
+    )
+    memory_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    content: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
 class ToolCallRecord(Base):
     """Record of a tool invocation made during message generation."""
 
