@@ -27,6 +27,7 @@ Use this file to resume the approved implementation without repeating completed 
 - Added cross-account chat/document tests and updated API/WebSocket fixtures.
 - `/auth/me` now performs a read-only refresh using the session's stable CSRF token. Migration `20261012_07` replaces stored CSRF digests with session-bound tokens and revokes existing sessions that require reauthentication. Added a migration test for this transition.
 - Reverified the full account/chat/document/auth focused set with 87 passing tests, Ruff lint, and Ruff format check. One Qdrant client-version warning remains because no Qdrant server is running.
+- Enforced account ownership on meeting creation, read, stop, delete, and audio WebSocket claim/start/audio/stop/failure paths. Added cross-account route and stream tests; 28 meeting/auth tests pass. The service module has three pre-existing Ruff UP041 suggestions; targeted checks ignoring that unrelated rule pass.
 - The first `uv run` attempt could not reach PyPI to build the project environment. Reused the repository's existing `.venv` directly for the successful checks.
 - The implementation time estimate in the plan is explicitly non-binding and does not limit the scope or completion criteria.
 
@@ -38,7 +39,7 @@ Use this file to resume the approved implementation without repeating completed 
 
 ## Resume here
 
-1. Add periodic session revocation/expiry checks to long-lived chat and meeting streams; enforce meeting ownership at create/read/stop/delete and WebSocket paths.
+1. Add periodic session revocation/expiry checks to long-lived chat and meeting streams. Meeting ownership is now enforced on REST and WebSocket paths.
 2. Enforce ownership for RAG collections, SQL connections, workspace roots, direct tools/tasks, agents, and MCP; review every direct access surface.
 3. Add dry-run and explicit assignment for quarantined legacy records.
 4. Add frontend sign-in and the shared-deployment network boundary.
