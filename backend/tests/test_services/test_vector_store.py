@@ -125,6 +125,7 @@ class TestGetOrCreateCollection:
     def test_real_chroma_preserves_identity_and_vectors(self, tmp_path) -> None:
         import chromadb
         from chromadb.config import Settings
+
         from app.api.middleware.error_handler import InputValidationError
 
         service = VectorStoreService()
@@ -135,6 +136,34 @@ class TestGetOrCreateCollection:
             service._get_or_create_collection("verified", {**IDENTITY, "embedding_model": "another:latest"}, 2)
         assert col.count() == 1
         assert col.metadata["embedding_digest"] == "weights-v1"
+
+    async def test_empty_real_chroma_collection_can_be_tagged_and_searched(self, tmp_path) -> None:
+        import chromadb
+        from chromadb.config import Settings
+
+        service = VectorStoreService()
+        service._client = chromadb.PersistentClient(
+            path=str(tmp_path), settings=Settings(anonymized_telemetry=False)
+        )
+        service._client.get_or_create_collection(
+            "empty", metadata={"hnsw:space": "cosine", "purpose": "regression"}
+        )
+        assert await service.get_collection_count("empty") == 0
+        embeddings = _mock_embeddings(
+            embed_texts=AsyncMock(return_value=[[1.0, 0.0]]),
+            embed_text=AsyncMock(return_value=[1.0, 1.0]),
+        )
+        with patch("app.services.embeddings.embedding_service", embeddings):
+            assert await service.add_documents(
+                ["passage"], [{"source": "test.pdf"}], ["one"], "empty"
+            ) == 1
+            results = await service.search("query", "empty", top_k=1, score_threshold=0)
+        assert results[0]["content"] == "passage"
+        assert results[0]["score"] == pytest.approx(0.7071)
+        metadata = service._client.get_collection("empty").metadata
+        assert metadata["purpose"] == "regression"
+        assert metadata["embedding_digest"] == IDENTITY["embedding_digest"]
+        assert metadata["embedding_dimension"] == 2
 
     def test_uses_default_name(self):
         """Without name arg, uses settings.chroma_collection_name."""
