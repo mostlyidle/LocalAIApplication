@@ -24,6 +24,7 @@ DENSE_VECTOR_NAME = "dense"
 BM25_VECTOR_NAME = "bm25"
 COLLECTION_OWNER_KEY = "rag_collection_owner"
 LOADER_COLLECTION_OWNER = "rag-dataloader"
+ACCOUNT_MEMORY_COLLECTION = "account_memory_v1"
 PROVENANCE_STRING_FIELDS = (
     "document_id",
     "source_path",
@@ -496,6 +497,8 @@ class RagStore:
         response = await self._call(self._client.get_collections)
         collections = []
         for item in response.collections:
+            if item.name == ACCOUNT_MEMORY_COLLECTION:
+                continue
             count = await self.get_collection_count(item.name)
             collections.append({"name": item.name, "document_count": count, "metadata": {}})
         return collections
@@ -539,6 +542,10 @@ class RagStore:
                 return payloads
 
     async def delete_collection(self, collection: str) -> bool:
+        if collection == ACCOUNT_MEMORY_COLLECTION:
+            raise RagCollectionSchemaError(
+                "The account memory collection is private to memory recall."
+            )
         capabilities = await self.capabilities(collection)
         if capabilities is None:
             return False

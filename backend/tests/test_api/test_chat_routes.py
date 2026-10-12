@@ -24,6 +24,7 @@ from app.models.db_models import (
     AccountSession,
     Conversation,
     Document,
+    MemoryVectorCleanupJob,
     Message,
     ToolCallRecord,
 )
@@ -737,6 +738,9 @@ class TestDeleteConversationDirect:
             conversation_id="cascade-del", authenticated=_authenticated_principal(), db=db_session
         )
         assert result["status"] == "deleted"
+        cleanup_job = await db_session.scalar(select(MemoryVectorCleanupJob))
+        assert cleanup_job.owner_id == LEGACY_ACCOUNT_ID
+        assert cleanup_job.conversation_id == "cascade-del"
 
     async def test_delete_conversation_not_found_raises(self, db_session: AsyncSession):
         """Deleting nonexistent conversation raises NotFoundError."""
@@ -769,7 +773,9 @@ class TestGetOrCreateConversation:
         """Returns existing conversation without creating duplicate."""
         from app.api.routes.chat import _get_or_create_conversation
 
-        existing = Conversation(owner_id=LEGACY_ACCOUNT_ID, id="existing-conv", title="Already Here")
+        existing = Conversation(
+            owner_id=LEGACY_ACCOUNT_ID, id="existing-conv", title="Already Here"
+        )
         db_session.add(existing)
         await db_session.flush()
 
@@ -996,7 +1002,10 @@ class TestLoadLangchainMessages:
         assert conv.summary_message_count == MIN_UNSUMMARIZED_MESSAGES
         assert conv.summary_through_message_id == "summary-message-009"
         assert conv.summary_revision == 1
-        assert context[0].content == "Earlier conversation summary for continuity:\nDiscussed project scope."
+        assert (
+            context[0].content
+            == "Earlier conversation summary for continuity:\nDiscussed project scope."
+        )
         assert len(context) == MAX_CONTEXT_MESSAGES + 1
 
     async def test_summary_failure_leaves_chat_history_available(

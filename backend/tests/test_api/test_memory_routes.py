@@ -17,6 +17,7 @@ from app.models.db_models import (
     Conversation,
     ConversationRecallSummary,
     MemoryOutboxJob,
+    MemoryVectorCleanupJob,
     Message,
 )
 
@@ -308,3 +309,6 @@ async def test_settings_are_independent_and_delete_all_advances_epoch(
     assert (await client.get("/api/v1/memory")).json()["total"] == 0
     assert await db_session.scalar(select(MemoryOutboxJob.id)) is None
     assert await db_session.scalar(select(ConversationRecallSummary.id)) is None
+    cleanup_job = await db_session.scalar(select(MemoryVectorCleanupJob))
+    assert cleanup_job.owner_id == account.id
+    assert cleanup_job.conversation_id is None

@@ -16,6 +16,7 @@ from app.models.db_models import (
     ConversationRecallSummary,
     Memory,
     MemoryOutboxJob,
+    MemoryVectorCleanupJob,
     Message,
 )
 from app.models.memory_schemas import (
@@ -278,6 +279,7 @@ async def delete_all_memories(
     await db.execute(delete(MemoryOutboxJob).where(MemoryOutboxJob.owner_id == account.id))
     account.memory_epoch += 1
     account.past_chat_recall_enabled = False
+    db.add(MemoryVectorCleanupJob(owner_id=account.id))
     await db.commit()
     return MemoryDeleteAllResponse(
         deleted_count=result.rowcount or 0,

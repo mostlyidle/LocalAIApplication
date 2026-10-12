@@ -14,9 +14,13 @@ from app.models.db_models import (
     Conversation,
     ConversationRecallSummary,
     MemoryOutboxJob,
+    MemoryVectorCleanupJob,
     Message,
 )
-from app.services.memory_recall_worker import process_one_recall_job
+from app.services.memory_recall_worker import (
+    process_one_recall_job,
+    process_one_vector_cleanup_job,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -71,9 +75,15 @@ async def _seed_job(
 
 
 @pytest.mark.asyncio
-async def test_worker_persists_bounded_summary_and_completes_job(db_session: AsyncSession) -> None:
+async def test_worker_persists_bounded_summary_and_completes_job(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
     await _seed_job(db_session)
     summarize = AsyncMock(return_value="User prefers concise replies.")
+    from app.services.memory_vector_index import memory_vector_index
+
+    upsert_summary = AsyncMock(return_value=True)
+    monkeypatch.setattr(memory_vector_index, "upsert_summary", upsert_summary)
 
     processed = await process_one_recall_job(db_session, summarize=summarize)
 
@@ -81,6 +91,7 @@ async def test_worker_persists_bounded_summary_and_completes_job(db_session: Asy
     summary = await db_session.scalar(select(ConversationRecallSummary))
     assert processed is True
     assert summarize.await_count == 1
+    upsert_summary.assert_awaited_once()
     assert "user: I prefer concise replies" in summarize.await_args.args[0]
     assert job.status == "done"
     assert job.lease_until is None
@@ -160,3 +171,29 @@ async def test_worker_rechecks_consent_after_summarization(db_session: AsyncSess
     assert job.status == "skipped"
     assert job.last_error == "consent_changed_during_processing"
     assert await db_session.scalar(select(ConversationRecallSummary)) is None
+
+
+@pytest.mark.asyncio
+async def test_worker_processes_durable_account_vector_cleanup(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    account = Account(
+        id="cleanup-owner",
+        username="cleanup-owner",
+        display_name="Cleanup Owner",
+        password_hash="!test!",
+    )
+    job = MemoryVectorCleanupJob(id="cleanup-job", owner_id=account.id)
+    db_session.add_all([account, job])
+    await db_session.flush()
+    from app.services.memory_vector_index import memory_vector_index
+
+    delete_owner = AsyncMock()
+    monkeypatch.setattr(memory_vector_index, "delete_owner", delete_owner)
+
+    processed = await process_one_vector_cleanup_job(db_session)
+
+    saved = await db_session.get(MemoryVectorCleanupJob, job.id)
+    assert processed is True
+    delete_owner.assert_awaited_once_with(account.id)
+    assert saved.status == "done"

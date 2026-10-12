@@ -256,6 +256,25 @@ class ConversationRecallSummary(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
 
+class MemoryVectorCleanupJob(Base):
+    """Durable Qdrant deletion job that survives its source conversation."""
+
+    __tablename__ = "memory_vector_cleanup_jobs"
+    __table_args__ = (Index("ix_memory_cleanup_status_available", "status", "available_at"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
+    owner_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("accounts.id", ondelete="RESTRICT"), index=True
+    )
+    conversation_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="pending", server_default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    available_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
 class ToolCallRecord(Base):
     """Record of a tool invocation made during message generation."""
 

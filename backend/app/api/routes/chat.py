@@ -35,7 +35,13 @@ from app.dependencies import (
     get_websocket_session,
     websocket_session_is_active,
 )
-from app.models.db_models import Conversation, Document, Message, ToolCallRecord
+from app.models.db_models import (
+    Conversation,
+    Document,
+    MemoryVectorCleanupJob,
+    Message,
+    ToolCallRecord,
+)
 from app.models.enums import MessageRole
 from app.models.profile_schemas import AgentResult, ExecutionMetadata, TaskRequest
 from app.models.schemas import (
@@ -603,6 +609,12 @@ async def delete_conversation(
     if conversation is None:
         raise NotFoundError("Conversation", conversation_id)
 
+    db.add(
+        MemoryVectorCleanupJob(
+            owner_id=authenticated.account.id,
+            conversation_id=conversation.id,
+        )
+    )
     await db.delete(conversation)
     await db.commit()
 
