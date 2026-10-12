@@ -103,6 +103,28 @@ async def test_worker_persists_bounded_summary_and_completes_job(
 
 
 @pytest.mark.asyncio
+async def test_worker_reclaims_expired_processing_lease(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    job = await _seed_job(db_session)
+    job.status = "processing"
+    job.attempts = 1
+    job.lease_until = datetime.now(UTC) - timedelta(seconds=1)
+    await db_session.commit()
+    from app.services.memory_vector_index import memory_vector_index
+
+    monkeypatch.setattr(memory_vector_index, "upsert_summary", AsyncMock(return_value=True))
+
+    processed = await process_one_recall_job(
+        db_session, summarize=AsyncMock(return_value="Recovered after restart.")
+    )
+
+    assert processed is True
+    assert job.status == "done"
+    assert job.attempts == 2
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("case", ["epoch", "excluded", "disabled"])
 async def test_worker_skips_jobs_that_fail_consent_revalidation(
     db_session: AsyncSession, case: str
@@ -197,3 +219,36 @@ async def test_worker_processes_durable_account_vector_cleanup(
     assert processed is True
     delete_owner.assert_awaited_once_with(account.id)
     assert saved.status == "done"
+
+
+@pytest.mark.asyncio
+async def test_worker_reclaims_expired_vector_cleanup_lease(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    account = Account(
+        id="cleanup-recovery-owner",
+        username="cleanup-recovery-owner",
+        display_name="Cleanup Recovery Owner",
+        password_hash="!test!",
+    )
+    job = MemoryVectorCleanupJob(
+        id="cleanup-recovery-job",
+        owner_id=account.id,
+        status="processing",
+        attempts=1,
+        lease_until=datetime.now(UTC) - timedelta(seconds=1),
+    )
+    db_session.add_all([account, job])
+    await db_session.flush()
+    from app.services.memory_vector_index import memory_vector_index
+
+    delete_owner = AsyncMock()
+    monkeypatch.setattr(memory_vector_index, "delete_owner", delete_owner)
+
+    processed = await process_one_vector_cleanup_job(db_session)
+
+    saved = await db_session.get(MemoryVectorCleanupJob, job.id)
+    assert processed is True
+    delete_owner.assert_awaited_once_with(account.id)
+    assert saved.status == "done"
+    assert saved.attempts == 2
