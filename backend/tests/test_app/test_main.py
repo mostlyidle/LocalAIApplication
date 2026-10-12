@@ -81,6 +81,9 @@ class TestLifespan:
             mock_settings.chroma_persist_dir = str(chroma_dir)
             mock_settings.api_port = 8000
             mock_settings.log_level = "warning"
+            mock_settings.finnhub_api_key = None
+            mock_settings.market_data_cache_seconds = 60
+            mock_settings.comfyui_url = "http://localhost:8188"
 
             from app.main import lifespan
 
@@ -104,6 +107,9 @@ class TestLifespan:
             mock_settings.chroma_persist_dir = str(tmp_path / "chroma")
             mock_settings.api_port = 8000
             mock_settings.log_level = "warning"
+            mock_settings.finnhub_api_key = None
+            mock_settings.market_data_cache_seconds = 60
+            mock_settings.comfyui_url = "http://localhost:8188"
 
             from app.main import lifespan
 
@@ -130,6 +136,9 @@ class TestLifespan:
             mock_settings.chroma_persist_dir = str(tmp_path / "chroma")
             mock_settings.api_port = 8000
             mock_settings.log_level = "warning"
+            mock_settings.finnhub_api_key = None
+            mock_settings.market_data_cache_seconds = 60
+            mock_settings.comfyui_url = "http://localhost:8188"
 
             from app.main import lifespan
 
@@ -154,6 +163,9 @@ class TestLifespan:
             mock_settings.chroma_persist_dir = str(tmp_path / "chroma")
             mock_settings.api_port = 8000
             mock_settings.log_level = "warning"
+            mock_settings.finnhub_api_key = None
+            mock_settings.market_data_cache_seconds = 60
+            mock_settings.comfyui_url = "http://localhost:8188"
 
             from app.main import lifespan
 

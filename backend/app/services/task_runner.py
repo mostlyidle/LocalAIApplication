@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -11,24 +12,38 @@ from fastapi import HTTPException, status
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from app.agents.registry import AgentExecution, AgentRegistry
+from app.config import settings
 from app.models.enums import DocumentFormat
 from app.models.profile_schemas import AgentResult, ExecutionMetadata, TaskRequest
 from app.services.document_parser import DocumentParserService
 from app.services.images import ImageInspectionError, inspect_image, manipulation_signals
 from app.services.llm import llm_service
+from app.services.market_data import MarketDataError
+from app.services.workspace import WorkspaceInputError, read_workspace
 
 if TYPE_CHECKING:
     from app.models.db_models import Document
     from app.prompt_store import PromptStore
+    from app.services.comfyui import ComfyUIClient
+    from app.services.market_data import FinnhubMarketDataClient
 
 
 class TaskRunner:
     """Run one named specialist using LocalAI's parser, uploads, and profile catalog."""
 
-    def __init__(self, registry: AgentRegistry, prompts: PromptStore) -> None:
+    def __init__(
+        self,
+        registry: AgentRegistry,
+        prompts: PromptStore,
+        *,
+        market_data: FinnhubMarketDataClient,
+        comfyui: ComfyUIClient,
+    ) -> None:
         self._registry = registry
         self._prompts = prompts
         self._parser = DocumentParserService()
+        self._market_data = market_data
+        self._comfyui = comfyui
 
     async def run(
         self,
@@ -45,6 +60,12 @@ class TaskRunner:
             result = await self._image_fraud(execution, document)
         elif target == "document":
             result = await self._document_analysis(request, execution, document)
+        elif target == "stock_research":
+            result = await self._stock_research(request, execution, document)
+        elif target == "image_generation":
+            result = await self._image_generation(request, execution)
+        elif target == "software_engineer":
+            result = await self._software_review(request, execution)
         else:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -174,6 +195,88 @@ class TaskRunner:
             prompt_values={"prompt": request.prompt, "content": content[:30_000]},
         )
         return AgentResult(agent=execution.profile.name, answer=answer, artifacts=artifacts)
+
+    async def _stock_research(
+        self, request: TaskRequest, execution: AgentExecution, document: Document | None
+    ) -> AgentResult:
+        if not request.symbol:
+            raise HTTPException(status_code=422, detail="Provide a ticker symbol.")
+        try:
+            snapshot = await self._market_data.snapshot(request.symbol)
+        except MarketDataError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        material = request.context or ""
+        artifacts: dict[str, object] = {"market_data": snapshot}
+        if document is not None:
+            try:
+                parsed = await self._parser.parse(
+                    Path(document.storage_path), DocumentFormat(document.format)
+                )
+            except (OSError, ValueError) as exc:
+                raise HTTPException(
+                    status_code=422, detail=f"Could not parse document: {exc}"
+                ) from exc
+            material = f"{material}\n\n{parsed.text}".strip()
+            artifacts["source_document"] = {
+                "asset_id": document.id,
+                "filename": document.filename,
+            }
+        answer = await self._answer(
+            execution,
+            prompt_values={
+                "prompt": request.prompt,
+                "symbol": request.symbol.upper(),
+                "live_data": json.dumps(snapshot, ensure_ascii=False),
+                "context": material[:30_000],
+            },
+        )
+        return AgentResult(agent=execution.profile.name, answer=answer, artifacts=artifacts)
+
+    async def _image_generation(
+        self, request: TaskRequest, execution: AgentExecution
+    ) -> AgentResult:
+        workflow = request.workflow
+        if not workflow:
+            raise HTTPException(status_code=422, detail="Provide a ComfyUI workflow.")
+        if len(json.dumps(workflow, ensure_ascii=False).encode("utf-8")) > 1_000_000:
+            raise HTTPException(status_code=413, detail="The workflow exceeds the 1 MB limit.")
+        try:
+            submission = await self._comfyui.submit(workflow)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        return AgentResult(
+            agent=execution.profile.name,
+            answer="Workflow submitted to local ComfyUI.",
+            artifacts={"prompt_id": submission["prompt_id"]},
+            limitations=["Image generation runs in ComfyUI; retrieve outputs there."],
+        )
+
+    async def _software_review(
+        self, request: TaskRequest, execution: AgentExecution
+    ) -> AgentResult:
+        try:
+            workspace, sources = await asyncio.to_thread(
+                read_workspace, settings.agent_workspace_root, request.workspace_path
+            )
+        except WorkspaceInputError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        answer = await self._answer(
+            execution,
+            prompt_values={
+                "prompt": request.prompt,
+                "workspace_root": request.workspace_path or ".",
+                "excerpts": workspace,
+            },
+        )
+        return AgentResult(
+            agent=execution.profile.name,
+            answer=answer,
+            artifacts={"source_files": sources},
+            limitations=[
+                "Review used a bounded read-only sample of supported text files.",
+                "No files were modified or commands executed.",
+            ],
+        )
 
     async def _answer(
         self,
