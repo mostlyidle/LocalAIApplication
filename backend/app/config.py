@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     # ── Meeting transcription ───────────────────────────────────────────
     asr_model_dir: str | None = None
     asr_model_name: str = "small.en"
+    asr_backend: Literal["faster-whisper", "mlx-whisper"] = "faster-whisper"
     meeting_audio_queue_size: int = 128
     meeting_pcm_window_ms: int = 2_000
     meeting_enable_rag: bool = False
@@ -54,6 +55,8 @@ class Settings(BaseSettings):
     allowed_extensions: str = (
         ".pdf,.docx,.xlsx,.pptx,.csv,.html,.md,.txt,.png,.jpg,.jpeg,.tiff,.bmp"
     )
+    pdf_parser: Literal["pymupdf", "docling"] = "pymupdf"
+    docling_artifacts_path: str | None = None
 
     # ── API Server ──────────────────────────────────────────────────────
     api_host: str = "0.0.0.0"
@@ -71,6 +74,7 @@ class Settings(BaseSettings):
     # ── SQL Agent ───────────────────────────────────────────────────────
     sql_max_rows: int = 100
     sql_allow_writes: bool = False
+    sql_query_timeout_seconds: float = Field(default=30.0, gt=0)
 
     # ── Rate Limiting ──────────────────────────────────────────────────
     rate_limit_default: str = "60/minute"

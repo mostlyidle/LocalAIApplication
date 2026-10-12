@@ -40,7 +40,7 @@ async def query_database(sql: str, database: str = "default") -> str:
     from app.tools.sql_tools import execute_query, validate_query
 
     try:
-        validated = validate_query(sql)
+        validated = validate_query(sql, database=database)
     except Exception as exc:
         return f"Validation error: {exc}"
 
@@ -60,7 +60,7 @@ async def query_database(sql: str, database: str = "default") -> str:
 
 
 @sql_mcp.tool()
-async def validate_sql(sql: str) -> str:
+async def validate_sql(sql: str, database: str = "default") -> str:
     """Validate a SQL query for safety without executing it.
 
     Checks for forbidden keywords, ensures it's a SELECT query, and
@@ -68,11 +68,12 @@ async def validate_sql(sql: str) -> str:
 
     Args:
         sql: The SQL query to validate.
+        database: Registered connection to validate against.
     """
     from app.tools.sql_tools import validate_query
 
     try:
-        validated = validate_query(sql)
+        validated = validate_query(sql, database=database)
         return f"Valid query: {validated}"
     except Exception as exc:
         return f"UNSAFE: {exc}"

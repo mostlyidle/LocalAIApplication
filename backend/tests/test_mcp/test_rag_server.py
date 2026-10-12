@@ -12,6 +12,7 @@ from app.mcp.servers.rag_server import (
     list_collections,
     search_knowledge_base,
 )
+from app.services.document_parser import ParsedDocument
 
 
 # =============================================================================
@@ -127,7 +128,7 @@ class TestIngestDocument:
                 return_value=mock_parsed,
             ),
             patch(
-                "app.services.document_parser.document_parser_service.chunk_text",
+                "app.services.document_parser.document_parser_service.chunk_document",
                 return_value=mock_chunks,
             ),
             patch(
@@ -141,6 +142,37 @@ class TestIngestDocument:
         assert "Successfully ingested" in result
         assert "1 chunks" in result
         assert "test.txt" in result
+
+    async def test_pdf_ingestion_preserves_page_and_section_metadata(self, tmp_path) -> None:
+        test_file = tmp_path / "report.pdf"
+        test_file.write_bytes(b"fixture")
+        parsed = ParsedDocument(
+            text="Revenue grew. Costs fell.",
+            blocks=[
+                {"text": "Revenue grew.", "page": 1, "section": "Revenue"},
+                {"text": "Costs fell.", "page": 2, "section": "Costs"},
+            ],
+        )
+        with (
+            patch(
+                "app.services.document_parser.document_parser_service.parse",
+                new_callable=AsyncMock,
+                return_value=parsed,
+            ),
+            patch(
+                "app.services.vector_store.vector_store_service.add_documents",
+                new_callable=AsyncMock,
+                return_value=2,
+            ) as add_documents,
+        ):
+            result = await ingest_document(str(test_file), collection="reports")
+        assert "Successfully ingested 2 chunks" in result
+        stored = add_documents.call_args.kwargs
+        assert stored["collection"] == "reports"
+        assert stored["texts"] == ["Revenue grew.", "Costs fell."]
+        assert [metadata["page"] for metadata in stored["metadatas"]] == [1, 2]
+        assert [metadata["section"] for metadata in stored["metadatas"]] == ["Revenue", "Costs"]
+        assert all(metadata["source"] == "report.pdf" for metadata in stored["metadatas"])
 
     async def test_file_not_found(self):
         result = await ingest_document("/nonexistent/path/file.txt")
@@ -167,7 +199,7 @@ class TestIngestDocument:
                 return_value=mock_parsed,
             ),
             patch(
-                "app.services.document_parser.document_parser_service.chunk_text",
+                "app.services.document_parser.document_parser_service.chunk_document",
                 return_value=[],
             ),
         ):

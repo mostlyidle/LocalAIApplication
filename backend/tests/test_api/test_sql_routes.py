@@ -68,12 +68,16 @@ class TestSQLSchemaEndpoint:
 class TestSQLExecuteEndpoint:
     """Tests for POST /api/v1/sql/execute."""
 
-    async def test_selected_database_is_used(self, client: AsyncClient):
-        with patch("app.api.routes.sql.execute_query", AsyncMock(return_value={})) as execute:
+    async def test_selected_database_is_used(self, client: AsyncClient, sql_engine):
+        with (
+            patch("app.tools.sql_tools.get_sql_engine", return_value=sql_engine) as engine,
+            patch("app.api.routes.sql.execute_query", AsyncMock(return_value={})) as execute,
+        ):
             response = await client.post(
                 "/api/v1/sql/execute", json={"sql": "SELECT 1", "database": "secondary"}
             )
         assert response.status_code == 200
+        engine.assert_called_with(name="secondary")
         assert execute.call_args.kwargs["database"] == "secondary"
 
 
