@@ -64,11 +64,11 @@ export function MessageBubble({
           </Badge>
         )}
         {isUser ? (
-          <div className="whitespace-pre-wrap text-sm leading-relaxed">
+          <div className="whitespace-pre-wrap text-base leading-relaxed sm:text-sm">
             {message.content}
           </div>
         ) : (
-          <MarkdownContent content={message.content} className="text-sm leading-relaxed" />
+          <MarkdownContent content={message.content} className="text-base leading-relaxed sm:text-sm" />
         )}
         {isUser && onRemember && canRemember && (
           <Button

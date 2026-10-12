@@ -139,7 +139,7 @@ export default function RAGPage() {
                   aria-label="Retrieval profile"
                   value={agentName}
                   onChange={(e) => setAgentName(e.target.value)}
-                  className="h-11 max-w-full rounded-xl border border-input bg-card px-3 text-sm"
+                  className="h-11 max-w-full rounded-xl border border-input bg-card px-3 text-base sm:text-sm"
                 >
                   <option value="rag">Hybrid retrieval</option>
                   <option value="rag_v2">Hybrid + query rewrites</option>
