@@ -5,10 +5,10 @@ Use this file to resume the approved implementation without repeating completed 
 ## Current position
 
 - Plan: [memory implementation plan](memory-implementation-plan.md)
-- Stage: 1 of 5, identity and ownership (implementation complete)
+- Stage: 2 of 5, conversation continuity (in progress); Stage 1 identity and ownership is complete
 - Branch: `feature/account-memory-stage1`
-- Status: Stage 1 implementation and regression gates complete. A deployment still requires an operator-selected HTTPS origin and matching reverse-proxy settings before remote users can access it.
-- Pushed checkpoints: `9ed6362` (account schema and legacy quarantine), `5863058` (operator-managed credentials), `221f466` (plan and resume notes), `14c6f91` (session endpoints), `c2caa64` (chat/document ownership and stable CSRF), `2bc4743` (meeting ownership), `5852d9d` (WebSocket revalidation), `f63bbbe` (agent API authentication), `1e9def0` (account-owned RAG collections), `cafa5c9` (account-owned named SQL connections), `c10f23d` (block unscoped direct file tools), `51b4ffd` (filesystem path containment), `a50af37` (account-owned agent workspaces), `30fc1ef` (dry-run legacy SQL record assignment), `09a6271` (safe explicit SQL/RAG legacy assignment), `e8181dd` (frontend and native meeting authentication), `560353f` (loopback-only Compose ports), `946260e` (remote proxy frontend configuration), `a6d4c50` (required meeting ownership), `4eb9f7d` (explicit owner required for private records), `ddc4478` (authenticated WebSocket test coverage)
+- Status: Stage 1 implementation and regression gates complete. Stage 2 conversation history/resume and bounded context are implemented; bounded summaries and turn idempotency remain. A deployment still requires an operator-selected HTTPS origin and matching reverse-proxy settings before remote users can access it.
+- Pushed checkpoints: `9ed6362` (account schema and legacy quarantine), `5863058` (operator-managed credentials), `221f466` (plan and resume notes), `14c6f91` (session endpoints), `c2caa64` (chat/document ownership and stable CSRF), `2bc4743` (meeting ownership), `5852d9d` (WebSocket revalidation), `f63bbbe` (agent API authentication), `1e9def0` (account-owned RAG collections), `cafa5c9` (account-owned named SQL connections), `c10f23d` (block unscoped direct file tools), `51b4ffd` (filesystem path containment), `a50af37` (account-owned agent workspaces), `30fc1ef` (dry-run legacy SQL record assignment), `09a6271` (safe explicit SQL/RAG legacy assignment), `e8181dd` (frontend and native meeting authentication), `560353f` (loopback-only Compose ports), `946260e` (remote proxy frontend configuration), `a6d4c50` (required meeting ownership), `4eb9f7d` (explicit owner required for private records), `ddc4478` (authenticated WebSocket test coverage), `63f08b5` (Stage 1 completion notes)
 
 ## Completed checkpoint
 
@@ -46,19 +46,23 @@ Use this file to resume the approved implementation without repeating completed 
 - Documented and narrowed built-in MCP usage to operator-only local stdio. SQL, document, and RAG MCP functions are not account-scoped, so they must not be exposed to shared users or over HTTP. `mcp_servers.json` remains trusted operator configuration and is executed at backend startup; discovered tools are not currently wired into agent execution.
 - Removed the legacy-owner ORM defaults from conversations, documents, and meetings after auditing application constructors; each route/service now passes an owner explicitly. Legacy test records specify the quarantine owner. Added DB tests proving missing owners are rejected. The affected API/service set passes 146 tests; Ruff lint passes with documented legacy exclusions. Ruff format still reports pre-existing drift in several touched test modules, which was not swept into this change.
 - Updated unified chat WebSocket tests to provide the same allowed Origin and authenticated session required by production. The full backend suite now passes (738 tests); full frontend suite passes (297 tests). The only backend warning is the existing Qdrant compatibility check because no server is running during unit tests.
+- Added an owned conversation history panel and refresh recovery in ChatWindow. Only the active conversation ID is stored locally, keyed by authenticated account; selecting/new-chat/sign-out updates or clears it. Restored messages retain agent, execution, and tool-call metadata. Added UI tests for account-scoped restore, history selection, New Chat, and sign-out cleanup.
+- Bounded agent context loading to the latest 40 messages and 40,000 characters, with deterministic timestamp/ID ordering. Older transcript messages remain available in the saved conversation view but are not sent to the model. Added tests for both limits.
+- Stage 2 slice verification: focused backend chat/API tests pass (72); full frontend suite passes (301), TypeScript passes, targeted ESLint has no errors, and Next.js production build succeeds. Existing React `act(...)` test warnings and one existing `<img>` lint warning remain.
 - The first `uv run` attempt could not reach PyPI to build the project environment. Reused the repository's existing `.venv` directly for the successful checks.
 - The implementation time estimate in the plan is explicitly non-binding and does not limit the scope or completion criteria.
 
 ## Not implemented yet
 
+- Conversation summaries, stable client-turn IDs/idempotency, and a full account-isolation history UI refresh/restart browser test remain in Stage 2.
 - The built-in MCP server is intentionally operator-only and local stdio, with no authenticated remote adapter; the shared-user API does not expose these servers. Do not move MCP tools into user-facing agent execution without account-aware authorization.
 - No public hostname or reverse proxy was supplied, so TLS termination and live remote login/WebSocket behavior remain deployment checks rather than verified application behavior.
 
 ## Resume here
 
-1. Next planned work is Stage 2, conversation continuity, as defined in [memory implementation plan](memory-implementation-plan.md).
-2. Before remote use, configure the public HTTPS hostname, TLS proxy, allowed origins, and direct chat WebSocket route as documented in the README; keep all infrastructure and backend ports private.
-3. Keep built-in MCP tools operator-only local stdio. The configured `default` SQL connection remains explicitly shared; custom SQL connections are account-owned.
+1. Add bounded persisted conversation summaries so older turns remain useful without exceeding the model context cap.
+2. Add a client turn ID to WebSocket chat requests and make persistence idempotent for reconnect/retry without duplicating user/assistant turns.
+3. Before remote use, configure the public HTTPS hostname, TLS proxy, allowed origins, and direct chat WebSocket route as documented in the README; keep all infrastructure and backend ports private. Keep built-in MCP tools operator-only local stdio; the configured `default` SQL connection remains explicitly shared.
 
 Do not run built-in MCP servers through HTTP or expose them to shared users. Direct MCP invocation remains a trusted local-operator capability until an authenticated adapter propagates account identity and enforces each tool's resource ownership.
 

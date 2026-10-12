@@ -48,6 +48,8 @@ from app.services.auth import AuthenticatedSession  # noqa: TC001
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()
+MAX_CONTEXT_MESSAGES = 40
+MAX_CONTEXT_CHARACTERS = 40_000
 
 
 # ---------------------------------------------------------------------------
@@ -843,10 +845,20 @@ async def _load_langchain_messages(db: AsyncSession, conversation_id: str, owner
             Message.conversation_id == conversation_id,
             Conversation.owner_id == owner_id,
         )
-        .order_by(Message.created_at)
+        .order_by(Message.created_at.desc(), Message.id.desc())
+        .limit(MAX_CONTEXT_MESSAGES)
     )
     result = await db.execute(stmt)
-    messages = result.scalars().all()
+    recent_messages = list(reversed(result.scalars().all()))
+
+    messages = []
+    context_characters = 0
+    for message in reversed(recent_messages):
+        if context_characters + len(message.content) > MAX_CONTEXT_CHARACTERS:
+            break
+        messages.append(message)
+        context_characters += len(message.content)
+    messages.reverse()
 
     lc_messages = []
     for msg in messages:

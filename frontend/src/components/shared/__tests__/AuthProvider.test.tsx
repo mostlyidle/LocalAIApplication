@@ -8,9 +8,21 @@ vi.mock("@/lib/api", () => ({
 }));
 vi.mock("@/lib/auth-session", () => ({ setCsrfToken: vi.fn() }));
 
-import { AuthenticatedShell, AuthProvider } from "../AuthProvider";
-import { getCurrentAccount, login } from "@/lib/api";
+import { AuthenticatedShell, AuthProvider, useAuth } from "../AuthProvider";
+import { getCurrentAccount, login, logout } from "@/lib/api";
 import { setCsrfToken } from "@/lib/auth-session";
+import { ACTIVE_CONVERSATION_STORAGE_PREFIX } from "@/lib/constants";
+
+const localStorageValues = new Map<string, string>();
+Object.defineProperty(window, "localStorage", {
+  configurable: true,
+  value: {
+    getItem: (key: string) => localStorageValues.get(key) ?? null,
+    setItem: (key: string, value: string) => localStorageValues.set(key, value),
+    removeItem: (key: string) => localStorageValues.delete(key),
+    clear: () => localStorageValues.clear(),
+  },
+});
 
 const session = {
   account: { id: "account-1", username: "alice", display_name: "Alice" },
@@ -21,7 +33,9 @@ describe("AuthProvider", () => {
   beforeEach(() => {
     vi.mocked(getCurrentAccount).mockReset();
     vi.mocked(login).mockReset();
+    vi.mocked(logout).mockReset();
     vi.mocked(setCsrfToken).mockReset();
+    localStorageValues.clear();
   });
 
   it("shows sign in while unauthenticated and opens the app after login", async () => {
@@ -55,5 +69,23 @@ describe("AuthProvider", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Backend unavailable");
     await waitFor(() => expect(screen.queryByText("Protected application")).toBeNull());
+  });
+
+  it("clears the active conversation pointer when signing out", async () => {
+    vi.mocked(getCurrentAccount).mockResolvedValue(session);
+    vi.mocked(logout).mockResolvedValue(undefined);
+    window.localStorage.setItem(`${ACTIVE_CONVERSATION_STORAGE_PREFIX}account-1`, "conversation-1");
+
+    function SignOutButton() {
+      const { signOut } = useAuth();
+      return <button onClick={() => void signOut()}>Sign out</button>;
+    }
+
+    render(<AuthProvider><SignOutButton /></AuthProvider>);
+    await screen.findByRole("button", { name: "Sign out" });
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+
+    await waitFor(() => expect(logout).toHaveBeenCalled());
+    expect(window.localStorage.getItem(`${ACTIVE_CONVERSATION_STORAGE_PREFIX}account-1`)).toBeNull();
   });
 });

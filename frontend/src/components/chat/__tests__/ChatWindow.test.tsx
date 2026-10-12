@@ -10,6 +10,20 @@ import { ChatWindow } from "../ChatWindow";
 const mockSendMessage = vi.fn();
 const mockClearMessages = vi.fn();
 const mockConnect = vi.fn();
+const mockLoadConversation = vi.fn();
+const mockGetConversation = vi.fn();
+const mockGetConversations = vi.fn();
+const localStorageValues = new Map<string, string>();
+
+Object.defineProperty(window, "localStorage", {
+  configurable: true,
+  value: {
+    getItem: (key: string) => localStorageValues.get(key) ?? null,
+    setItem: (key: string, value: string) => localStorageValues.set(key, value),
+    removeItem: (key: string) => localStorageValues.delete(key),
+    clear: () => localStorageValues.clear(),
+  },
+});
 
 let mockChatState = {
   messages: [] as { id: string; role: string; content: string; timestamp: string }[],
@@ -21,7 +35,7 @@ let mockChatState = {
   connect: mockConnect,
   sendMessage: mockSendMessage,
   clearMessages: mockClearMessages,
-  loadConversation: vi.fn(),
+  loadConversation: mockLoadConversation,
 };
 
 vi.mock("@/hooks/useChat", () => ({
@@ -34,6 +48,12 @@ const mockGetAgentCatalog = vi.fn();
 vi.mock("@/lib/api", () => ({
   uploadDocument: (...args: unknown[]) => mockUploadDocument(...args),
   getAgentCatalog: (...args: unknown[]) => mockGetAgentCatalog(...args),
+  getConversation: (...args: unknown[]) => mockGetConversation(...args),
+  getConversations: (...args: unknown[]) => mockGetConversations(...args),
+}));
+
+vi.mock("@/components/shared/AuthProvider", () => ({
+  useAuth: () => ({ account: { id: "account-alice" } }),
 }));
 
 // Mock child components to simplify rendering
@@ -69,7 +89,7 @@ function resetChatState() {
     connect: mockConnect,
     sendMessage: mockSendMessage,
     clearMessages: mockClearMessages,
-    loadConversation: vi.fn(),
+    loadConversation: mockLoadConversation,
   };
 }
 
@@ -80,9 +100,92 @@ function resetChatState() {
 describe("ChatWindow", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorageValues.clear();
     resetChatState();
     mockUploadDocument.mockResolvedValue({ id: "uploaded-doc-1" });
     mockGetAgentCatalog.mockResolvedValue({ agents: [] });
+    mockGetConversation.mockResolvedValue({ id: "conversation-1", title: "Saved", messages: [] });
+    mockGetConversations.mockResolvedValue({ conversations: [] });
+  });
+
+  it("restores the active account conversation after refresh", async () => {
+    window.localStorage.setItem("local-ai-active-conversation:account-alice", "conversation-1");
+    mockGetConversation.mockResolvedValue({
+      id: "conversation-1",
+      title: "Saved",
+      messages: [
+        {
+          id: "message-1",
+          role: "user",
+          content: "Continue this",
+          agent_type: null,
+          execution: null,
+          created_at: "2026-10-12T10:00:00Z",
+          tool_calls: [],
+        },
+        {
+          id: "message-2",
+          role: "assistant",
+          content: "I checked the files.",
+          agent_type: "chat",
+          execution: { agent: "chat" },
+          created_at: "2026-10-12T10:00:01Z",
+          tool_calls: [{
+            id: "tool-1",
+            tool_name: "read_file",
+            tool_input: { path: "notes.md" },
+            tool_output: "contents",
+            duration_ms: 12,
+          }],
+        },
+      ],
+    });
+
+    render(<ChatWindow />);
+
+    await waitFor(() => expect(mockLoadConversation).toHaveBeenCalledWith([
+      expect.objectContaining({ id: "message-1", content: "Continue this" }),
+      expect.objectContaining({
+        id: "message-2",
+        agentType: "chat",
+        toolCalls: [{
+          id: "tool-1",
+          toolName: "read_file",
+          toolInput: JSON.stringify({ path: "notes.md" }),
+          toolOutput: "contents",
+          durationMs: 12,
+        }],
+      }),
+    ], "conversation-1"));
+  });
+
+  it("browses and opens an owned saved conversation", async () => {
+    mockGetConversations.mockResolvedValue({
+      conversations: [{
+        id: "conversation-1",
+        title: "Project notes",
+        created_at: "2026-10-12T10:00:00Z",
+        last_message_at: "2026-10-12T10:01:00Z",
+        message_count: 2,
+      }],
+    });
+
+    render(<ChatWindow />);
+    await userEvent.click(screen.getByRole("button", { name: "History" }));
+    await userEvent.click(await screen.findByRole("button", { name: /Project notes/ }));
+
+    await waitFor(() => expect(mockLoadConversation).toHaveBeenCalledWith([], "conversation-1"));
+    expect(window.localStorage.getItem("local-ai-active-conversation:account-alice")).toBe("conversation-1");
+  });
+
+  it("clears the active conversation pointer for a new chat", async () => {
+    window.localStorage.setItem("local-ai-active-conversation:account-alice", "conversation-1");
+    render(<ChatWindow />);
+
+    await userEvent.click(screen.getByRole("button", { name: "New chat" }));
+
+    expect(mockClearMessages).toHaveBeenCalled();
+    expect(window.localStorage.getItem("local-ai-active-conversation:account-alice")).toBeNull();
   });
 
   it("renders empty state when no messages", () => {
