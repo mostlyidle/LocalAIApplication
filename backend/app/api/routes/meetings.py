@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import json
+import secrets
 import time
 import uuid
 from urllib.parse import urlparse
@@ -27,7 +29,7 @@ from app.dependencies import (
     get_websocket_session,
     websocket_session_is_active,
 )
-from app.models.db_models import DetectedQuestion, Meeting, TranscriptSegment
+from app.models.db_models import DetectedQuestion, Meeting, MeetingStreamTicket, TranscriptSegment
 from app.models.enums import MeetingStatus
 from app.models.schemas import (
     AudioEnvelopeError,
@@ -40,6 +42,7 @@ from app.models.schemas import (
     MeetingSourceEnded,
     MeetingSourceStatusEvent,
     MeetingStatusEvent,
+    MeetingStreamTicketResponse,
     MeetingStopCommand,
     MeetingStopResponse,
     decode_audio_envelope,
@@ -83,6 +86,28 @@ async def get_meeting(
     """Return meeting metadata without audio payloads."""
     meeting = await service.get_meeting(db, meeting_id, authenticated.account.id)
     return await _meeting_response(db, meeting)
+
+
+@router.post("/meetings/{meeting_id}/stream-ticket", response_model=MeetingStreamTicketResponse)
+async def create_meeting_stream_ticket(
+    meeting_id: str,
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    service: MeetingService = Depends(get_meeting_service),  # noqa: B008
+) -> MeetingStreamTicketResponse:
+    """Issue a session-bound bearer ticket for the native meeting WebSocket."""
+    await service.get_meeting(db, meeting_id, authenticated.account.id)
+    ticket = secrets.token_urlsafe(32)
+    db.add(
+        MeetingStreamTicket(
+            token_hash=hashlib.sha256(ticket.encode("utf-8")).hexdigest(),
+            meeting_id=meeting_id,
+            session_id=authenticated.session.id,
+            expires_at=authenticated.session.expires_at,
+        )
+    )
+    await db.commit()
+    return MeetingStreamTicketResponse(ticket=ticket)
 
 
 @router.post("/meetings/{meeting_id}/stop", response_model=MeetingStopResponse)

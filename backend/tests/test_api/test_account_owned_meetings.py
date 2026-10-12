@@ -50,6 +50,7 @@ async def test_meeting_routes_hide_foreign_meetings(
     assert (await client.get(f"/api/v1/meetings/{meeting_id}")).status_code == 404
     assert (await client.post(f"/api/v1/meetings/{meeting_id}/stop")).status_code == 404
     assert (await client.delete(f"/api/v1/meetings/{meeting_id}")).status_code == 404
+    assert (await client.post(f"/api/v1/meetings/{meeting_id}/stream-ticket")).status_code == 404
     with TestClient(app).websocket_connect(
         f"/api/v1/meetings/{meeting_id}/stream", headers={"origin": "http://localhost:3000"}
     ) as websocket:

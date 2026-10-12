@@ -5,6 +5,7 @@ const bridge = vi.hoisted(() => ({
   checkNativeCapabilities: vi.fn(async () => []),
   requestNativePermissions: vi.fn(async () => undefined),
   createConsentedMeeting: vi.fn(),
+  createMeetingStreamTicket: vi.fn(async () => ({ ticket: "test-stream-ticket" })),
   ensureMeetingReady: vi.fn(async () => undefined),
   startNativeCapture: vi.fn(async () => undefined),
   startMeetingTransport: vi.fn(async () => undefined),

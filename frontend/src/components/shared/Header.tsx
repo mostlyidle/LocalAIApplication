@@ -1,7 +1,8 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { Moon, Sun, Monitor } from "lucide-react";
+import { Moon, Sun, Monitor, LogOut } from "lucide-react";
+import { toast } from "sonner";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,6 +13,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import { useTheme } from "next-themes";
+import { useAuth } from "./AuthProvider";
 
 const pageTitles: Record<string, string> = {
   "/": "Dashboard",
@@ -25,6 +27,7 @@ const pageTitles: Record<string, string> = {
 export function Header() {
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
+  const { account, signOut } = useAuth();
 
   const title = pageTitles[pathname] ?? "Local AI";
 
@@ -34,6 +37,19 @@ export function Header() {
       <Separator orientation="vertical" className="h-6" />
       <h2 className="text-sm font-medium">{title}</h2>
       <div className="ml-auto flex items-center gap-2">
+        {account && (
+          <>
+            <span className="hidden text-sm text-muted-foreground sm:inline">{account.display_name}</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => void signOut().catch((error: unknown) => toast.error(error instanceof Error ? error.message : "Sign out failed."))}
+            >
+              <LogOut className="mr-2 h-4 w-4" />
+              Sign out
+            </Button>
+          </>
+        )}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="icon" className="h-8 w-8">

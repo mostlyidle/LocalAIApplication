@@ -8,7 +8,7 @@ Use this file to resume the approved implementation without repeating completed 
 - Stage: 1 of 5, identity and ownership
 - Branch: `feature/account-memory-stage1`
 - Status: in progress; do not expose this checkpoint as a shared-account deployment yet
-- Pushed checkpoints: `9ed6362` (account schema and legacy quarantine), `5863058` (operator-managed credentials), `221f466` (plan and resume notes), `14c6f91` (session endpoints), `c2caa64` (chat/document ownership and stable CSRF), `2bc4743` (meeting ownership), `5852d9d` (WebSocket revalidation), `f63bbbe` (agent API authentication), `1e9def0` (account-owned RAG collections), `cafa5c9` (account-owned named SQL connections), `c10f23d` (block unscoped direct file tools), `51b4ffd` (filesystem path containment), `a50af37` (account-owned agent workspaces), `30fc1ef` (dry-run legacy SQL record assignment)
+- Pushed checkpoints: `9ed6362` (account schema and legacy quarantine), `5863058` (operator-managed credentials), `221f466` (plan and resume notes), `14c6f91` (session endpoints), `c2caa64` (chat/document ownership and stable CSRF), `2bc4743` (meeting ownership), `5852d9d` (WebSocket revalidation), `f63bbbe` (agent API authentication), `1e9def0` (account-owned RAG collections), `cafa5c9` (account-owned named SQL connections), `c10f23d` (block unscoped direct file tools), `51b4ffd` (filesystem path containment), `a50af37` (account-owned agent workspaces), `30fc1ef` (dry-run legacy SQL record assignment), `09a6271` (safe explicit SQL/RAG legacy assignment)
 
 ## Completed checkpoint
 
@@ -37,18 +37,21 @@ Use this file to resume the approved implementation without repeating completed 
 - Fixed filesystem path containment to use resolved path ancestry rather than string prefixes, preventing sibling directories such as `data-private` from matching an allowed `data` root. Added a regression test; all 21 filesystem-tool tests pass. Focused Ruff/format checks pass with unrelated pre-existing lint findings excluded.
 - Scoped software-review workspace access to the authenticated account directory under `AGENT_WORKSPACE_ROOT/<account-id>`. Missing assignments fail closed with 422. Added workspace helper, task-runner, and route coverage, and updated README operator instructions. The combined focused workspace/task set passes 23 tests.
 - Added `account_admin assign-legacy`, which previews explicitly selected quarantined conversations/documents/meetings and RAG collections by default and requires `--apply` to transfer them. Missing and foreign-owned records are rejected; repeat assignment to the same account is safe. RAG imports verify the live collection exists, uses a supported schema, and is not Dataloader-owned. Added README CLI instructions and tests for dry-run/apply, foreign-owner rejection, and shared-loader rejection. The focused account-admin tests pass 12 cases.
+- Added the frontend sign-in gate, account display, and sign-out. API calls include cookies, mutating requests send the in-memory CSRF token, uploads and meeting calls follow the same rule, and 204 logout responses are handled. Signed-out views do not mount the app shell or chat socket.
+- Added a native meeting stream-ticket endpoint for Tauri: ticket hashes are stored server-side, each ticket is tied to its meeting and parent login session, and socket revalidation checks that session by ID. Tauri requests the ticket through the authenticated UI before opening its WebSocket; a handshake test verifies the ticket header. The migration test verifies the new ticket table.
+- Verified frontend: 297 tests pass, TypeScript passes, and targeted ESLint has no errors. Verified Rust transport: `cargo fmt --check` and 19 Rust tests pass. Verified focused backend meeting/auth/migration suite: 17 tests pass. Qdrant emits its existing compatibility warning because no server is running; Rust emits existing native deprecation/dead-code warnings.
 - The first `uv run` attempt could not reach PyPI to build the project environment. Reused the repository's existing `.venv` directly for the successful checks.
 - The implementation time estimate in the plan is explicitly non-binding and does not limit the scope or completion criteria.
 
 ## Not implemented yet
 
 - Direct MCP process/resource access remains outside the HTTP account session boundary, including SQL and RAG MCP tools. Path-based direct HTTP tool execution is now blocked, but MCP server process access still needs an explicit trust boundary.
-- Frontend sign-in and shared-deployment network boundary.
+- Shared-deployment network boundary: Compose infrastructure and app ports are still exposed for the existing local-development setup; the frontend now has sign-in, but remote deployment still needs an HTTPS/reverse-proxy and internal-service policy.
 
 ## Resume here
 
 1. Define the local MCP trust boundary. HTTP direct calls to path-based document/filesystem tools are blocked; MCP servers run separately and are not protected by the app's account session. The API's configured `default` SQL connection is explicitly shared; custom connections are private.
-2. Add frontend sign-in and the shared-deployment network boundary.
+2. Harden Compose/reverse-proxy exposure for a shared deployment; frontend sign-in is implemented, and native meeting transport now uses session-bound tickets.
 3. Replace the temporary legacy-owner defaults after every creation path supplies the authenticated account.
 
 ## Important safety decision

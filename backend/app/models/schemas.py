@@ -274,6 +274,12 @@ class MeetingCreateRequest(BaseModel):
         return value.astimezone(UTC)
 
 
+class MeetingStreamTicketResponse(BaseModel):
+    """Session-expiring native-client capability for one authenticated meeting stream."""
+
+    ticket: str
+
+
 class MeetingResponse(BaseModel):
     """Meeting lifecycle and consent metadata returned by the REST API."""
 

@@ -15,7 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession  # noqa: TC002
 from app.services.auth import (
     SESSION_COOKIE,
     AuthenticatedSession,
+    resolve_meeting_stream_ticket,
     resolve_session,
+    resolve_session_by_id,
     verify_csrf,
 )
 from app.services.database import get_app_session
@@ -47,6 +49,7 @@ async def get_authenticated_session(
 
 async def get_websocket_session(
     websocket: WebSocket,
+    meeting_id: str | None = None,
 ) -> AuthenticatedSession:
     """Authenticate WebSockets and reject browser origins outside app CORS policy."""
     from app.config import settings
@@ -65,19 +68,23 @@ async def get_websocket_session(
     factory = get_app_session_factory()
     async with factory() as db:
         authenticated = await resolve_session(db, websocket.cookies.get(SESSION_COOKIE))
+        if authenticated is None and meeting_id is not None:
+            authenticated = await resolve_meeting_stream_ticket(
+                db, websocket.headers.get("x-meeting-stream-ticket"), meeting_id
+            )
     if authenticated is None:
         raise WebSocketException(code=4401, reason="Authentication required.")
     return authenticated
 
 
-async def websocket_session_is_active(websocket: WebSocket, session_id: str) -> bool:
+async def websocket_session_is_active(_websocket: WebSocket, session_id: str) -> bool:
     """Recheck a long-lived WebSocket's session using a short-lived DB session."""
     from app.services.database import get_app_session_factory
 
     factory = get_app_session_factory()
     async with factory() as db:
-        authenticated = await resolve_session(db, websocket.cookies.get(SESSION_COOKIE))
-    return authenticated is not None and authenticated.session.id == session_id
+        authenticated = await resolve_session_by_id(db, session_id)
+    return authenticated is not None
 
 
 def get_llm() -> LLMService:

@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
+from fastapi import WebSocketException
 from starlette.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from app.config import settings
 from app.main import create_app
-from app.models.db_models import Account
+from app.models.db_models import Account, AccountSession, Meeting, MeetingStreamTicket
 from app.services.accounts import hash_password
 
 if TYPE_CHECKING:
@@ -108,6 +111,115 @@ async def test_agent_and_resource_routes_require_a_session(client: AsyncClient) 
     ]
     responses = await asyncio.gather(*requests)
     assert [response.status_code for response in responses] == [401] * len(requests)
+
+
+async def test_meeting_stream_ticket_is_meeting_scoped_and_obeys_session_revocation(
+    db_session: AsyncSession,
+) -> None:
+    from app.services.auth import resolve_meeting_stream_ticket
+
+    account_id = "11111111-1111-4111-8111-111111111111"
+    session = AccountSession(
+        id="active-session",
+        account_id=account_id,
+        token_hash="a" * 64,
+        csrf_token="csrf",
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
+    )
+    raw_ticket = "native-meeting-ticket"
+    ticket_hash = hashlib.sha256(raw_ticket.encode("utf-8")).hexdigest()
+    db_session.add_all(
+        [
+            Account(
+                id=account_id,
+                username="alice",
+                display_name="Alice",
+                password_hash="!test!",
+            ),
+            session,
+            Meeting(
+                id="meeting-owned",
+                owner_id=account_id,
+                consent_policy_version="v1",
+                consent_attested_at=datetime.now(UTC),
+            ),
+            MeetingStreamTicket(
+                token_hash=ticket_hash,
+                meeting_id="meeting-owned",
+                session_id=session.id,
+                expires_at=session.expires_at,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    authorized = await resolve_meeting_stream_ticket(db_session, raw_ticket, "meeting-owned")
+    wrong_meeting = await resolve_meeting_stream_ticket(db_session, raw_ticket, "other-meeting")
+    assert authorized is not None and authorized.account.id == account_id
+    assert wrong_meeting is None
+
+    session.revoked_at = datetime.now(UTC)
+    await db_session.commit()
+    revoked = await resolve_meeting_stream_ticket(db_session, raw_ticket, "meeting-owned")
+    assert revoked is None
+
+
+async def test_meeting_websocket_dependency_accepts_native_ticket(
+    async_engine, monkeypatch
+) -> None:
+    from types import SimpleNamespace
+
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+    from app.dependencies import get_websocket_session
+    from app.models.db_models import MeetingStreamTicket
+
+    factory = async_sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
+    monkeypatch.setattr("app.services.database.get_app_session_factory", lambda: factory)
+    account_id = "33333333-3333-4333-8333-333333333333"
+    session = AccountSession(
+        id="native-session",
+        account_id=account_id,
+        token_hash="c" * 64,
+        csrf_token="csrf",
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
+    )
+    ticket = "A" * 43
+    async with factory() as db:
+        db.add_all(
+            [
+                Account(
+                    id=account_id,
+                    username="native-user",
+                    display_name="Native User",
+                    password_hash="!test!",
+                ),
+                session,
+                Meeting(
+                    id="native-meeting",
+                    owner_id=account_id,
+                    consent_policy_version="v1",
+                    consent_attested_at=datetime.now(UTC),
+                ),
+                MeetingStreamTicket(
+                    token_hash=hashlib.sha256(ticket.encode("utf-8")).hexdigest(),
+                    meeting_id="native-meeting",
+                    session_id=session.id,
+                    expires_at=session.expires_at,
+                ),
+            ]
+        )
+        await db.commit()
+
+    websocket = SimpleNamespace(
+        headers={"origin": "tauri://localhost", "x-meeting-stream-ticket": ticket},
+        cookies={},
+    )
+    authenticated = await get_websocket_session(websocket, meeting_id="native-meeting")
+    assert authenticated.account.id == account_id
+
+    with pytest.raises(WebSocketException):
+        await get_websocket_session(websocket, meeting_id="other-meeting")
 
 
 def test_chat_websocket_rejects_untrusted_origin() -> None:

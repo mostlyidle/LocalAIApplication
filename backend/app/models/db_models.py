@@ -57,6 +57,22 @@ class AccountSession(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
 
+class MeetingStreamTicket(Base):
+    """Native meeting WebSocket capability bound to one login and meeting."""
+
+    __tablename__ = "meeting_stream_tickets"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    meeting_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("meetings.id", ondelete="CASCADE"), index=True
+    )
+    session_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("account_sessions.id", ondelete="CASCADE"), index=True
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
 class RagCollection(Base):
     """Private ownership registry for application-managed vector collections."""
 

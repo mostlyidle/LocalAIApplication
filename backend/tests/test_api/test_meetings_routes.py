@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import struct
 from datetime import UTC, datetime
@@ -11,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from app.api.routes.meetings import _is_allowed_origin
 from app.dependencies import get_meeting_service
-from app.models.db_models import Meeting
+from app.models.db_models import Meeting, MeetingStreamTicket
 from app.models.enums import MeetingStatus
 from app.services.meeting_answers import MeetingAnswerService
 from app.services.meetings import MeetingService
@@ -64,6 +65,22 @@ class TestMeetingRoutes:
         deleted = await client.delete(f"/api/v1/meetings/{meeting_id}")
         assert deleted.status_code == 200
         assert (await client.get(f"/api/v1/meetings/{meeting_id}")).status_code == 404
+
+    async def test_native_stream_ticket_is_stored_as_a_hash(
+        self, client: AsyncClient, db_session: AsyncSession
+    ):
+        meeting_response = await client.post("/api/v1/meetings", json=_consent())
+        meeting_id = meeting_response.json()["id"]
+
+        response = await client.post(f"/api/v1/meetings/{meeting_id}/stream-ticket")
+
+        assert response.status_code == 200
+        raw_ticket = response.json()["ticket"]
+        stored = await db_session.get(
+            MeetingStreamTicket, hashlib.sha256(raw_ticket.encode("utf-8")).hexdigest()
+        )
+        assert stored is not None
+        assert stored.meeting_id == meeting_id
 
 
 def _frame_with_sequence(
