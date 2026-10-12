@@ -169,9 +169,14 @@ class TestSQLAgent:
         ):
             from app.agents.sql_agent import sql_agent_node
 
-            state = _make_state(user_input="Show top customers")
+            state = _make_state(
+                user_input="Show top customers",
+                memory_context='[{"type":"preference","content":"Use concise explanations."}]',
+            )
             result = await sql_agent_node(state)
 
+        prompt_messages = mock_service.get_chat_model().bind_tools().ainvoke.call_args.args[0]
+        assert "Use concise explanations" in prompt_messages[1].content
         assert result["current_agent"] == "sql"
         assert result["metadata"]["agent_used"] == "sql"
 
@@ -513,9 +518,14 @@ class TestWebAgent:
         with patch("app.agents.web_agent.llm_service", mock_service):
             from app.agents.web_agent import web_agent_node
 
-            state = _make_state(user_input="Research Python trends")
+            state = _make_state(
+                user_input="Research Python trends",
+                memory_context='[{"type":"preference","content":"Use concise research summaries."}]',
+            )
             result = await web_agent_node(state)
 
+        prompt_messages = mock_service.get_chat_model().bind_tools().ainvoke.call_args.args[0]
+        assert "Use concise research summaries" in prompt_messages[1].content
         assert result["current_agent"] == "web"
         assert result["metadata"]["agent_used"] == "web"
 
