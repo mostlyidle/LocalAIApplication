@@ -13,6 +13,7 @@ from qdrant_client.http.exceptions import (
     UnexpectedResponse,
 )
 
+from app.api.middleware.error_handler import AppError
 from app.services.bm25 import BM25_DEFAULTS, BM25_MODEL_NAME, Bm25Encoder, FastEmbedBm25
 
 if TYPE_CHECKING:
@@ -41,20 +42,34 @@ PROVENANCE_PAGE_FIELDS = ("page", "page_start", "page_end")
 T = TypeVar("T")
 
 
-class RagStoreError(RuntimeError):
+class RagStoreError(AppError, RuntimeError):
     """Base error for RAG collection operations."""
+
+    code = "RAG_STORE_ERROR"
+    status_code = 503
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message, code=self.code, status_code=self.status_code)
 
 
 class RagCollectionConflictError(RagStoreError):
     """The selected collection cannot safely accept the requested schema."""
 
+    code = "RAG_COLLECTION_CONFLICT"
+    status_code = 409
+
 
 class RagCollectionSchemaError(RagStoreError):
     """The selected collection is not a supported RAG collection."""
 
+    code = "RAG_COLLECTION_SCHEMA_ERROR"
+    status_code = 422
+
 
 class RagStoreUnavailableError(RagStoreError):
     """Qdrant could not complete a required store operation."""
+
+    code = "RAG_STORE_UNAVAILABLE"
 
 
 @dataclass(frozen=True)

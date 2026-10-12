@@ -295,7 +295,10 @@ class TaskRunner:
                 "context": material[:30_000],
             },
         )
-        return AgentResult(agent=execution.profile.name, answer=answer, artifacts=artifacts)
+        return AgentResult(
+            agent=execution.profile.name, answer=answer, artifacts=artifacts,
+            limitations=snapshot.get("warnings", []),
+        )
 
     async def _image_generation(
         self, request: TaskRequest, execution: AgentExecution

@@ -75,3 +75,23 @@ async def test_comfyui_submits_workflow_once_and_returns_queue_id() -> None:
     assert len(requests) == 1
     assert requests[0].url.path == "/prompt"
     assert requests[0].read() == b'{"prompt":{"1":{"class_type":"SaveImage","inputs":{}}}}'
+
+
+async def test_finnhub_preserves_partial_provider_failure_warnings() -> None:
+    def respond(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/quote"):
+            return httpx.Response(200, json={"c": 125.0})
+        return httpx.Response(429)
+
+    client = FinnhubMarketDataClient(
+        api_key="test", cache_seconds=60, transport=httpx.MockTransport(respond)
+    )
+    try:
+        snapshot = await client.snapshot("AAPL")
+        cached = await client.snapshot("AAPL")
+    finally:
+        await client.close()
+    assert snapshot["quote"]["current"] == 125.0
+    assert len(snapshot["warnings"]) == 2
+    assert all("rate limit" in warning for warning in snapshot["warnings"])
+    assert cached["warnings"] == snapshot["warnings"]
