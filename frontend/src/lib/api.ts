@@ -16,6 +16,7 @@ import {
   ragIngestSchema,
   ragCollectionsSchema,
   toolsListSchema,
+  agentCatalogSchema,
 } from "./schemas";
 
 class ApiError extends Error {
@@ -79,6 +80,10 @@ export async function getConversation(id: string) {
 
 export async function deleteConversation(id: string) {
   return apiFetch<{ deleted: boolean }>(`/chat/conversations/${id}`, { method: "DELETE" });
+}
+
+export async function getAgentCatalog() {
+  return apiFetch("/agents", undefined, agentCatalogSchema);
 }
 
 // --- Documents ---

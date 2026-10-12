@@ -163,3 +163,41 @@ async def test_software_engineer_reviews_only_configured_workspace_files(
     assert "return 42" in prompt
     assert result.artifacts["source_files"] == ["review.py"]
     assert len(result.limitations) == 2
+
+
+async def test_rag_task_preserves_hybrid_citation_provenance() -> None:
+    search = SimpleNamespace(
+        passages=[
+            {
+                "content": "Relevant evidence.",
+                "score": 0.04,
+                "score_type": "rrf",
+                "metadata": {
+                    "filename": "guide.pdf",
+                    "page": 3,
+                    "source_chunk_id": "chunk-3",
+                },
+            }
+        ],
+        retrieval={"strategy": "hybrid_rrf"},
+    )
+    model = SimpleNamespace(ainvoke=AsyncMock(return_value=SimpleNamespace(content="Grounded answer.")))
+    with (
+        patch(
+            "app.services.hybrid_vector_store.hybrid_vector_store_service.search_with_provenance",
+            new_callable=AsyncMock,
+            return_value=search,
+        ) as search_with_provenance,
+        patch("app.services.task_runner.llm_service.get_chat_model", return_value=model),
+    ):
+        result = await _runner().run(
+            TaskRequest(prompt="What is relevant?", agent_name="rag_v2", collection="manuals"),
+            request_id="request-rag",
+        )
+
+    search_with_provenance.assert_awaited_once()
+    assert search_with_provenance.call_args.kwargs["collection"] == "manuals"
+    assert search_with_provenance.call_args.kwargs["agent_name"] == "rag_v2"
+    assert result.artifacts["citations"][0]["filename"] == "guide.pdf"
+    assert result.artifacts["citations"][0]["page"] == 3
+    assert result.artifacts["citations"][0]["score_type"] == "rrf"

@@ -17,7 +17,14 @@ export const AGENT_LABELS: Record<string, string> = {
   sql: "SQL Agent",
   document: "Document Agent",
   rag: "RAG Agent",
+  rag_v2: "RAG Agent v2",
   web: "Web Research",
+  image_analysis: "Image Analysis",
+  image_fraud: "Image Fraud Triage",
+  stock_research: "Stock Research",
+  software_engineer: "Software Engineer",
+  image_generation: "Image Generation",
+  document_analytics: "Document Analytics",
 };
 
 export const AGENT_COLORS: Record<string, string> = {
@@ -25,5 +32,12 @@ export const AGENT_COLORS: Record<string, string> = {
   sql: "bg-emerald-500",
   document: "bg-amber-500",
   rag: "bg-violet-500",
+  rag_v2: "bg-indigo-600",
   web: "bg-rose-500",
+  image_analysis: "bg-cyan-500",
+  image_fraud: "bg-orange-500",
+  stock_research: "bg-green-600",
+  software_engineer: "bg-slate-600",
+  image_generation: "bg-fuchsia-500",
+  document_analytics: "bg-amber-600",
 };

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+from contextvars import ContextVar, Token
 from typing import Any, AsyncIterator
 
 import httpx
@@ -10,6 +12,7 @@ from langchain_ollama import ChatOllama
 
 from app.api.middleware.error_handler import LLMConnectionError, LLMTimeoutError
 from app.config import settings
+from app.models.profile_schemas import ResolvedInferenceOptions
 
 logger = structlog.get_logger(__name__)
 
@@ -27,6 +30,18 @@ class LLMService:
     def __init__(self) -> None:
         self._base_url = settings.ollama_base_url
         self._timeout = settings.ollama_request_timeout
+        self._profile_inference: ContextVar[ResolvedInferenceOptions | None] = ContextVar(
+            "llm_profile_inference", default=None
+        )
+
+    @contextmanager
+    def inference_context(self, inference: ResolvedInferenceOptions):
+        """Apply one validated profile's options to all model calls in this task."""
+        token: Token[ResolvedInferenceOptions | None] = self._profile_inference.set(inference)
+        try:
+            yield
+        finally:
+            self._profile_inference.reset(token)
 
     def get_chat_model(
         self,
@@ -46,6 +61,13 @@ class LLMService:
         Returns:
             A configured ChatOllama instance.
         """
+        inference = self._profile_inference.get()
+        if inference is not None:
+            options = inference.ollama_options()
+            model = inference.model
+            temperature = inference.temperature
+            max_tokens = inference.max_output_tokens
+            kwargs.update({key: value for key, value in options.items() if key not in {"temperature", "num_predict"}})
         return ChatOllama(
             model=model or settings.ollama_chat_model,
             base_url=self._base_url,
