@@ -63,6 +63,7 @@ class DocumentParserService:
     def __init__(self) -> None:
         self._docling_converter: Any | None = None
         self._docling_lock = threading.Lock()
+        self._docling_gate = asyncio.Lock()
         self._text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=settings.rag_chunk_size,
             chunk_overlap=settings.rag_chunk_overlap,
@@ -231,7 +232,20 @@ class DocumentParserService:
                     page_count=len(document.pages), blocks=blocks,
                 )
 
-        return await asyncio.to_thread(_convert)
+        # Wait without occupying a worker; cancellation must not release an active conversion.
+        await self._docling_gate.acquire()
+        worker = asyncio.create_task(asyncio.to_thread(_convert))
+
+        def _conversion_finished(task: asyncio.Task[ParsedDocument]) -> None:
+            self._docling_gate.release()
+            if not task.cancelled() and (error := task.exception()) is not None:
+                logger.error(
+                    "docling_conversion_failed",
+                    exc_info=(type(error), error, error.__traceback__),
+                )
+
+        worker.add_done_callback(_conversion_finished)
+        return await asyncio.shield(worker)
 
     async def _parse_pdf(self, file_path: Path) -> ParsedDocument:
         """Parse PDF using PyMuPDF with pdfplumber for tables."""
