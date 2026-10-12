@@ -126,7 +126,7 @@ describe("MessageBubble", () => {
   it("renders timestamp", () => {
     render(<MessageBubble message={makeMessage()} />);
     // The timestamp rendering depends on locale, but should be present
-    const timeElem = document.querySelector(".opacity-50");
+    const timeElem = screen.getByText(new Date("2025-01-15T10:30:00Z").toLocaleTimeString());
     expect(timeElem).toBeInTheDocument();
   });
 
@@ -138,11 +138,11 @@ describe("MessageBubble", () => {
     expect(bubble).toBeInTheDocument();
   });
 
-  it("applies muted background for assistant messages", () => {
+  it("applies a card background for assistant messages", () => {
     const { container } = render(
       <MessageBubble message={makeMessage({ role: "assistant" })} />
     );
-    const bubble = container.querySelector(".bg-muted");
+    const bubble = container.querySelector(".bg-card");
     expect(bubble).toBeInTheDocument();
   });
 
