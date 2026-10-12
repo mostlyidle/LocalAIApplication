@@ -19,12 +19,55 @@ def _generate_uuid() -> str:
     return str(uuid.uuid4())
 
 
+LEGACY_ACCOUNT_ID = "00000000-0000-4000-8000-000000000000"
+
+
+class Account(Base):
+    """A sign-in identity and owner of private application data."""
+
+    __tablename__ = "accounts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
+    username: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    display_name: Mapped[str] = mapped_column(String(128))
+    password_hash: Mapped[str] = mapped_column(String(255))
+    is_enabled: Mapped[bool] = mapped_column(default=True)
+    memory_enabled: Mapped[bool] = mapped_column(default=False)
+    past_chat_recall_enabled: Mapped[bool] = mapped_column(default=False)
+    memory_epoch: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
+
+class AccountSession(Base):
+    """A revocable server-side session; only the token digest is persisted."""
+
+    __tablename__ = "account_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
+    account_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("accounts.id", ondelete="CASCADE"), index=True
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
 class Conversation(Base):
     """A chat conversation containing multiple messages."""
 
     __tablename__ = "conversations"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
+    owner_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("accounts.id", ondelete="RESTRICT"),
+        index=True,
+        default=LEGACY_ACCOUNT_ID,
+    )
     title: Mapped[str] = mapped_column(String(255), default="New Conversation")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(
@@ -86,6 +129,12 @@ class Document(Base):
     __tablename__ = "documents"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
+    owner_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("accounts.id", ondelete="RESTRICT"),
+        index=True,
+        default=LEGACY_ACCOUNT_ID,
+    )
     filename: Mapped[str] = mapped_column(String(255))
     format: Mapped[str] = mapped_column(String(20))
     size_bytes: Mapped[int] = mapped_column(Integer)
@@ -113,6 +162,12 @@ class Meeting(Base):
     __tablename__ = "meetings"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
+    owner_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("accounts.id", ondelete="RESTRICT"),
+        index=True,
+        default=LEGACY_ACCOUNT_ID,
+    )
     status: Mapped[str] = mapped_column(String(20), default="created", index=True)
     consent_policy_version: Mapped[str] = mapped_column(String(100), nullable=False)
     consent_attested_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
@@ -144,7 +199,9 @@ class TranscriptSegment(Base):
     """A local ASR transcript segment belonging to a meeting."""
 
     __tablename__ = "transcript_segments"
-    __table_args__ = (UniqueConstraint("meeting_id", "sequence", name="uq_transcript_meeting_sequence"),)
+    __table_args__ = (
+        UniqueConstraint("meeting_id", "sequence", name="uq_transcript_meeting_sequence"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
     meeting_id: Mapped[str] = mapped_column(
@@ -175,7 +232,10 @@ class DetectedQuestion(Base):
         String(36), ForeignKey("meetings.id", ondelete="CASCADE"), index=True
     )
     transcript_segment_id: Mapped[str | None] = mapped_column(
-        String(36), ForeignKey("transcript_segments.id", ondelete="SET NULL"), nullable=True, index=True
+        String(36),
+        ForeignKey("transcript_segments.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     question: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
