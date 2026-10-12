@@ -8,7 +8,7 @@ Use this file to resume the approved implementation without repeating completed 
 - Stage: 1 of 5, identity and ownership
 - Branch: `feature/account-memory-stage1`
 - Status: in progress; do not expose this checkpoint as a shared-account deployment yet
-- Pushed checkpoints: `9ed6362` (account schema and legacy quarantine), `5863058` (operator-managed credentials), `221f466` (plan and resume notes), `14c6f91` (session endpoints), `c2caa64` (chat/document ownership and stable CSRF), `2bc4743` (meeting ownership), `5852d9d` (WebSocket revalidation), `f63bbbe` (agent API authentication), `1e9def0` (account-owned RAG collections), `cafa5c9` (account-owned named SQL connections), `c10f23d` (block unscoped direct file tools), `51b4ffd` (filesystem path containment), `a50af37` (account-owned agent workspaces), `30fc1ef` (dry-run legacy SQL record assignment), `09a6271` (safe explicit SQL/RAG legacy assignment), `e8181dd` (frontend and native meeting authentication)
+- Pushed checkpoints: `9ed6362` (account schema and legacy quarantine), `5863058` (operator-managed credentials), `221f466` (plan and resume notes), `14c6f91` (session endpoints), `c2caa64` (chat/document ownership and stable CSRF), `2bc4743` (meeting ownership), `5852d9d` (WebSocket revalidation), `f63bbbe` (agent API authentication), `1e9def0` (account-owned RAG collections), `cafa5c9` (account-owned named SQL connections), `c10f23d` (block unscoped direct file tools), `51b4ffd` (filesystem path containment), `a50af37` (account-owned agent workspaces), `30fc1ef` (dry-run legacy SQL record assignment), `09a6271` (safe explicit SQL/RAG legacy assignment), `e8181dd` (frontend and native meeting authentication), `560353f` (loopback-only Compose ports), `946260e` (remote proxy frontend configuration)
 
 ## Completed checkpoint
 
@@ -42,19 +42,24 @@ Use this file to resume the approved implementation without repeating completed 
 - Verified frontend: 297 tests pass, TypeScript passes, and targeted ESLint has no errors. Verified Rust transport: `cargo fmt --check` and 19 Rust tests pass. Verified focused backend meeting/auth/migration suite: 17 tests pass. Qdrant emits its existing compatibility warning because no server is running; Rust emits existing native deprecation/dead-code warnings.
 - Bound Ollama, ChromaDB, Qdrant, backend, and frontend Compose host ports to `127.0.0.1`; internal Compose service networking is unchanged. README states local-only defaults and the TLS/API/WebSocket configuration needed for remote use.
 - Made frontend API, WebSocket, and server-side backend URLs build-configurable. Same-origin browser mode now derives `ws://` or `wss://` from the page origin; README documents HTTP API rewrite versus direct WebSocket proxying and the origin/cookie settings. `docker compose config --quiet`, the production frontend Docker build, and the focused same-origin constants test (8 tests) pass.
+- Required `owner_id` when the meeting service creates a meeting; its only application route already passes the authenticated account. Service tests now identify their legacy fixture owner explicitly; focused meeting lifecycle tests pass (18 tests).
+- Documented and narrowed built-in MCP usage to operator-only local stdio. SQL, document, and RAG MCP functions are not account-scoped, so they must not be exposed to shared users or over HTTP. `mcp_servers.json` remains trusted operator configuration and is executed at backend startup; discovered tools are not currently wired into agent execution.
 - The first `uv run` attempt could not reach PyPI to build the project environment. Reused the repository's existing `.venv` directly for the successful checks.
 - The implementation time estimate in the plan is explicitly non-binding and does not limit the scope or completion criteria.
 
 ## Not implemented yet
 
-- Direct MCP process/resource access remains outside the HTTP account session boundary, including SQL and RAG MCP tools. Path-based direct HTTP tool execution is now blocked, but MCP server process access still needs an explicit trust boundary.
+- MCP servers remain inherently outside the HTTP account session boundary. The supported boundary is operator-only local stdio; no authenticated remote MCP adapter is implemented.
+- Conversation, document, and meeting ORM models still default missing owners to the disabled legacy account. App routes set the authenticated owner, but the defaults should be removed after direct construction paths and legacy-only tests are explicit.
 - Remote shared-deployment boundary: frontend can now be built for same-origin HTTPS/WSS proxying, but deployment still needs an operator-supplied hostname, TLS reverse proxy, and matching CORS/WebSocket origin configuration. No real remote hostname is available to verify.
 
 ## Resume here
 
-1. Define and enforce the local MCP trust boundary. HTTP direct calls to path-based document/filesystem tools are blocked; MCP servers run separately and are not protected by the app's account session. The API's configured `default` SQL connection is explicitly shared; custom connections are private.
+1. Remove model-level legacy-owner defaults after confirming direct ORM construction paths; authenticated app routes already pass owner IDs. The API's configured `default` SQL connection is explicitly shared; custom connections are private.
 2. Audit every creation path and replace temporary legacy-owner defaults once each caller supplies the authenticated account.
 3. For an actual shared deployment, configure the operator's hostname, TLS reverse proxy, and matching CORS/WebSocket origins; frontend same-origin URL support and native meeting ticket auth are implemented.
+
+Do not run built-in MCP servers through HTTP or expose them to shared users. Direct MCP invocation remains a trusted local-operator capability until an authenticated adapter propagates account identity and enforces each tool's resource ownership.
 
 ## Important safety decision
 

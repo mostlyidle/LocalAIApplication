@@ -6,7 +6,9 @@ for local tool access.
 
 Usage:
     python -m app.mcp.servers.sql_server          # stdio (default)
-    uvicorn app.mcp.servers.sql_server:mcp.app    # HTTP (if needed)
+
+This server is an operator-only local tool. Do not expose it through HTTP in
+the shared account application; its tools do not carry account ownership.
 """
 
 from __future__ import annotations
