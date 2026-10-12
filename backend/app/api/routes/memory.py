@@ -12,6 +12,7 @@ from app.api.middleware.error_handler import NotFoundError
 from app.dependencies import get_authenticated_session, get_db
 from app.models.db_models import Account, Conversation, Memory, Message
 from app.models.memory_schemas import (
+    ConversationMemorySettingsUpdate,
     MemoryCreate,
     MemoryDeleteAllResponse,
     MemoryListResponse,
@@ -23,6 +24,27 @@ from app.models.memory_schemas import (
 from app.services.auth import AuthenticatedSession  # noqa: TC001
 
 router = APIRouter()
+
+
+@router.patch("/memory/conversations/{conversation_id}/settings")
+async def update_conversation_memory_settings(
+    conversation_id: str,
+    body: ConversationMemorySettingsUpdate,
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+) -> dict[str, bool]:
+    """Set recall eligibility only for a conversation owned by this account."""
+    conversation = await db.scalar(
+        select(Conversation).where(
+            Conversation.id == conversation_id,
+            Conversation.owner_id == authenticated.account.id,
+        )
+    )
+    if conversation is None:
+        raise NotFoundError("Conversation", conversation_id)
+    conversation.exclude_from_memory = body.exclude_from_memory
+    await db.commit()
+    return {"exclude_from_memory": conversation.exclude_from_memory}
 
 
 @router.get("/memory", response_model=MemoryListResponse)

@@ -57,6 +57,7 @@ export const conversationSummarySchema = z.object({
   created_at: z.string(),
   last_message_at: z.string(),
   message_count: z.number(),
+  exclude_from_memory: z.boolean().optional().default(false),
 });
 
 export const conversationsListSchema = z.array(conversationSummarySchema)
@@ -65,6 +66,7 @@ export const conversationsListSchema = z.array(conversationSummarySchema)
 export const conversationDetailSchema = z.object({
   id: z.string(),
   title: z.string(),
+  exclude_from_memory: z.boolean().optional().default(false),
   messages: z.array(z.object({
     id: z.string(),
     client_turn_id: z.string().nullable().optional(),
@@ -111,6 +113,10 @@ export const memoryListSchema = z.object({
 export const memorySettingsSchema = z.object({
   memory_enabled: z.boolean(),
   past_chat_recall_enabled: z.boolean(),
+});
+
+export const conversationMemorySettingsSchema = z.object({
+  exclude_from_memory: z.boolean(),
 });
 
 export const memoryDeleteAllSchema = z.object({

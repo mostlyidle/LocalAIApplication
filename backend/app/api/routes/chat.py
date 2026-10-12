@@ -501,6 +501,7 @@ async def list_conversations(
             message_count=len(conv.messages),
             last_message_at=conv.messages[-1].created_at if conv.messages else conv.created_at,
             created_at=conv.created_at,
+            exclude_from_memory=conv.exclude_from_memory,
         )
         for conv in conversations
     ]
@@ -539,6 +540,7 @@ async def get_conversation(
         "title": conversation.title,
         "created_at": conversation.created_at.isoformat(),
         "updated_at": conversation.updated_at.isoformat(),
+        "exclude_from_memory": conversation.exclude_from_memory,
         "messages": [
             {
                 "id": msg.id,

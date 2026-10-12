@@ -5,7 +5,18 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    false,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -114,6 +125,9 @@ class Conversation(Base):
         DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
     )
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    exclude_from_memory: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false()
+    )
     summary_through_message_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     summary_message_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     summary_revision: Mapped[int] = mapped_column(Integer, default=0, server_default="0")

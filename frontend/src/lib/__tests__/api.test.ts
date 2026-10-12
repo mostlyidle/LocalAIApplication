@@ -30,6 +30,7 @@ import {
   getMemorySettings,
   updateMemorySettings,
   deleteAllMemories,
+  updateConversationMemorySettings,
   login,
   logout,
   ApiError,
@@ -258,6 +259,15 @@ describe("API Client", () => {
       globalThis.fetch = deleteSpy;
       expect((await deleteAllMemories()).deleted_count).toBe(1);
       expect(deleteSpy.mock.calls[0][1].method).toBe("DELETE");
+    });
+
+    it("updates a conversation's cross-chat recall exclusion", async () => {
+      const spy = mockFetchSuccess({ exclude_from_memory: true });
+      globalThis.fetch = spy;
+      const result = await updateConversationMemorySettings("conversation 1", { exclude_from_memory: true });
+      expect(result.exclude_from_memory).toBe(true);
+      expect(spy.mock.calls[0][0]).toContain("/memory/conversations/conversation%201/settings");
+      expect(JSON.parse(spy.mock.calls[0][1].body)).toEqual({ exclude_from_memory: true });
     });
   });
 
