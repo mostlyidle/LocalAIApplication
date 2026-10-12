@@ -66,6 +66,11 @@ def extract_text_from_html(html: str) -> str:
     Removes scripts, styles, nav, footer, and other non-content elements.
     """
     from bs4 import BeautifulSoup
+    from trafilatura import extract
+
+    extracted = extract(html, include_comments=False, include_tables=True)
+    if extracted and extracted.strip():
+        return extracted.strip()
 
     soup = BeautifulSoup(html, "html.parser")
 
