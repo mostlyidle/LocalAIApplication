@@ -8,6 +8,7 @@ Use this file to resume the approved implementation without repeating completed 
 - Stage: 1 of 5, identity and ownership
 - Branch: `feature/account-memory-stage1`
 - Status: in progress; do not expose this checkpoint as a shared-account deployment yet
+- Pushed checkpoints: `9ed6362` (account schema and legacy quarantine), `5863058` (operator-managed credentials)
 
 ## Completed checkpoint
 
@@ -19,6 +20,7 @@ Use this file to resume the approved implementation without repeating completed 
 - Added credential and reset/revocation tests.
 - Verified with `pytest tests/test_services/test_accounts.py tests/test_services/test_account_identity_migration.py -q` (9 passed), Ruff lint, and Ruff format check.
 - The first `uv run` attempt could not reach PyPI to build the project environment. Reused the repository's existing `.venv` directly for the successful checks.
+- The implementation time estimate in the plan is explicitly non-binding and does not limit the scope or completion criteria.
 
 ## Not implemented yet
 

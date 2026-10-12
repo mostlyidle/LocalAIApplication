@@ -197,7 +197,7 @@ Frontend changes include login, an owned conversation list, resume-after-refresh
 
 ## 10. Five implementation checkpoints
 
-Estimates are engineering effort, not guaranteed elapsed time. Plan for roughly 11–16 working days, including shared-account isolation and end-to-end validation; exact effort depends on the desktop client and migration needs.
+The initial planning estimate was roughly 11–16 working days. Treat it as a non-binding reference, not a time limit; implementation continues until the acceptance gates pass. The actual effort depends on the desktop client and migration needs.
 
 | Stage | Deliverable | Acceptance gate | Estimate |
 |---|---|---|---|
@@ -207,7 +207,7 @@ Estimates are engineering effort, not guaranteed elapsed time. Plan for roughly 
 | 4. Past-chat recall | Eligible summaries, Qdrant index, durable outbox worker, source links | Relevant owned past discussion is recalled after restart; queued jobs recover and deleted sources never resurface | 2–3 days |
 | 5. Full-stack verification | Migration checks, account isolation matrix, real Ollama/browser tests, docs | Complete release gates below pass and remaining provider-specific gaps are stated | 2–3 days |
 
-Each checkpoint should be a small reviewed diff with the associated checks. After implementation is authorized, use a feature branch with verified checkpoint commits and pushes, following the user's previously approved workflow; do not commit application changes directly to `main`. This planning document itself is not a request to implement or merge.
+Each checkpoint should be a small reviewed diff with the associated checks. Implementation is authorized; use a feature branch with verified checkpoint commits and pushes, following the user's previously approved workflow. Do not commit application changes directly to `main`.
 
 ## 11. Test and release gates
 
