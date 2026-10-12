@@ -72,6 +72,17 @@ async def send_message(
             execution_metadata=json.dumps(execution.model_dump(mode="json")),
         )
         db.add(assistant_msg)
+        tool_calls_data = execution.artifacts.get("tool_calls", [])
+        await db.flush()
+        for tc in tool_calls_data:
+            db.add(
+                ToolCallRecord(
+                    message_id=assistant_msg.id,
+                    tool_name=tc.get("tool_name", ""),
+                    tool_input=json.dumps(tc.get("tool_input", {})),
+                    tool_output=tc.get("tool_output"),
+                )
+            )
         if conversation.title == "New Conversation":
             conversation.title = body.content[:80].strip()
         await db.commit()
@@ -79,6 +90,14 @@ async def send_message(
             conversation_id=conversation_id,
             content=execution.answer,
             agent_used=execution.agent,
+            tool_calls=[
+                ToolCallInfo(
+                    tool_name=tc.get("tool_name", ""),
+                    tool_input=tc.get("tool_input", {}),
+                    tool_output=tc.get("tool_output"),
+                )
+                for tc in tool_calls_data
+            ],
             execution=execution.model_dump(mode="json"),
         )
 
@@ -244,11 +263,27 @@ async def chat_stream(websocket: WebSocket) -> None:
                     )
                     agent_used = selected.agent
                     token_chunks.append(selected.answer)
+                    tool_calls_data = selected.artifacts.get("tool_calls", [])
                     execution_metadata = selected.model_dump(mode="json")
                     completion_metadata = {
                         "agent_used": selected.agent,
                         "execution": execution_metadata,
                     }
+                    for tc in tool_calls_data:
+                        await websocket.send_json(
+                            {
+                                "type": "tool_call",
+                                "tool": tc.get("tool_name", ""),
+                                "input": tc.get("tool_input", {}),
+                            }
+                        )
+                        await websocket.send_json(
+                            {
+                                "type": "tool_result",
+                                "tool": tc.get("tool_name", ""),
+                                "output": tc.get("tool_output"),
+                            }
+                        )
                     await websocket.send_json({"type": "token", "content": selected.answer})
                 else:
                     existing_messages = await _load_ws_history(conversation_id)
@@ -494,7 +529,10 @@ async def _execute_selected_profile(
         return AgentResult(
             agent=profile.name,
             answer=_extract_response_content(state),
-            artifacts={"retrieval": metadata.get("retrieval")} if metadata.get("retrieval") else {},
+            artifacts={
+                **({"retrieval": metadata["retrieval"]} if metadata.get("retrieval") else {}),
+                **({"tool_calls": state["tool_calls"]} if state.get("tool_calls") else {}),
+            },
             metadata=ExecutionMetadata(
                 request_id=str(uuid.uuid4()),
                 target=profile.target,
@@ -516,12 +554,15 @@ async def _execute_selected_profile(
             if getattr(message, "content", None)
         ]
         if prior_turns:
+            history_header = "Prior conversation:\n"
+            current_request = "\n\nCurrent request:\n" + body.content
+            history_limit = max(0, 32_000 - len(history_header) - len(current_request) - 1)
+            history = "\n".join(prior_turns)[-history_limit:] if history_limit else ""
             task.prompt = (
-                "Prior conversation:\n"
-                + "\n".join(prior_turns)
-                + "\n\nCurrent request:\n"
-                + body.content
-            )[:19_500]
+                f"{history_header}{history}\n{current_request}"
+                if history_limit
+                else body.content
+            )
 
     document = None
     if task.asset_id:
