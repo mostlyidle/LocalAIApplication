@@ -10,7 +10,9 @@ Provides:
 
 from __future__ import annotations
 
+import asyncio
 import json
+import time
 import uuid
 from collections.abc import Awaitable, Callable  # noqa: TC003
 from typing import Any
@@ -26,7 +28,13 @@ from app.agents.orchestrator import run_agent, stream_agent
 from app.api.middleware.error_handler import AppError
 from app.api.middleware.rate_limiting import limiter
 from app.config import settings
-from app.dependencies import get_authenticated_session, get_db, get_websocket_session
+from app.dependencies import (
+    WEBSOCKET_SESSION_RECHECK_SECONDS,
+    get_authenticated_session,
+    get_db,
+    get_websocket_session,
+    websocket_session_is_active,
+)
 from app.models.db_models import Conversation, Document, Message, ToolCallRecord
 from app.models.enums import MessageRole
 from app.models.profile_schemas import AgentResult, ExecutionMetadata, TaskRequest
@@ -219,10 +227,28 @@ async def chat_stream(
     await websocket.accept()
     logger.info("websocket_connected")
     owner_id = authenticated.account.id
+    session_id = authenticated.session.id
+    last_session_check = time.monotonic()
 
     try:
         while True:
-            raw = await websocket.receive_text()
+            try:
+                raw = await asyncio.wait_for(
+                    websocket.receive_text(), timeout=WEBSOCKET_SESSION_RECHECK_SECONDS
+                )
+            except TimeoutError:
+                raw = None
+
+            if raw is None or time.monotonic() - last_session_check >= (
+                WEBSOCKET_SESSION_RECHECK_SECONDS
+            ):
+                if not await websocket_session_is_active(websocket, session_id):
+                    await websocket.close(code=4401, reason="Session expired or revoked.")
+                    return
+                last_session_check = time.monotonic()
+                if raw is None:
+                    continue
+
             try:
                 data = json.loads(raw)
             except json.JSONDecodeError:
@@ -358,6 +384,12 @@ async def chat_stream(
                 # lets the client start another turn before the delayed
                 # completion below, which can then reset that newer turn.
                 stream_failed = True
+
+            if time.monotonic() - last_session_check >= WEBSOCKET_SESSION_RECHECK_SECONDS:
+                if not await websocket_session_is_active(websocket, session_id):
+                    await websocket.close(code=4401, reason="Session expired or revoked.")
+                    return
+                last_session_check = time.monotonic()
 
             # Persist user + assistant messages to database
             assistant_content = "".join(token_chunks)

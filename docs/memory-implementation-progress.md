@@ -8,11 +8,11 @@ Use this file to resume the approved implementation without repeating completed 
 - Stage: 1 of 5, identity and ownership
 - Branch: `feature/account-memory-stage1`
 - Status: in progress; do not expose this checkpoint as a shared-account deployment yet
-- Pushed checkpoints: `9ed6362` (account schema and legacy quarantine), `5863058` (operator-managed credentials), `221f466` (plan and resume notes), `14c6f91` (session endpoints)
+- Pushed checkpoints: `9ed6362` (account schema and legacy quarantine), `5863058` (operator-managed credentials), `221f466` (plan and resume notes), `14c6f91` (session endpoints), `c2caa64` (chat/document ownership and stable CSRF), `2bc4743` (meeting ownership)
 
 ## Completed checkpoint
 
-- Added account and revocable-session database models. Sessions store only a token digest.
+- Added account and revocable-session database models. Session cookie tokens are stored only as digests; CSRF tokens are random and bound to their server-side session.
 - Added an Alembic migration that creates a disabled `legacy-import-disabled` account and assigns existing conversations, documents, and meetings to it. Existing content is preserved and cannot be mistaken for a real user's data.
 - Added non-null owner IDs to those three top-level data models. New rows temporarily default to the disabled legacy owner until authenticated route creation is wired in.
 - Added a migration regression test that seeds all three record types, upgrades the database, and checks the disabled quarantine owner and preserved record IDs.
@@ -20,30 +20,30 @@ Use this file to resume the approved implementation without repeating completed 
 - Added credential and reset/revocation tests.
 - Verified with `pytest tests/test_services/test_accounts.py tests/test_services/test_account_identity_migration.py -q` (9 passed), Ruff lint, and Ruff format check.
 - Added `/api/v1/auth/login`, `/auth/me`, and `/auth/logout` with random opaque cookie sessions, SHA-256 token digests, HttpOnly/SameSite cookies, configurable Secure cookies and expiry, session revocation, and a session-bound CSRF token required for mutations.
-- Added REST session/CSRF and WebSocket origin/session dependencies, plus login, CSRF replay, logout, credential, and migration tests. Chat streaming now uses the WebSocket dependency; meeting streaming remains pending.
+- Added REST session/CSRF and WebSocket origin/session dependencies, plus login, CSRF replay, logout, credential, and migration tests. Chat and meeting streams use the WebSocket dependency.
 - Verified the auth slice with 12 focused tests, Ruff lint, and Ruff format check. Tests emit one existing Qdrant client-version warning because no Qdrant server is running.
 - Enforced account ownership on chat and document REST routes. Conversation history, listing, continuation, deletion, uploaded-document analysis/read/delete, and chat attachments now require the owner ID from the authenticated session. Cross-account IDs return 404.
-- Wired chat streaming to the authenticated WebSocket dependency, which checks the browser origin and resolves the session using a short-lived DB session. Session revocation is checked when opening the stream; periodic revalidation during a long-running connection remains to be added.
+- Wired chat streaming to the authenticated WebSocket dependency, which checks the browser origin and resolves the session using a short-lived DB session.
 - Added cross-account chat/document tests and updated API/WebSocket fixtures.
 - `/auth/me` now performs a read-only refresh using the session's stable CSRF token. Migration `20261012_07` replaces stored CSRF digests with session-bound tokens and revokes existing sessions that require reauthentication. Added a migration test for this transition.
 - Reverified the full account/chat/document/auth focused set with 87 passing tests, Ruff lint, and Ruff format check. One Qdrant client-version warning remains because no Qdrant server is running.
 - Enforced account ownership on meeting creation, read, stop, delete, and audio WebSocket claim/start/audio/stop/failure paths. Added cross-account route and stream tests; 28 meeting/auth tests pass. The service module has three pre-existing Ruff UP041 suggestions; targeted checks ignoring that unrelated rule pass.
+- Chat and meeting WebSockets now revalidate session expiry/revocation at least every 60 seconds, including idle streams. A revoked meeting session stops the meeting before the socket closes. Added integration tests for both stream types; the combined account/chat/document/meeting/migration set passes 112 tests. Ruff and formatting pass on changed files; the three existing meeting-service UP041 suggestions were excluded from lint.
 - The first `uv run` attempt could not reach PyPI to build the project environment. Reused the repository's existing `.venv` directly for the successful checks.
 - The implementation time estimate in the plan is explicitly non-binding and does not limit the scope or completion criteria.
 
 ## Not implemented yet
 
-- Ownership filters and authorization for meetings, RAG collections, SQL connections, workspace roots, direct tools/tasks, agents, and MCP.
+- Ownership filters and authorization for RAG collections, SQL connections, workspace roots, direct tools/tasks, agents, and MCP.
 - Dry-run and explicit legacy data assignment/import command.
 - Frontend sign-in and shared-deployment network boundary.
 
 ## Resume here
 
-1. Add periodic session revocation/expiry checks to long-lived chat and meeting streams. Meeting ownership is now enforced on REST and WebSocket paths.
-2. Enforce ownership for RAG collections, SQL connections, workspace roots, direct tools/tasks, agents, and MCP; review every direct access surface.
-3. Add dry-run and explicit assignment for quarantined legacy records.
-4. Add frontend sign-in and the shared-deployment network boundary.
-5. Replace the temporary legacy-owner defaults after every creation path supplies the authenticated account.
+1. Enforce ownership for RAG collections, SQL connections, workspace roots, direct tools/tasks, agents, and MCP; review every direct access surface.
+2. Add dry-run and explicit assignment for quarantined legacy records.
+3. Add frontend sign-in and the shared-deployment network boundary.
+4. Replace the temporary legacy-owner defaults after every creation path supplies the authenticated account.
 
 ## Important safety decision
 

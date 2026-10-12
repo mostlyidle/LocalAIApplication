@@ -20,10 +20,12 @@ from sqlalchemy.ext.asyncio import (
 from app.api.middleware.error_handler import AppError
 from app.config import settings
 from app.dependencies import (
+    WEBSOCKET_SESSION_RECHECK_SECONDS,
     get_authenticated_session,
     get_db,
     get_meeting_service,
     get_websocket_session,
+    websocket_session_is_active,
 )
 from app.models.db_models import DetectedQuestion, Meeting, TranscriptSegment
 from app.models.enums import MeetingStatus
@@ -131,6 +133,19 @@ async def meeting_stream(
 
     session_id = str(uuid.uuid4())
     event_task: asyncio.Task[None] | None = None
+    last_session_check = time.monotonic()
+
+    async def check_session() -> bool:
+        nonlocal last_session_check
+        if time.monotonic() - last_session_check < WEBSOCKET_SESSION_RECHECK_SECONDS:
+            return True
+        if await websocket_session_is_active(websocket, authenticated.session.id):
+            last_session_check = time.monotonic()
+            return True
+        await service.stop_meeting(db, meeting_id, authenticated.account.id)
+        await websocket.close(code=4401, reason="Session expired or revoked.")
+        return False
+
     try:
         meeting = await service.claim_stream(db, meeting_id, session_id, authenticated.account.id)
         event_queue = service.event_queue(meeting_id, session_id)
@@ -138,7 +153,17 @@ async def meeting_stream(
         await _send_status(websocket, meeting)
 
         while True:
-            frame = await websocket.receive()
+            try:
+                frame = await asyncio.wait_for(
+                    websocket.receive(), timeout=WEBSOCKET_SESSION_RECHECK_SECONDS
+                )
+            except TimeoutError:
+                if not await check_session():
+                    return
+                continue
+
+            if not await check_session():
+                return
             if frame.get("type") == "websocket.disconnect":
                 return
 
