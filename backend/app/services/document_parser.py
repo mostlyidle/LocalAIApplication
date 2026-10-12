@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import csv
 import io
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -27,11 +28,13 @@ class ParsedDocument:
         tables: list[dict[str, Any]] | None = None,
         metadata: dict[str, Any] | None = None,
         page_count: int | None = None,
+        blocks: list[dict[str, Any]] | None = None,
     ) -> None:
         self.text = text
         self.tables = tables or []
         self.metadata = metadata or {}
         self.page_count = page_count
+        self.blocks = blocks or []
 
     @property
     def word_count(self) -> int:
@@ -58,6 +61,8 @@ class DocumentParserService:
     """
 
     def __init__(self) -> None:
+        self._docling_converter: Any | None = None
+        self._docling_lock = threading.Lock()
         self._text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=settings.rag_chunk_size,
             chunk_overlap=settings.rag_chunk_overlap,
@@ -136,8 +141,102 @@ class DocumentParserService:
 
     # ── Format-specific parsers ─────────────────────────────────────
 
+    def chunk_document(
+        self,
+        document: ParsedDocument,
+        metadata: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Chunk parsed blocks while preserving page and section provenance."""
+        if not document.blocks:
+            return self.chunk_text(document.text, metadata)
+        chunks = []
+        for block in document.blocks:
+            block_metadata = {**(metadata or {}), **{k: v for k, v in block.items() if k != "text"}}
+            for chunk in self.chunk_text(block["text"], block_metadata):
+                chunk["metadata"]["chunk_index"] = len(chunks)
+                chunks.append(chunk)
+        return chunks
+
+    async def _parse_pdf_docling(self, file_path: Path) -> ParsedDocument:
+        """Convert PDFs with local layout/table weights and OCR downloads disabled."""
+        configured = settings.docling_artifacts_path
+        artifacts = Path(configured).expanduser() if configured else None
+        if artifacts is None or not artifacts.is_absolute() or not artifacts.is_dir():
+            raise DocumentParseError(
+                "Docling requires DOCLING_ARTIFACTS_PATH pointing to an absolute "
+                "provisioned directory."
+            )
+
+        def _convert() -> ParsedDocument:
+            with self._docling_lock:
+                try:
+                    from docling.datamodel.base_models import ConversionStatus, InputFormat
+                    from docling.datamodel.pipeline_options import (
+                        EasyOcrOptions,
+                        PdfPipelineOptions,
+                    )
+                    from docling.document_converter import DocumentConverter, PdfFormatOption
+                    from docling_core.types.doc import DocItemLabel, TableItem
+                except ImportError as exc:
+                    raise DocumentParseError(
+                        "Install Docling with uv sync --extra documents"
+                    ) from exc
+
+                if self._docling_converter is None:
+                    options = PdfPipelineOptions(
+                        artifacts_path=artifacts.resolve(),
+                        enable_remote_services=False,
+                        document_timeout=120,
+                        do_ocr=True,
+                        do_table_structure=True,
+                        ocr_options=EasyOcrOptions(lang=["en"], download_enabled=False, use_gpu=False),
+                    )
+                    self._docling_converter = DocumentConverter(format_options={
+                        InputFormat.PDF: PdfFormatOption(pipeline_options=options),
+                    })
+                result = self._docling_converter.convert(
+                    file_path, max_file_size=settings.max_upload_size_bytes,
+                    max_num_pages=1_000, raises_on_error=True,
+                )
+                if result.status != ConversionStatus.SUCCESS:
+                    raise DocumentParseError("Docling could not completely convert this PDF.")
+                document = result.document
+                blocks: list[dict[str, Any]] = []
+                tables: list[dict[str, Any]] = []
+                section = ""
+                for item, _level in document.iterate_items():
+                    pages = [int(prov.page_no) for prov in item.prov]
+                    page_metadata = {"page": min(pages), "page_end": max(pages)} if pages else {}
+                    if isinstance(item, TableItem):
+                        frame = item.export_to_dataframe(doc=document)
+                        tables.append({
+                            **({"page": min(pages)} if pages else {}),
+                            "headers": [str(column) for column in frame.columns],
+                            "rows": [
+                                [str(cell) for cell in row]
+                                for row in frame.itertuples(index=False, name=None)
+                            ],
+                        })
+                        text = item.export_to_markdown(doc=document)
+                    else:
+                        text = getattr(item, "text", "")
+                        if item.label in {DocItemLabel.SECTION_HEADER, DocItemLabel.TITLE}:
+                            section = text.strip()
+                    if text.strip():
+                        blocks.append({"text": text, **page_metadata, "section": section})
+                return ParsedDocument(
+                    text="\n\n".join(block["text"] for block in blocks),
+                    tables=tables,
+                    metadata={"format": "pdf", "filename": file_path.name, "parser": "docling"},
+                    page_count=len(document.pages), blocks=blocks,
+                )
+
+        return await asyncio.to_thread(_convert)
+
     async def _parse_pdf(self, file_path: Path) -> ParsedDocument:
         """Parse PDF using PyMuPDF with pdfplumber for tables."""
+        if settings.pdf_parser == "docling":
+            return await self._parse_pdf_docling(file_path)
 
         def _sync_parse() -> ParsedDocument:
             import fitz  # PyMuPDF
@@ -177,6 +276,7 @@ class DocumentParserService:
                 tables=tables,
                 metadata={"format": "pdf", "filename": file_path.name},
                 page_count=len(pages_text),
+                blocks=[{"text": text, "page": page} for page, text in enumerate(pages_text, 1)],
             )
 
         return await asyncio.to_thread(_sync_parse)

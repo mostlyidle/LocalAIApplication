@@ -128,8 +128,8 @@ async def ingest_document(
     parsed = await parser.parse(file_path, doc_format)
 
     # Chunk the text
-    chunks = parser.chunk_text(
-        parsed.text,
+    chunks = parser.chunk_document(
+        parsed,
         metadata={
             "source": doc.filename,
             "document_id": doc.id,

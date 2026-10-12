@@ -42,8 +42,8 @@ async def ingest_document(
     parsed = await parse_document_file(file_path)
 
     # Chunk the text
-    chunks = document_parser_service.chunk_text(
-        parsed.text,
+    chunks = document_parser_service.chunk_document(
+        parsed,
         metadata={
             "source": file_path.name,
             "document_id": doc_id,
