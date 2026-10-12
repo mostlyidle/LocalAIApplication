@@ -13,10 +13,27 @@ interface MessageBubbleProps {
   message: ChatMessage;
   onRemember?: (message: ChatMessage) => void;
   canRemember?: boolean;
+  onOpenConversation?: (conversationId: string) => void;
+  canOpenSources?: boolean;
 }
 
-export function MessageBubble({ message, onRemember, canRemember = true }: MessageBubbleProps) {
+export function MessageBubble({
+  message,
+  onRemember,
+  canRemember = true,
+  onOpenConversation,
+  canOpenSources = true,
+}: MessageBubbleProps) {
   const isUser = message.role === "user";
+  const memorySources = Array.isArray(message.execution?.artifacts?.memory_sources)
+    ? (message.execution.artifacts.memory_sources as Record<string, unknown>[]).filter(
+        (source) =>
+          source !== null &&
+          typeof source === "object" &&
+          typeof source.conversation_id === "string" &&
+          typeof source.title === "string",
+      )
+    : [];
 
   return (
     <div
@@ -82,6 +99,31 @@ export function MessageBubble({ message, onRemember, canRemember = true }: Messa
                   </li>
                 ))}
               </ul>
+            )}
+            {memorySources.length > 0 && (
+              <div className="mt-2">
+                <p className="font-medium">Past conversations used for context</p>
+                <ul className="mt-1 space-y-1">
+                  {memorySources.map((source) => (
+                    <li key={String(source.conversation_id)}>
+                      {onOpenConversation ? (
+                        <Button
+                          type="button"
+                          variant="link"
+                          size="xs"
+                          className="h-auto p-0 text-xs"
+                          disabled={!canOpenSources}
+                          onClick={() => onOpenConversation(String(source.conversation_id))}
+                        >
+                          Open: {String(source.title)}
+                        </Button>
+                      ) : (
+                        <span>{String(source.title)}</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
             {message.execution.limitations?.map((limitation, index) => (
               <p key={index} className="mt-2 text-muted-foreground">{limitation}</p>
