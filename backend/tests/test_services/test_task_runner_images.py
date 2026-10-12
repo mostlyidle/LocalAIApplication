@@ -178,7 +178,15 @@ async def test_stock_research_combines_live_snapshot_and_user_context() -> None:
         )
     )
     model = SimpleNamespace(ainvoke=AsyncMock(return_value=SimpleNamespace(content="Research.")))
-    with patch("app.services.task_runner.llm_service.get_chat_model", return_value=model):
+    memory = '[{"type":"preference","content":"Keep investment summaries concise."}]'
+    with (
+        patch("app.services.task_runner.llm_service.get_chat_model", return_value=model),
+        patch(
+            "app.services.memory_context.load_account_memory_context",
+            new_callable=AsyncMock,
+            return_value=memory,
+        ),
+    ):
         result = await _runner(market_data=market_data).run(
             TaskRequest(
                 prompt="Assess risks.",
@@ -187,14 +195,40 @@ async def test_stock_research_combines_live_snapshot_and_user_context() -> None:
                 context="Company notes.",
             ),
             request_id="request-stock",
+            owner_id=LEGACY_ACCOUNT_ID,
         )
 
     market_data.snapshot.assert_awaited_once_with("aapl")
-    prompt = model.ainvoke.call_args.args[0][1].content
+    messages = model.ainvoke.call_args.args[0]
+    prompt = messages[-1].content
     assert "Finnhub" in prompt
     assert "Company notes." in prompt
+    assert memory in messages[1].content
     assert result.artifacts["market_data"]["symbol"] == "AAPL"
     assert result.limitations == ["News is unavailable"]
+
+
+async def test_document_task_receives_memory_in_a_separate_prompt_message() -> None:
+    memory = '[{"type":"preference","content":"Use short summaries."}]'
+    model = SimpleNamespace(ainvoke=AsyncMock(return_value=SimpleNamespace(content="Summary.")))
+    with (
+        patch("app.services.task_runner.llm_service.get_chat_model", return_value=model),
+        patch(
+            "app.services.memory_context.load_account_memory_context",
+            new_callable=AsyncMock,
+            return_value=memory,
+        ),
+    ):
+        result = await _runner().run(
+            TaskRequest(prompt="Summarize this report.", target="document", context="Revenue increased."),
+            request_id="request-document-memory",
+            owner_id=LEGACY_ACCOUNT_ID,
+        )
+
+    messages = model.ainvoke.call_args.args[0]
+    assert memory in messages[1].content
+    assert "Revenue increased." in messages[-1].content
+    assert result.answer == "Summary."
 
 
 async def test_image_generation_submits_bounded_workflow() -> None:
@@ -225,14 +259,24 @@ async def test_software_engineer_reviews_only_configured_workspace_files(
     (other_workspace / "private.py").write_text("other-account-secret", encoding="utf-8")
     monkeypatch.setattr("app.services.task_runner.settings.agent_workspace_root", tmp_path)
     model = SimpleNamespace(ainvoke=AsyncMock(return_value=SimpleNamespace(content="Looks good.")))
-    with patch("app.services.task_runner.llm_service.get_chat_model", return_value=model):
+    memory = '[{"type":"preference","content":"Prefer concise code reviews."}]'
+    with (
+        patch("app.services.task_runner.llm_service.get_chat_model", return_value=model),
+        patch(
+            "app.services.memory_context.load_account_memory_context",
+            new_callable=AsyncMock,
+            return_value=memory,
+        ),
+    ):
         result = await _runner().run(
             TaskRequest(prompt="Review this project.", target="software_engineer"),
             request_id="request-review",
             owner_id=account_id,
         )
 
-    prompt = model.ainvoke.call_args.args[0][1].content
+    messages = model.ainvoke.call_args.args[0]
+    prompt = messages[-1].content
+    assert memory in messages[1].content
     assert "return 42" in prompt
     assert "other-account-secret" not in prompt
     assert result.artifacts["source_files"] == ["review.py"]
