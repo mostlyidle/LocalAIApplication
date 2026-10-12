@@ -45,6 +45,18 @@ capture, and live model inference were not rerun for this frontend redesign.
 Reduced-motion support is defined in the shared stylesheet; OS preference
 emulation was not exercised in Safari.
 
+## Local Docker preview
+
+The existing `localai-e2e` Compose project's frontend was rebuilt and refreshed
+from this feature branch with `--no-deps`. The Docker Turbopack production build
+passed; `local-ai-frontend` and `local-ai-backend` both report healthy. HTTP checks
+confirmed the new page title and mascot favicon reference. Safari verified the
+live sign-in screen at `http://localhost:3000` without a session-load error.
+Use that hostname for the current backend's configured browser origin.
+
+The running frontend contains the redesign before its draft PR is merged. The
+temporary synthetic servers are stopped; the Docker app uses the existing backend.
+
 ## Browser findings addressed
 
 - Sign-in now spans the sidebar provider's flex wrapper instead of occupying a
