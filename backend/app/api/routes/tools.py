@@ -36,6 +36,7 @@ from app.models.schemas import (
 )
 from app.services.auth import AuthenticatedSession  # noqa: TC001
 from app.services.rag_access import collection_access
+from app.services.sql_access import sql_connection_access
 from app.tools import (
     all_tools,
     calculator_tools,
@@ -152,6 +153,20 @@ async def execute_tool(
         )
         if access in {"foreign", "unassigned"}:
             raise NotFoundError("Collection", collection_name)
+    if body.tool_name in {"sql_query_tool", "sql_schema_tool", "sql_validate_tool"}:
+        database_name = body.arguments.get("database", "default")
+        if not isinstance(database_name, str):
+            raise HTTPException(status_code=422, detail="Invalid SQL connection name.")
+        access = await sql_connection_access(
+            db, name=database_name, owner_id=authenticated.account.id
+        )
+        if access == "inactive":
+            raise HTTPException(
+                status_code=409,
+                detail="Re-register this SQL connection after the application restarts.",
+            )
+        if access not in {"owned", "shared"}:
+            raise NotFoundError("SQL connection", database_name)
 
     start_time = time.perf_counter()
 
