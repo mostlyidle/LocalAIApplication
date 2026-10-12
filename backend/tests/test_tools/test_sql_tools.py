@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -59,6 +60,29 @@ class TestValidateQuery:
     def test_union_gets_outer_limit(self) -> None:
         result = validate_query("SELECT 1 UNION ALL SELECT 2", dialect="sqlite")
         assert result.endswith("LIMIT 100;")
+
+    @pytest.mark.parametrize(
+        "expression",
+        [
+            "CAST('2000-01-01' AS DATE)",
+            "CAST(CAST('2000-01-01' AS DATE) AS TEXT)",
+            "CAST('1.5' AS BOOLEAN)",
+            "CAST('1' AS DECIMAL)",
+            "CAST('12' AS BINARY)",
+            "DATE('2000-01-01')",
+        ],
+    )
+    def test_preserves_sqlite_cast_results(self, expression: str) -> None:
+        sql = f"SELECT {expression} AS value"
+        validated = validate_query(sql, dialect="sqlite")
+        connection = sqlite3.connect(":memory:")
+        try:
+            expected = connection.execute(sql).fetchone()[0]
+            actual = connection.execute(validated).fetchone()[0]
+            assert actual == expected
+            assert type(actual) is type(expected)
+        finally:
+            connection.close()
 
     @pytest.mark.parametrize("sql", ["SELECT 1; SELECT 2", "SELECT * INTO copy FROM users"])
     def test_rejects_multiple_statements_and_select_into(self, sql):

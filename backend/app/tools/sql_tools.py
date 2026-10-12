@@ -18,13 +18,23 @@ from langchain_core.tools import tool
 from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlglot import exp
+from sqlglot.dialects.sqlite import SQLite
 from sqlglot.errors import ParseError, UnsupportedError
+from sqlglot.generator import Generator
 
 from app.api.middleware.error_handler import SQLExecutionError, UnsafeQueryError
 from app.config import settings
 from app.services.database import get_sql_engine
 
 logger = structlog.get_logger(__name__)
+
+
+class _SQLiteValidationGenerator(SQLite.Generator):
+    """Preserve native cast affinity instead of transpiling SQLite types and dates."""
+
+    TYPE_MAPPING = {}
+    TRANSFORMS = {**SQLite.Generator.TRANSFORMS, exp.Cast: Generator.cast_sql}
+
 
 def validate_query(
     sql: str,
@@ -90,6 +100,11 @@ def validate_query(
         if not safe_count:
             statement = statement.limit(settings.sql_max_rows)
     try:
+        if dialect == "sqlite":
+            generator = _SQLiteValidationGenerator(
+                dialect=dialect, comments=False, unsupported_level="RAISE"
+            )
+            return generator.generate(statement) + ";"
         return statement.sql(dialect=dialect, comments=False, unsupported_level="RAISE") + ";"
     except UnsupportedError as exc:
         raise UnsafeQueryError("Query is unsupported by the selected database dialect.") from exc
