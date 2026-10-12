@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, patch
 
-import pytest
 from fastapi import FastAPI
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class TestCreateApp:
@@ -42,6 +44,7 @@ class TestCreateApp:
 
         # Check that all expected route prefixes are present
         assert "/api/v1/chat" in route_paths
+        assert "/api/v1/agents" in route_paths
         assert "/api/v1/tools" in route_paths
         assert "/api/v1/health" in route_paths
         assert "/api/v1/sql/query" in route_paths

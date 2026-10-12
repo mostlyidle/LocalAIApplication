@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "name": "document_analytics",
+  "target": "document",
+  "description": "Extracts grounded facts, dates, amounts, tables, and action items from documents.",
+  "enabled": true,
+  "default_for_target": true,
+  "inference": {
+    "default_model": "qwen2.5:7b",
+    "allowed_models": ["qwen2.5:7b", "llama3.2:3b"],
+    "defaults": {
+      "model": "qwen2.5:7b",
+      "temperature": 0.2,
+      "max_output_tokens": 2048,
+      "context_window": 8192,
+      "seed": 0,
+      "top_p": 0.9,
+      "top_k": 40,
+      "repeat_penalty": 1.1,
+      "stop": []
+    },
+    "limits": {
+      "temperature": {"minimum": 0.0, "maximum": 2.0},
+      "max_output_tokens": {"minimum": 1, "maximum": 8192},
+      "context_window": {"minimum": 512, "maximum": 32768},
+      "seed": {"minimum": 0, "maximum": 2147483647},
+      "top_p": {"minimum": 0.0, "maximum": 1.0},
+      "top_k": {"minimum": 1, "maximum": 200},
+      "repeat_penalty": {"minimum": 0.5, "maximum": 2.0},
+      "max_stop_sequences": 8,
+      "max_stop_length": 128
+    }
+  }
+}
