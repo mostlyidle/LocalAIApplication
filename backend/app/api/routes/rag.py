@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,6 +36,11 @@ from app.models.schemas import (
     RAGSearchRequest,
     RAGSearchResponse,
     RAGSearchResult,
+)
+from app.services.rag_store import (
+    RagCollectionConflictError,
+    RagCollectionSchemaError,
+    RagStoreUnavailableError,
 )
 
 logger = structlog.get_logger(__name__)
@@ -60,23 +65,32 @@ async def search_documents(
     """
     retrieval: dict[str, Any] = {}
     search_with_provenance = getattr(vector_store, "search_with_provenance", None)
-    if search_with_provenance is not None:
-        result = await search_with_provenance(
-            query=body.query,
-            collection=body.collection,
-            top_k=body.top_k,
-            score_threshold=body.score_threshold,
-            agent_name=body.agent_name,
-        )
-        results = result.passages
-        retrieval = result.retrieval
-    else:
-        results = await vector_store.search(
-            query=body.query,
-            collection=body.collection,
-            top_k=body.top_k,
-            score_threshold=body.score_threshold,
-        )
+    try:
+        if search_with_provenance is not None:
+            result = await search_with_provenance(
+                query=body.query,
+                collection=body.collection,
+                top_k=body.top_k,
+                score_threshold=body.score_threshold,
+                agent_name=body.agent_name,
+            )
+            results = result.passages
+            retrieval = result.retrieval
+        else:
+            results = await vector_store.search(
+                query=body.query,
+                collection=body.collection,
+                top_k=body.top_k,
+                score_threshold=body.score_threshold,
+            )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RagCollectionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except RagCollectionSchemaError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RagStoreUnavailableError as exc:
+        raise HTTPException(status_code=503, detail="RAG store is unavailable.") from exc
 
     search_results = [
         RAGSearchResult(

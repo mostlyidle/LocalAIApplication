@@ -238,14 +238,18 @@ class TaskRunner:
                 )
                 if metadata.get(key) is not None
             }
+            citation["asset_id"] = metadata.get("asset_id", passage.get("asset_id"))
+            citation["chunk_index"] = metadata.get("chunk_index", passage.get("chunk_index"))
             citation["score"] = passage.get("score")
             citation["score_type"] = passage.get("score_type")
             citation_rows.append(citation)
             source = citation.get("filename") or citation.get("source") or citation.get("document_id") or "Unknown"
             location = f", Page {citation['page']}" if citation.get("page") is not None else ""
-            chunk_id = citation.get("source_chunk_id") or citation.get("document_id")
+            asset_id = citation.get("asset_id")
+            chunk_index = citation.get("chunk_index")
             prompt_rows.append(
-                f"[Source: {source}{location}; chunk: {chunk_id}]\n{passage.get('content', '')}"
+                f"[{asset_id}:{chunk_index}] [Source: {source}{location}]\n"
+                f"{passage.get('content', '')}"
             )
         answer = await self._answer(
             execution,

@@ -469,11 +469,13 @@ class RagStore:
                     mode="hybrid",
                     language=language,
                     bm25_options=bm25_options,
+                    dense_distance=_distance_name(vectors[DENSE_VECTOR_NAME].distance),
                     dense_model=dense_model,
                     embedding_revision=embedding_revision,
                     dense_dimension=dense_dimension,
                     loader_owned=metadata.get(COLLECTION_OWNER_KEY) == LOADER_COLLECTION_OWNER,
                 )
+        return CollectionCapabilities(mode="unsupported")
 
     async def list_collections(self) -> list[dict[str, object]]:
         response = await self._call(self._client.get_collections)
@@ -525,13 +527,16 @@ class RagStore:
         capabilities = await self.capabilities(collection)
         if capabilities is None:
             return False
+        if capabilities.mode == "unsupported":
+            raise RagCollectionSchemaError(
+                f"Collection '{collection}' has an unsupported schema and cannot be deleted here."
+            )
         if capabilities.loader_owned:
             raise RagCollectionSchemaError(
                 f"Collection '{collection}' is owned by the RAG loader and cannot be deleted here."
             )
         await self._call(lambda: self._client.delete_collection(collection_name=collection))
         return True
-        return CollectionCapabilities(mode="unsupported")
 
     @asynccontextmanager
     async def _asset_upsert_lock(self, *, collection: str, asset_id: str) -> AsyncIterator[None]:

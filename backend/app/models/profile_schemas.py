@@ -77,7 +77,7 @@ class ExecutionMetadata(BaseModel):
 class TaskRequest(BaseModel):
     """Bounded agent-task input; optional fields are interpreted by each target."""
 
-    prompt: str = Field(min_length=1, max_length=20_000)
+    prompt: str = Field(min_length=1, max_length=32_000)
     agent_name: str | None = Field(default=None, pattern=r"^[a-z][a-z0-9_]{0,62}$")
     target: AgentTarget = "auto"
     asset_id: str | None = Field(default=None, max_length=255)
