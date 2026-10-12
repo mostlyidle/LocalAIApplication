@@ -113,12 +113,12 @@ export function AuthenticatedShell({ children }: { children: ReactNode }) {
   }
 
   if (loading) {
-    return <main className="studio-surface grid min-h-dvh place-content-center justify-items-center gap-4 text-sm text-muted-foreground"><BrandMark className="h-20 w-20" /><p role="status">Checking session…</p></main>;
+    return <main className="studio-surface grid min-h-dvh w-full place-content-center justify-items-center gap-4 text-sm text-muted-foreground"><BrandMark className="h-20 w-20" /><p role="status">Checking session…</p></main>;
   }
 
   if (!account) {
     return (
-      <main className="studio-surface grid min-h-dvh place-items-center px-4 py-8">
+      <main className="studio-surface grid min-h-dvh w-full place-items-center px-4 py-8">
         <form onSubmit={handleSubmit} className="w-full max-w-md space-y-6 rounded-3xl border bg-card p-6 shadow-sm sm:p-9">
           <div className="flex flex-col items-center text-center">
             <BrandMark className="mb-3 h-24 w-24" />

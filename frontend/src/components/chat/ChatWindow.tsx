@@ -1,11 +1,12 @@
 "use client";
 
 import { useRef, useEffect, useState, type FormEvent, type ChangeEvent } from "react";
-import { Send, Plus, Loader2, Paperclip, X, Image as ImageIcon, History } from "lucide-react";
+import { Send, Plus, Loader2, Paperclip, X, Image as ImageIcon, History, Sparkles, Lightbulb, BookOpen, ListChecks, PenLine } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useChat } from "@/hooks/useChat";
 import {
   createMemory,
@@ -15,10 +16,11 @@ import {
   updateConversationMemorySettings,
   uploadDocument,
 } from "@/lib/api";
-import { ACCEPTED_FILE_TYPES, ACTIVE_CONVERSATION_STORAGE_PREFIX, MAX_FILE_SIZE } from "@/lib/constants";
+import { ACCEPTED_FILE_TYPES, ACTIVE_CONVERSATION_STORAGE_PREFIX, AGENT_LABELS, MAX_FILE_SIZE } from "@/lib/constants";
 import type { AgentCapability, ChatMessage, ChatTaskOptions } from "@/types/chat";
 import type { MemoryRecord } from "@/lib/schemas";
 import { useAuth } from "@/components/shared/AuthProvider";
+import { BrandMark } from "@/components/shared/BrandMark";
 import { MessageBubble } from "./MessageBubble";
 import { StreamingText } from "./StreamingText";
 import { ToolCallDisplay } from "./ToolCallDisplay";
@@ -32,6 +34,12 @@ interface PendingAttachment {
 }
 
 const IMAGE_TYPES = [".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".webp"];
+const starterPrompts = [
+  { title: "Spark an idea", hint: "Find a fresh perspective", prompt: "Help me brainstorm a few creative ideas for ", icon: Lightbulb, tone: "bg-peach-soft text-peach-ink" },
+  { title: "Explain something", hint: "Make the complex feel simple", prompt: "Explain this in simple terms, with an example: ", icon: BookOpen, tone: "bg-sky-soft text-sky-ink" },
+  { title: "Make a plan", hint: "One small step at a time", prompt: "Help me make a practical, step-by-step plan for ", icon: ListChecks, tone: "bg-mint-soft text-mint-ink" },
+  { title: "Polish my writing", hint: "Give your words a little shine", prompt: "Help me improve the clarity and tone of this writing: ", icon: PenLine, tone: "bg-rose-soft text-rose-ink" },
+];
 
 function restoreMessages(conversation: Awaited<ReturnType<typeof getConversation>>): ChatMessage[] {
   return conversation.messages.map((message) => ({
@@ -254,8 +262,10 @@ export function ChatWindow() {
 
   // Auto-scroll to bottom
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    const viewport = scrollRef.current?.querySelector("[data-radix-scroll-area-viewport]");
+    if (viewport) {
+      viewport.scrollTop = messages.length || streamingContent || activeToolCalls.length
+        ? viewport.scrollHeight : 0;
     }
   }, [messages, streamingContent, activeToolCalls]);
 
@@ -334,7 +344,7 @@ export function ChatWindow() {
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     const trimmed = input.trim();
-    if ((!trimmed && attachments.length === 0) || isStreaming) return;
+    if ((!trimmed && attachments.length === 0) || isStreaming || restoringConversation) return;
 
     // Collect uploaded attachment IDs
     const uploadedIds = attachments
@@ -415,19 +425,19 @@ export function ChatWindow() {
   );
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b px-4 py-2">
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-medium">{conversationId ? "Saved conversation" : "New conversation"}</span>
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-card/50 px-4 py-3 sm:px-6">
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
+          <span className="flex items-center gap-2 text-sm font-semibold"><Sparkles className="size-4 text-primary" aria-hidden="true" />{conversationId ? "Saved conversation" : "New conversation"}</span>
           {conversationId && (
-            <label className="flex items-center gap-1.5 text-xs text-muted-foreground" title="This affects cross-chat recall, not the saved transcript or memories you choose to save manually.">
+            <label className="flex min-h-9 cursor-pointer items-center gap-2 text-xs text-muted-foreground" title="This affects cross-chat recall, not the saved transcript or memories you choose to save manually.">
               <input
                 type="checkbox"
                 aria-label="Exclude this chat from past-chat recall"
                 checked={excludeFromMemory}
                 onChange={(event) => void handleRecallExclusionChange(event.target.checked)}
                 disabled={isStreaming || restoringConversation}
-                className="h-3.5 w-3.5 accent-primary"
+                className="h-4 w-4 accent-primary"
               />
               Exclude from past-chat recall
             </label>
@@ -438,15 +448,16 @@ export function ChatWindow() {
             type="button"
             variant="ghost"
             size="sm"
+            className="min-h-11 rounded-xl"
             onClick={() => setHistoryOpen((open) => !open)}
             disabled={restoringConversation}
             aria-expanded={historyOpen}
           >
-            <History className="mr-2 h-4 w-4" />
+            <History className="h-4 w-4" aria-hidden="true" />
             History
           </Button>
-          <Button type="button" variant="outline" size="sm" onClick={startNewConversation} disabled={isStreaming || restoringConversation}>
-            <Plus className="mr-2 h-4 w-4" />
+          <Button type="button" variant="outline" size="sm" className="min-h-11 rounded-xl" onClick={startNewConversation} disabled={isStreaming || restoringConversation}>
+            <Plus className="h-4 w-4" aria-hidden="true" />
             New chat
           </Button>
         </div>
@@ -476,19 +487,26 @@ export function ChatWindow() {
       )}
       {conversationError && <p role="alert" className="border-b px-4 py-2 text-xs text-destructive">{conversationError}</p>}
       {/* Messages area */}
-      <ScrollArea ref={scrollRef} className="flex-1 p-4">
-        <div className="mx-auto max-w-3xl space-y-4">
+      <ScrollArea ref={scrollRef} className="min-h-0 flex-1 px-4 py-5 sm:px-6">
+        <div className="mx-auto max-w-3xl space-y-5">
+          {restoringConversation && <p role="status" className="text-center text-sm text-muted-foreground">Opening your conversation…</p>}
           {messages.length === 0 && !isStreaming && (
-            <div className="flex h-64 flex-col items-center justify-center text-center text-muted-foreground">
-              <p className="text-lg font-medium">Start a conversation</p>
-              <p className="mt-1 text-sm">
-                Ask anything — I can query databases, analyze documents,
-                search your knowledge base, and more.
+            <div className="mx-auto flex max-w-2xl flex-col items-center py-4 text-center sm:py-8">
+              <BrandMark className="mb-3 h-24 w-24 sm:h-28 sm:w-28" />
+              <span className="rounded-full bg-mint-soft px-3 py-1 text-xs font-semibold text-mint-ink">A little curiosity goes a long way</span>
+              <h1 className="mt-4 text-2xl font-bold tracking-tight sm:text-3xl">Hello, curious human.</h1>
+              <p className="mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
+                What shall we explore today? Bring a question, an idea, or a file.<br className="hidden sm:block" /> Your local AI team is here to help.
               </p>
-              <p className="mt-2 text-xs">
-                <Paperclip className="mr-1 inline h-3 w-3" />
-                Attach images or documents for analysis
-              </p>
+              <h2 className="mt-6 text-xs font-semibold text-muted-foreground">Start a conversation</h2>
+              <div className="mt-3 grid w-full gap-3 sm:grid-cols-2">
+                {starterPrompts.map((starter) => (
+                  <button key={starter.title} type="button" disabled={restoringConversation} onClick={() => { setInput(starter.prompt); textareaRef.current?.focus(); }} className="flex items-center gap-3 rounded-2xl border bg-card p-4 text-left transition-colors hover:border-primary/50 hover:bg-accent/40 disabled:opacity-50">
+                    <span className={`grid size-10 shrink-0 place-items-center rounded-xl ${starter.tone}`}><starter.icon className="size-5" aria-hidden="true" /></span>
+                    <span><span className="block text-sm font-semibold">{starter.title}</span><span className="mt-0.5 block text-xs text-muted-foreground">{starter.hint}</span></span>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
           {messages.map((msg) => (
@@ -513,6 +531,9 @@ export function ChatWindow() {
           )}
           {/* Streaming text */}
           <StreamingText content={streamingContent} />
+          {isStreaming && !streamingContent && activeToolCalls.length === 0 && (
+            <div role="status" className="flex items-center gap-3 rounded-2xl border bg-card p-4 text-sm text-muted-foreground"><BrandMark className="size-9" /><Loader2 className="size-4 animate-spin text-primary" aria-hidden="true" />Your agent is thinking…</div>
+          )}
         </div>
       </ScrollArea>
 
@@ -559,7 +580,8 @@ export function ChatWindow() {
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-5 w-5"
+                  className="h-9 w-9"
+                  aria-label={`Remove ${att.file.name}`}
                   onClick={() => removeAttachment(idx)}
                 >
                   <X className="h-3 w-3" />
@@ -571,35 +593,35 @@ export function ChatWindow() {
       )}
 
       {/* Input area */}
-      <div className="border-t bg-background p-4">
-        {profileError && <div className="mx-auto mb-2 max-w-3xl text-xs text-destructive">{profileError}</div>}
+      <div className="shrink-0 px-3 pb-3 pt-2 sm:px-6 sm:pb-5">
+        {profileError && <div role="alert" className="mx-auto mb-2 max-w-3xl rounded-xl bg-destructive/10 p-3 text-sm text-destructive">{profileError}</div>}
         <div className="mx-auto mb-2 flex max-w-3xl flex-wrap items-center gap-2">
-          <label className="text-xs text-muted-foreground" htmlFor="agent-profile">Agent</label>
+          <label className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground" htmlFor="agent-profile"><Sparkles className="size-3.5" aria-hidden="true" /> Agent</label>
           <select
             id="agent-profile"
             aria-label="Agent profile"
             value={selectedAgent}
             onChange={(event) => { setSelectedAgent(event.target.value); setProfileError(""); }}
             disabled={isStreaming}
-            className="h-8 rounded-md border bg-background px-2 text-xs"
+            className="h-11 max-w-full rounded-xl border border-input bg-card px-3 text-sm"
           >
             <option value="auto">Auto select</option>
             {agents.map((agent) => (
               <option key={agent.name} value={agent.name}>
-                {agent.name.replaceAll("_", " ")}{agent.default_for_target ? " · default" : ""}
+                {AGENT_LABELS[agent.name] ?? agent.name.replaceAll("_", " ")}{agent.default_for_target ? " · default" : ""}
               </option>
             ))}
           </select>
           {selectedProfile?.inference && (
             <>
-              <label className="sr-only" htmlFor="agent-model">Model</label>
+              <label className="text-xs text-muted-foreground" htmlFor="agent-model">Model</label>
               <select
                 id="agent-model"
                 aria-label="Agent model"
                 value={selectedModel}
                 onChange={(event) => setSelectedModel(event.target.value)}
                 disabled={isStreaming}
-                className="h-8 max-w-52 rounded-md border bg-background px-2 text-xs"
+                className="h-11 max-w-full rounded-xl border border-input bg-card px-3 text-sm sm:max-w-52"
               >
                 {selectedProfile.inference.allowed_models.map((model) => {
                   const available = selectedProfile.model_availability?.[model];
@@ -609,7 +631,7 @@ export function ChatWindow() {
                   return <option key={model} value={model} disabled={available === false}>{model}{label}</option>;
                 })}
               </select>
-              <label className="sr-only" htmlFor="agent-temperature">Temperature</label>
+              <label className="text-xs text-muted-foreground" htmlFor="agent-temperature">Temperature</label>
               <input
                 id="agent-temperature"
                 aria-label="Agent temperature"
@@ -620,64 +642,37 @@ export function ChatWindow() {
                 value={temperature}
                 onChange={(event) => setTemperature(Number(event.target.value))}
                 disabled={isStreaming}
-                className="h-8 w-20 rounded-md border bg-background px-2 text-xs"
+                className="h-11 w-20 rounded-xl border border-input bg-card px-3 text-sm"
               />
             </>
           )}
           {selectedProfile?.target === "rag" && (
-            <input aria-label="RAG collection" value={collection} onChange={(event) => setCollection(event.target.value)} placeholder="Collection" className="h-8 w-36 rounded-md border bg-background px-2 text-xs" />
+            <label className="flex flex-col gap-1 text-xs text-muted-foreground">Collection<input aria-label="RAG collection" value={collection} onChange={(event) => setCollection(event.target.value)} placeholder="Collection" className="h-11 w-36 rounded-xl border border-input bg-card px-3 text-sm text-foreground" /></label>
           )}
           {selectedProfile?.target === "stock_research" && (
             <>
-              <input aria-label="Ticker symbol" value={symbol} onChange={(event) => setSymbol(event.target.value)} placeholder="Ticker (e.g. AAPL)" className="h-8 w-36 rounded-md border bg-background px-2 text-xs" />
-              <input aria-label="Research context" value={context} onChange={(event) => setContext(event.target.value)} placeholder="Optional context" className="h-8 min-w-36 flex-1 rounded-md border bg-background px-2 text-xs" />
+              <label className="flex flex-col gap-1 text-xs text-muted-foreground">Ticker symbol<input aria-label="Ticker symbol" value={symbol} onChange={(event) => setSymbol(event.target.value)} placeholder="e.g. AAPL" className="h-11 w-36 rounded-xl border border-input bg-card px-3 text-sm text-foreground" /></label>
+              <label className="flex min-w-36 flex-1 flex-col gap-1 text-xs text-muted-foreground">Research context (optional)<input aria-label="Research context" value={context} onChange={(event) => setContext(event.target.value)} placeholder="Add a little context" className="h-11 w-full rounded-xl border border-input bg-card px-3 text-sm text-foreground" /></label>
             </>
           )}
           {selectedProfile?.target === "software_engineer" && (
-            <input aria-label="Workspace path" value={workspacePath} onChange={(event) => setWorkspacePath(event.target.value)} placeholder="Workspace subpath (optional)" className="h-8 min-w-48 flex-1 rounded-md border bg-background px-2 text-xs" />
+            <label className="flex min-w-48 flex-1 flex-col gap-1 text-xs text-muted-foreground">Workspace path (optional)<input aria-label="Workspace path" value={workspacePath} onChange={(event) => setWorkspacePath(event.target.value)} placeholder="Workspace subpath" className="h-11 w-full rounded-xl border border-input bg-card px-3 text-sm text-foreground" /></label>
           )}
           {selectedProfile?.name === "document_analytics" && (
-            <input aria-label="Document context" value={context} onChange={(event) => setContext(event.target.value)} placeholder="Optional text context" className="h-8 min-w-48 flex-1 rounded-md border bg-background px-2 text-xs" />
+            <label className="flex min-w-48 flex-1 flex-col gap-1 text-xs text-muted-foreground">Document context (optional)<input aria-label="Document context" value={context} onChange={(event) => setContext(event.target.value)} placeholder="Add a little context" className="h-11 w-full rounded-xl border border-input bg-card px-3 text-sm text-foreground" /></label>
           )}
           {selectedProfile?.target === "image_generation" && (
-            <textarea aria-label="ComfyUI workflow" value={workflowText} onChange={(event) => setWorkflowText(event.target.value)} placeholder="Paste exported ComfyUI API workflow JSON" rows={2} className="min-h-8 min-w-48 flex-1 rounded-md border bg-background px-2 py-1 text-xs" />
+            <label className="flex min-w-48 flex-1 flex-col gap-1 text-xs text-muted-foreground">ComfyUI workflow<textarea aria-label="ComfyUI workflow" value={workflowText} onChange={(event) => setWorkflowText(event.target.value)} placeholder="Paste exported ComfyUI API workflow JSON" rows={2} className="min-h-11 w-full rounded-xl border border-input bg-card px-3 py-2 text-sm text-foreground" /></label>
           )}
         </div>
+        {selectedProfile && <p className="mx-auto mb-3 max-w-3xl text-xs leading-relaxed text-muted-foreground">{selectedProfile.description}</p>}
         <form
           onSubmit={handleSubmit}
-          className="mx-auto flex max-w-3xl items-end gap-2"
+          className="mx-auto max-w-3xl rounded-2xl border border-input bg-card p-3 shadow-sm focus-within:border-primary/60 sm:p-4"
         >
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-10 w-10 shrink-0"
-            onClick={startNewConversation}
-            disabled={isStreaming || restoringConversation}
-            title="New conversation"
-          >
-            <Plus className="h-4 w-4" />
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="h-10 w-10 shrink-0"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isStreaming}
-            title="Attach file"
-          >
-            <Paperclip className="h-4 w-4" />
-          </Button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept={ACCEPTED_FILE_TYPES.join(",")}
-            className="hidden"
-            onChange={handleFileSelect}
-          />
+          <label htmlFor="chat-message" className="mb-1 block px-1 text-xs font-semibold text-muted-foreground">Your message</label>
           <Textarea
+            id="chat-message"
             ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -687,71 +682,107 @@ export function ChatWindow() {
                 ? "Describe what to do with the attached file(s)..."
                 : "Type a message... (Shift+Enter for new line)"
             }
-            className="min-h-[44px] max-h-32 resize-none"
-            rows={1}
-            disabled={isStreaming}
+            className="min-h-14 max-h-32 resize-none rounded-xl border-0 bg-transparent px-1 text-base shadow-none focus-visible:ring-0"
+            rows={2}
+            disabled={isStreaming || restoringConversation}
           />
-          <Button
-            type="submit"
-            size="icon"
-            className="h-10 w-10 shrink-0"
-            disabled={
-              (!input.trim() && !hasReadyAttachments) ||
-              isStreaming ||
-              hasUploadingFiles
-            }
-          >
-            {isStreaming ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Send className="h-4 w-4" />
-            )}
-          </Button>
+          <div className="mt-2 flex items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-11 w-11 shrink-0 rounded-xl"
+              onClick={startNewConversation}
+              disabled={isStreaming || restoringConversation}
+              title="New conversation"
+              aria-label="New conversation"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-11 w-11 shrink-0 rounded-xl"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isStreaming}
+              title="Attach file"
+              aria-label="Attach file"
+            >
+              <Paperclip className="h-4 w-4" />
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept={ACCEPTED_FILE_TYPES.join(",")}
+              className="hidden"
+              onChange={handleFileSelect}
+            />
+            <span className="hidden text-xs text-muted-foreground sm:inline">Enter to send · Shift + Enter for a new line</span>
+            <Button
+              type="submit"
+              className="ml-auto h-11 shrink-0 rounded-xl px-4"
+              aria-label={isStreaming ? "Generating response" : "Send message"}
+              disabled={
+                (!input.trim() && !hasReadyAttachments) ||
+                isStreaming ||
+                restoringConversation ||
+                hasUploadingFiles
+              }
+            >
+              {isStreaming ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+              <span>{isStreaming ? "Thinking" : "Send"}</span>
+            </Button>
+          </div>
         </form>
-        <div className="mx-auto mt-2 max-w-3xl text-center text-[10px] text-muted-foreground">
-          {isConnected ? "Connected" : "Disconnected"} — Responses are generated locally by Ollama
+        <div className="mx-auto mt-2 flex max-w-3xl flex-wrap items-center justify-center gap-1.5 text-center text-xs text-muted-foreground">
+          <span className={isConnected ? "text-mint-ink" : "text-destructive"}>{isConnected ? "Connected" : "Disconnected"}</span><span aria-hidden="true">·</span> Responses are generated locally by Ollama
         </div>
       </div>
       {memoryDraft && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <form
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="remember-title"
-            onSubmit={saveMemory}
-            className="w-full max-w-lg space-y-4 rounded-lg border bg-background p-5 shadow-lg"
-          >
-            <div>
-              <h2 id="remember-title" className="font-semibold">Remember this</h2>
-              <p className="text-sm text-muted-foreground">Review the exact text your account will save.</p>
-            </div>
-            {memoryError && <p role="alert" className="text-sm text-destructive">{memoryError}</p>}
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="space-y-1 text-sm" htmlFor="remember-kind">
-                Type
-                <select id="remember-kind" value={memoryDraft.kind} onChange={(event) => setMemoryDraft({ ...memoryDraft, kind: event.target.value as MemoryRecord["kind"] })} className="h-9 w-full rounded-md border bg-background px-3">
-                  <option value="fact">Fact</option>
-                  <option value="preference">Preference</option>
-                  <option value="project_decision">Project decision</option>
-                </select>
+        <Dialog open onOpenChange={(open) => { if (!open && !savingMemory) setMemoryDraft(null); }}>
+          <DialogContent className="max-h-[90dvh] overflow-y-auto rounded-2xl bg-card" showCloseButton={!savingMemory} onCloseAutoFocus={(event) => { event.preventDefault(); textareaRef.current?.focus(); }}>
+            <form
+              onSubmit={saveMemory}
+              className="space-y-4"
+            >
+              <div>
+                <DialogTitle className="pr-6 text-xl font-bold">Remember this</DialogTitle>
+                <DialogDescription className="mt-2">Review the exact text your account will save.</DialogDescription>
+              </div>
+              {memoryError && <p role="alert" className="text-sm text-destructive">{memoryError}</p>}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="space-y-1 text-sm" htmlFor="remember-kind">
+                  Type
+                  <select id="remember-kind" value={memoryDraft.kind} onChange={(event) => setMemoryDraft({ ...memoryDraft, kind: event.target.value as MemoryRecord["kind"] })} className="h-9 w-full rounded-md border bg-background px-3">
+                    <option value="fact">Fact</option>
+                    <option value="preference">Preference</option>
+                    <option value="project_decision">Project decision</option>
+                  </select>
+                </label>
+                <label className="space-y-1 text-sm" htmlFor="remember-project">
+                  Project (optional)
+                  <input id="remember-project" value={memoryDraft.projectScope} maxLength={128} onChange={(event) => setMemoryDraft({ ...memoryDraft, projectScope: event.target.value })} className="h-9 w-full rounded-md border bg-background px-3" />
+                </label>
+              </div>
+              <label className="block space-y-1 text-sm" htmlFor="remember-content">
+                Memory text
+                <textarea id="remember-content" value={memoryDraft.content} maxLength={4000} rows={4} onChange={(event) => setMemoryDraft({ ...memoryDraft, content: event.target.value })} className="w-full rounded-md border bg-background px-3 py-2" />
               </label>
-              <label className="space-y-1 text-sm" htmlFor="remember-project">
-                Project (optional)
-                <input id="remember-project" value={memoryDraft.projectScope} maxLength={128} onChange={(event) => setMemoryDraft({ ...memoryDraft, projectScope: event.target.value })} className="h-9 w-full rounded-md border bg-background px-3" />
-              </label>
-            </div>
-            <label className="block space-y-1 text-sm" htmlFor="remember-content">
-              Memory text
-              <textarea id="remember-content" value={memoryDraft.content} maxLength={4000} rows={4} onChange={(event) => setMemoryDraft({ ...memoryDraft, content: event.target.value })} className="w-full rounded-md border bg-background px-3 py-2" />
-            </label>
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setMemoryDraft(null)} disabled={savingMemory}>Cancel</Button>
-              <Button type="submit" disabled={savingMemory || !memoryDraft.content.trim()}>
-                {savingMemory && <Loader2 className="animate-spin" />} Save memory
-              </Button>
-            </div>
-          </form>
-        </div>
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="outline" onClick={() => setMemoryDraft(null)} disabled={savingMemory}>Cancel</Button>
+                <Button type="submit" disabled={savingMemory || !memoryDraft.content.trim()}>
+                  {savingMemory && <Loader2 className="animate-spin" />} Save memory
+                </Button>
+              </div>
+            </form>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );
