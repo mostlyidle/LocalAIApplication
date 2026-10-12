@@ -39,6 +39,7 @@ class AgentState(TypedDict):
     metadata: dict[str, Any]
     error: str | None
     database: NotRequired[str]
+    forced_agent: NotRequired[str]
 
 
 def create_initial_state(

@@ -22,6 +22,7 @@ import {
   deleteRAGCollection,
   getHealth,
   getTools,
+  getAgentCatalog,
   ApiError,
 } from "../api";
 
@@ -119,6 +120,16 @@ describe("API Client", () => {
       const [url, init] = spy.mock.calls[0];
       expect(url).toContain("/chat");
       expect(JSON.parse(init.body)).toEqual({ content: "hello", conversation_id: "c1" });
+    });
+
+    it("loads the enabled profile catalog", async () => {
+      const spy = mockFetchSuccess({ agents: [
+        { name: "rag_v2", target: "rag", description: "Hybrid retrieval", default_for_target: false, inference: null },
+      ] });
+      globalThis.fetch = spy;
+      const result = await getAgentCatalog();
+      expect(result.agents[0].name).toBe("rag_v2");
+      expect(spy.mock.calls[0][0]).toContain("/agents");
     });
 
     it("sendMessage works without conversationId", async () => {
@@ -313,10 +324,10 @@ describe("API Client", () => {
       const spy = mockFetchSuccess({ results: [], query: "test", total_results: 0 });
       globalThis.fetch = spy;
 
-      await searchRAG("test", "docs", 10);
+      await searchRAG("test", "docs", 10, "rag_v2");
 
       const body = JSON.parse(spy.mock.calls[0][1].body);
-      expect(body).toEqual({ query: "test", collection: "docs", top_k: 10 });
+      expect(body).toEqual({ query: "test", collection: "docs", top_k: 10, agent_name: "rag_v2" });
     });
 
     it("ingestRAG posts document_id and collection", async () => {
@@ -356,7 +367,7 @@ describe("API Client", () => {
         status: "healthy",
         services: [
           { name: "ollama", healthy: true },
-          { name: "chromadb", healthy: true },
+          { name: "qdrant", healthy: true },
           { name: "app_database", healthy: true },
         ],
         meeting_ready: true,

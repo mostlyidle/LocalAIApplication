@@ -1,4 +1,4 @@
-.PHONY: setup dev dev-backend dev-frontend dev-desktop test-desktop-launcher test test-backend test-frontend lint format migrate seed clean help docker-up docker-down docker-infra docker-app docker-build docker-logs docker-clean
+.PHONY: setup dev dev-backend dev-frontend dev-desktop test-desktop-launcher test test-backend test-frontend lint format migrate seed clean help docker-up docker-down docker-infra docker-app docker-build docker-test docker-observability docker-logs docker-clean
 
 # =============================================================================
 # Local AI Application — Makefile
@@ -27,7 +27,7 @@ setup: ## Install all dependencies and pull Ollama models
 	@test -f .env || cp .env.example .env
 	@test -f $(FRONTEND_DIR)/.env.local || echo "NEXT_PUBLIC_API_URL=http://localhost:8000" > $(FRONTEND_DIR)/.env.local
 	@echo "==> Creating data directories..."
-	mkdir -p data/uploads data/chroma
+	mkdir -p data/uploads data/chroma data/fastembed
 	@echo "==> Running database migrations..."
 	cd $(BACKEND_DIR) && uv run alembic upgrade head
 	@echo "==> Setup complete!"
@@ -127,7 +127,7 @@ clean: ## Remove caches, build artifacts, temp files
 
 clean-data: ## Remove all runtime data (uploads, vector store, databases)
 	rm -rf data/
-	mkdir -p data/uploads data/chroma
+	mkdir -p data/uploads data/chroma data/fastembed
 	@echo "Data directories reset."
 
 # ---------------------------------------------------------------------------
@@ -142,17 +142,25 @@ docker-down: ## Stop all Docker Compose services
 	docker compose --profile full down
 	@echo "==> All services stopped."
 
-docker-infra: ## Start infrastructure only (Ollama + ChromaDB)
+docker-infra: ## Start infrastructure only (Ollama + Qdrant + ChromaDB migration source)
 	docker compose --profile infra up -d
 	@echo "==> Infrastructure services starting."
 
-docker-app: ## Start app services only (backend + frontend) — assumes infra is running natively
+docker-app: ## Start backend + frontend + Qdrant — assumes Ollama is running natively
 	docker compose --profile app up -d --build
 	@echo "==> Application services starting."
 
 docker-build: ## Build Docker images without starting
 	docker compose --profile full build
 	@echo "==> Images built."
+
+docker-test: ## Build and run backend tests in the isolated test image target
+	docker build --target test -t local-ai-backend:test ./backend
+	docker run --rm local-ai-backend:test
+
+docker-observability: ## Start the app with optional Prometheus and Grafana
+	docker compose --profile app --profile observability up -d --build
+	@echo "==> App and observability services starting."
 
 docker-logs: ## Follow logs from all running services
 	docker compose --profile full logs -f

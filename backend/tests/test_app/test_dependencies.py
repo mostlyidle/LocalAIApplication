@@ -67,7 +67,7 @@ class TestGetVectorStore:
         from unittest.mock import MagicMock
 
         mock_service = MagicMock()
-        with patch("app.services.vector_store.vector_store_service", mock_service):
+        with patch("app.services.hybrid_vector_store.hybrid_vector_store_service", mock_service):
             from app.dependencies import get_vector_store
 
             result = get_vector_store()

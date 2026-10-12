@@ -10,6 +10,7 @@ Covers all 4 endpoints:
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -40,6 +41,9 @@ class TestRAGSearch:
                 },
             ]
         )
+        mock_vs.search_with_provenance = AsyncMock(
+            return_value=SimpleNamespace(passages=mock_vs.search.return_value, retrieval={})
+        )
 
         from app.dependencies import get_vector_store
 
@@ -64,6 +68,9 @@ class TestRAGSearch:
     async def test_search_empty_results(self, client: AsyncClient) -> None:
         mock_vs = AsyncMock()
         mock_vs.search = AsyncMock(return_value=[])
+        mock_vs.search_with_provenance = AsyncMock(
+            return_value=SimpleNamespace(passages=[], retrieval={})
+        )
 
         from app.dependencies import get_vector_store
 
@@ -81,6 +88,9 @@ class TestRAGSearch:
     async def test_search_custom_params(self, client: AsyncClient) -> None:
         mock_vs = AsyncMock()
         mock_vs.search = AsyncMock(return_value=[])
+        mock_vs.search_with_provenance = AsyncMock(
+            return_value=SimpleNamespace(passages=[], retrieval={})
+        )
 
         from app.dependencies import get_vector_store
 
@@ -96,11 +106,12 @@ class TestRAGSearch:
             },
         )
         assert resp.status_code == 200
-        mock_vs.search.assert_called_once_with(
+        mock_vs.search_with_provenance.assert_awaited_once_with(
             query="test",
             collection="custom_collection",
             top_k=10,
             score_threshold=0.8,
+            agent_name="rag",
         )
 
     async def test_search_missing_query(self, client: AsyncClient) -> None:
@@ -138,6 +149,12 @@ class TestRAGSearch:
         mock_vs = AsyncMock()
         mock_vs.search = AsyncMock(
             return_value=[{"content": "chunk", "score": 0.5, "metadata": {}}]
+        )
+        mock_vs.search_with_provenance = AsyncMock(
+            return_value=SimpleNamespace(
+                passages=mock_vs.search.return_value,
+                retrieval={},
+            )
         )
 
         from app.dependencies import get_vector_store

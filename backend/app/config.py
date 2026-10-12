@@ -28,8 +28,21 @@ class Settings(BaseSettings):
     ollama_chat_model: str = "llama3.1:8b"
     ollama_vision_model: str = "llama3.2-vision:11b"
     ollama_embedding_model: str = "nomic-embed-text"
+    ollama_embedding_revision: str = "nomic-embed-text-v1"
+    ollama_embedding_dimension: int = 768
     ollama_request_timeout: int = 120
     ollama_num_parallel: int = 2
+
+    # ── Hybrid vector store ─────────────────────────────────────────────
+    qdrant_url: str = "http://localhost:6333"
+    fastembed_cache_path: Path = Path("./data/fastembed")
+    rag_bm25_language: str = "english"
+
+    # ── Optional specialist integrations ────────────────────────────────
+    finnhub_api_key: str | None = None
+    market_data_cache_seconds: int = 60
+    comfyui_url: str = "http://localhost:8188"
+    agent_workspace_root: Path = Path("./workspace")
 
     # ── Meeting transcription ───────────────────────────────────────────
     asr_model_dir: str | None = None
@@ -53,7 +66,7 @@ class Settings(BaseSettings):
     max_upload_size_mb: int = 50
     upload_dir: str = "./data/uploads"
     allowed_extensions: str = (
-        ".pdf,.docx,.xlsx,.pptx,.csv,.html,.md,.txt,.png,.jpg,.jpeg,.tiff,.bmp"
+        ".pdf,.docx,.xlsx,.pptx,.csv,.html,.md,.txt,.png,.jpg,.jpeg,.tiff,.bmp,.webp"
     )
     pdf_parser: Literal["pymupdf", "docling"] = "pymupdf"
     docling_artifacts_path: str | None = None

@@ -29,7 +29,7 @@ IMPORTANT RULES:
 2. Base your answers on the retrieved context — do not make up information.
 3. ALWAYS cite your sources (document name, page number if available).
 4. If the knowledge base doesn't contain relevant information, say so clearly.
-5. If results have low relevance scores, acknowledge the uncertainty.
+5. Retrieval scores rank results; they are not confidence percentages.
 
 Answer format:
 - Provide a clear, direct answer

@@ -33,6 +33,12 @@ COPY app/ app/
 COPY alembic/ alembic/
 COPY alembic.ini ./
 
+# Test image target keeps pytest and test sources out of the production image.
+FROM builder AS test
+RUN uv sync --frozen --extra dev --no-install-project
+COPY tests/ tests/
+CMD ["pytest", "-q"]
+
 # ---------------------------------------------------------------------------
 # Stage 2: Runtime — slim image with only what's needed
 # ---------------------------------------------------------------------------

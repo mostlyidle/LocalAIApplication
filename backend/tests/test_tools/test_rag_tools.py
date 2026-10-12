@@ -138,6 +138,7 @@ class TestSearchDocuments:
                 collection="docs",
                 top_k=3,
                 score_threshold=None,
+                agent_name="rag",
             )
 
     async def test_search_empty_results(self) -> None:
