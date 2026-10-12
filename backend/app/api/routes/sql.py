@@ -119,7 +119,7 @@ async def execute_raw_query(
     start_time = time.perf_counter()
 
     try:
-        validated_sql = validate_query(body.sql)
+        validated_sql = validate_query(body.sql, database=body.database)
     except Exception as exc:
         raise InputValidationError(str(exc)) from exc
 

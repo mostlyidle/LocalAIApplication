@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -23,6 +24,41 @@ from app.tools.sql_tools import (
 
 class TestValidateQuery:
     """Tests for SQL query validation and sanitisation."""
+
+    @pytest.mark.parametrize(
+        "sql",
+        [
+            "WITH changed AS (DELETE FROM users RETURNING *) SELECT * FROM changed",
+            "SELECT * FROM users FOR UPDATE",
+            "SELECT * FROM users INTO OUTFILE '/tmp/copied'",
+        ],
+    )
+    def test_rejects_nested_writes_and_side_effects(self, sql: str) -> None:
+        with pytest.raises(UnsafeQueryError):
+            validate_query(sql, dialect="postgres")
+
+    def test_quoted_keywords_are_data(self) -> None:
+        result = validate_query("SELECT 'DROP' AS label, \"DELETE\" FROM users", dialect="sqlite")
+        assert "'DROP'" in result
+        assert '"DELETE"' in result
+
+    @pytest.mark.parametrize(
+        ("dialect", "sql", "expected"),
+        [
+            ("mssql", "SELECT * FROM users", "TOP 100"),
+            ("oracle", "SELECT * FROM users", "FETCH FIRST 100 ROWS ONLY"),
+            ("postgresql", "SELECT * FROM users LIMIT 1000", "LIMIT 100"),
+            ("mysql", "SELECT * FROM users LIMIT 10, 1000", "LIMIT 100 OFFSET 10"),
+            ("tsql", "SELECT TOP 1 PERCENT * FROM users", "TOP 100"),
+            ("oracle", "SELECT * FROM users FETCH FIRST 10 ROWS ONLY", "FETCH FIRST 10"),
+        ],
+    )
+    def test_dialect_row_limits(self, dialect: str, sql: str, expected: str) -> None:
+        assert expected in validate_query(sql, dialect=dialect)
+
+    def test_union_gets_outer_limit(self) -> None:
+        result = validate_query("SELECT 1 UNION ALL SELECT 2", dialect="sqlite")
+        assert result.endswith("LIMIT 100;")
 
     @pytest.mark.parametrize("sql", ["SELECT 1; SELECT 2", "SELECT * INTO copy FROM users"])
     def test_rejects_multiple_statements_and_select_into(self, sql):
@@ -198,6 +234,23 @@ class TestIntrospectSchema:
 
 class TestExecuteQuery:
     """Tests for executing SQL against the test database."""
+
+    async def test_execution_timeout(self, sql_engine) -> None:
+        from app.api.middleware.error_handler import SQLExecutionError
+
+        async def slow_execute(*args: Any, **kwargs: Any) -> None:
+            await asyncio.sleep(1)
+
+        session = AsyncMock()
+        session.__aenter__.return_value = session
+        session.execute.side_effect = slow_execute
+        with (
+            patch("app.tools.sql_tools.get_sql_engine", return_value=sql_engine),
+            patch("app.tools.sql_tools.AsyncSession", return_value=session),
+            patch("app.tools.sql_tools.settings.sql_query_timeout_seconds", 0.01),
+            pytest.raises(SQLExecutionError, match="timed out"),
+        ):
+            await execute_query("SELECT 1")
 
     @pytest.mark.parametrize(
         "sql",

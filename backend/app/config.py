@@ -71,6 +71,7 @@ class Settings(BaseSettings):
     # ── SQL Agent ───────────────────────────────────────────────────────
     sql_max_rows: int = 100
     sql_allow_writes: bool = False
+    sql_query_timeout_seconds: float = Field(default=30.0, gt=0)
 
     # ── Rate Limiting ──────────────────────────────────────────────────
     rate_limit_default: str = "60/minute"
