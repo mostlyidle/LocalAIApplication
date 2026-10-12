@@ -22,6 +22,7 @@ import {
   memorySchema,
   memorySettingsSchema,
   memoryDeleteAllSchema,
+  conversationMemorySettingsSchema,
   type MemoryRecord,
   type MemorySettings,
 } from "./schemas";
@@ -173,6 +174,16 @@ export async function updateMemorySettings(input: Partial<MemorySettings>) {
 
 export async function deleteAllMemories() {
   return apiFetch("/memory", { method: "DELETE" }, memoryDeleteAllSchema);
+}
+
+export async function updateConversationMemorySettings(
+  conversationId: string,
+  input: { exclude_from_memory: boolean },
+) {
+  return apiFetch(`/memory/conversations/${encodeURIComponent(conversationId)}/settings`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  }, conversationMemorySettingsSchema);
 }
 
 // --- Documents ---

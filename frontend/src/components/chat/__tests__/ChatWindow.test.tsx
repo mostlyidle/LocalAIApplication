@@ -14,6 +14,7 @@ const mockLoadConversation = vi.fn();
 const mockGetConversation = vi.fn();
 const mockGetConversations = vi.fn();
 const mockCreateMemory = vi.fn();
+const mockUpdateConversationMemorySettings = vi.fn();
 const localStorageValues = new Map<string, string>();
 
 Object.defineProperty(window, "localStorage", {
@@ -48,6 +49,7 @@ const mockUploadDocument = vi.fn();
 const mockGetAgentCatalog = vi.fn();
 vi.mock("@/lib/api", () => ({
   createMemory: (...args: unknown[]) => mockCreateMemory(...args),
+  updateConversationMemorySettings: (...args: unknown[]) => mockUpdateConversationMemorySettings(...args),
   uploadDocument: (...args: unknown[]) => mockUploadDocument(...args),
   getAgentCatalog: (...args: unknown[]) => mockGetAgentCatalog(...args),
   getConversation: (...args: unknown[]) => mockGetConversation(...args),
@@ -112,6 +114,7 @@ describe("ChatWindow", () => {
     mockGetConversation.mockResolvedValue({ id: "conversation-1", title: "Saved", messages: [] });
     mockGetConversations.mockResolvedValue({ conversations: [] });
     mockCreateMemory.mockResolvedValue({ id: "saved-memory" });
+    mockUpdateConversationMemorySettings.mockImplementation(async (_id: string, settings: { exclude_from_memory: boolean }) => settings);
   });
 
   it("restores the active account conversation after refresh", async () => {
@@ -188,6 +191,16 @@ describe("ChatWindow", () => {
       source_conversation_id: "conversation-1",
       source_client_turn_id: "turn-1",
     }));
+  });
+
+  it("saves the conversation recall exclusion setting", async () => {
+    mockChatState = { ...mockChatState, conversationId: "conversation-1" };
+    render(<ChatWindow />);
+    fireEvent.click(await screen.findByRole("checkbox", { name: "Exclude this chat from past-chat recall" }));
+    await waitFor(() => expect(mockUpdateConversationMemorySettings).toHaveBeenCalledWith(
+      "conversation-1",
+      { exclude_from_memory: true },
+    ));
   });
 
   it("browses and opens an owned saved conversation", async () => {

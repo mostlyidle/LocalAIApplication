@@ -84,6 +84,9 @@ def test_upgrade_quarantines_existing_records(
         conversation_columns = {
             column[1] for column in connection.execute(text("PRAGMA table_info(conversations)"))
         }
+        recall_excluded = connection.execute(
+            text("SELECT exclude_from_memory FROM conversations WHERE id = 'legacy-chat'")
+        ).scalar_one()
 
     assert account == 0
     assert rows == {
@@ -100,3 +103,4 @@ def test_upgrade_quarantines_existing_records(
         "summary_message_count",
         "summary_revision",
     } <= conversation_columns
+    assert recall_excluded == 0
