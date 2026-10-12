@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from app.api.routes.meetings import _is_allowed_origin
 from app.dependencies import get_meeting_service
-from app.models.db_models import Meeting, MeetingStreamTicket
+from app.models.db_models import Meeting, MeetingStreamTicket, LEGACY_ACCOUNT_ID
 from app.models.enums import MeetingStatus
 from app.services.meeting_answers import MeetingAnswerService
 from app.services.meetings import MeetingService
@@ -112,6 +112,7 @@ async def test_canonical_meeting_stream_protocol(
     meeting_id = "meeting-123"
     db_session.add(
         Meeting(
+            owner_id=LEGACY_ACCOUNT_ID,
             id=meeting_id,
             status=MeetingStatus.CREATED.value,
             consent_policy_version="meeting-consent-v1",

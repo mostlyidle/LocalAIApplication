@@ -93,8 +93,9 @@ async def test_legacy_assignment_defaults_to_dry_run_and_applies_explicit_record
         session.add_all(
             [
                 account,
-                Conversation(id="legacy-chat", title="Private conversation"),
+                Conversation(owner_id=LEGACY_ACCOUNT_ID, id="legacy-chat", title="Private conversation"),
                 Document(
+                    owner_id=LEGACY_ACCOUNT_ID,
                     id="legacy-doc",
                     filename="private.txt",
                     format="txt",
@@ -102,6 +103,7 @@ async def test_legacy_assignment_defaults_to_dry_run_and_applies_explicit_record
                     storage_path="/tmp/private.txt",
                 ),
                 Meeting(
+                    owner_id=LEGACY_ACCOUNT_ID,
                     id="legacy-meeting",
                     consent_policy_version="v1",
                     consent_attested_at=datetime.now(UTC),

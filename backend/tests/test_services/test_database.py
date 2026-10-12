@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from unittest.mock import patch
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
-from app.models.db_models import Base, Conversation, Document
+from app.models.db_models import Base, Conversation, Document, LEGACY_ACCOUNT_ID, Meeting
 
 
 # =============================================================================
@@ -25,6 +27,28 @@ class TestDatabaseFixtures:
     async def test_session_works(self, db_session: AsyncSession):
         result = await db_session.execute(text("SELECT 1"))
         assert result.scalar() == 1
+
+    @pytest.mark.parametrize(
+        "record_factory",
+        [
+            lambda: Conversation(title="Missing owner"),
+            lambda: Document(
+                filename="missing.txt",
+                format="txt",
+                size_bytes=0,
+                storage_path="/tmp/missing.txt",
+            ),
+            lambda: Meeting(
+                consent_policy_version="v1",
+                consent_attested_at=datetime.now(UTC),
+            ),
+        ],
+    )
+    async def test_private_records_require_an_explicit_owner(self, db_session, record_factory):
+        db_session.add(record_factory())
+        with pytest.raises(IntegrityError):
+            await db_session.flush()
+        await db_session.rollback()
 
     async def test_tables_created(self, db_session: AsyncSession):
         """Verify that all ORM tables exist in the test database."""
@@ -48,7 +72,7 @@ class TestConversationCRUD:
     """Test basic ORM operations via the async session."""
 
     async def test_create_conversation(self, db_session: AsyncSession):
-        conv = Conversation(title="Test Chat")
+        conv = Conversation(owner_id=LEGACY_ACCOUNT_ID, title="Test Chat")
         db_session.add(conv)
         await db_session.flush()
 
@@ -57,7 +81,7 @@ class TestConversationCRUD:
         assert conv.created_at is not None
 
     async def test_create_and_read_conversation(self, db_session: AsyncSession):
-        conv = Conversation(title="Read Test")
+        conv = Conversation(owner_id=LEGACY_ACCOUNT_ID, title="Read Test")
         db_session.add(conv)
         await db_session.flush()
 
@@ -74,6 +98,7 @@ class TestDocumentCRUD:
 
     async def test_create_document(self, db_session: AsyncSession):
         doc = Document(
+            owner_id=LEGACY_ACCOUNT_ID,
             filename="test.pdf",
             format="pdf",
             size_bytes=1024,
