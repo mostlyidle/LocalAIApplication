@@ -38,6 +38,14 @@ def _mock_collection(
     return col
 
 
+IDENTITY = {"embedding_model": "nomic-embed-text:latest", "embedding_digest": "weights-v1", "embedding_profile": "plain-v1"}
+
+
+def _mock_embeddings(**kwargs: Any) -> MagicMock:
+    """Provide deterministic model identity and mocked embedding operations."""
+    return MagicMock(get_identity=AsyncMock(return_value=IDENTITY.copy()), **kwargs)
+
+
 def _mock_client(collections: list[MagicMock] | None = None) -> MagicMock:
     """Create a mock ChromaDB PersistentClient."""
     client = MagicMock()
@@ -92,6 +100,71 @@ class TestVectorStoreInit:
 class TestGetOrCreateCollection:
     """Tests for _get_or_create_collection."""
 
+    def test_model_change_rejected_even_with_same_dimensions(self) -> None:
+        from app.api.middleware.error_handler import InputValidationError
+
+        col = _mock_collection(count=1)
+        col.metadata = {**IDENTITY, "embedding_dimension": 768}
+        service = VectorStoreService()
+        service._client = _mock_client([col])
+        with pytest.raises(InputValidationError, match="different embedding"):
+            service._get_or_create_collection("documents", {**IDENTITY, "embedding_digest": "weights-v2"}, 768)
+        col.modify.assert_not_called()
+        col.upsert.assert_not_called()
+
+    def test_legacy_index_rejects_new_model(self) -> None:
+        from app.api.middleware.error_handler import InputValidationError
+
+        col = _mock_collection(count=1)
+        service = VectorStoreService()
+        service._client = _mock_client([col])
+        with pytest.raises(InputValidationError, match="Legacy collection"):
+            service._get_or_create_collection("documents", {**IDENTITY, "embedding_model": "embeddinggemma:latest"}, 768)
+        col.modify.assert_not_called()
+
+    def test_real_chroma_preserves_identity_and_vectors(self, tmp_path) -> None:
+        import chromadb
+        from chromadb.config import Settings
+
+        from app.api.middleware.error_handler import InputValidationError
+
+        service = VectorStoreService()
+        service._client = chromadb.PersistentClient(path=str(tmp_path), settings=Settings(anonymized_telemetry=False))
+        col = service._get_or_create_collection("verified", IDENTITY, 2)
+        col.upsert(ids=["one"], documents=["private text"], embeddings=[[0.1, 0.2]])
+        with pytest.raises(InputValidationError):
+            service._get_or_create_collection("verified", {**IDENTITY, "embedding_model": "another:latest"}, 2)
+        assert col.count() == 1
+        assert col.metadata["embedding_digest"] == "weights-v1"
+
+    async def test_empty_real_chroma_collection_can_be_tagged_and_searched(self, tmp_path) -> None:
+        import chromadb
+        from chromadb.config import Settings
+
+        service = VectorStoreService()
+        service._client = chromadb.PersistentClient(
+            path=str(tmp_path), settings=Settings(anonymized_telemetry=False)
+        )
+        service._client.get_or_create_collection(
+            "empty", metadata={"hnsw:space": "cosine", "purpose": "regression"}
+        )
+        assert await service.get_collection_count("empty") == 0
+        embeddings = _mock_embeddings(
+            embed_texts=AsyncMock(return_value=[[1.0, 0.0]]),
+            embed_text=AsyncMock(return_value=[1.0, 1.0]),
+        )
+        with patch("app.services.embeddings.embedding_service", embeddings):
+            assert await service.add_documents(
+                ["passage"], [{"source": "test.pdf"}], ["one"], "empty"
+            ) == 1
+            results = await service.search("query", "empty", top_k=1, score_threshold=0)
+        assert results[0]["content"] == "passage"
+        assert results[0]["score"] == pytest.approx(0.7071)
+        metadata = service._client.get_collection("empty").metadata
+        assert metadata["purpose"] == "regression"
+        assert metadata["embedding_digest"] == IDENTITY["embedding_digest"]
+        assert metadata["embedding_dimension"] == 2
+
     def test_uses_default_name(self):
         """Without name arg, uses settings.chroma_collection_name."""
         svc = VectorStoreService()
@@ -144,7 +217,7 @@ class TestAddDocuments:
             mock_thread.side_effect = lambda fn: fn()  # run sync immediately
             with patch(
                 "app.services.embeddings.embedding_service",
-                MagicMock(embed_texts=mock_embed),
+                _mock_embeddings(embed_texts=mock_embed),
             ):
                 result = await svc.add_documents(
                     texts=["doc1", "doc2"],
@@ -167,7 +240,7 @@ class TestAddDocuments:
             mock_thread.side_effect = lambda fn: fn()
             with patch(
                 "app.services.embeddings.embedding_service",
-                MagicMock(embed_texts=mock_embed),
+                _mock_embeddings(embed_texts=mock_embed),
             ):
                 await svc.add_documents(
                     texts=["doc1"],
@@ -178,7 +251,7 @@ class TestAddDocuments:
 
         mock_client.get_or_create_collection.assert_called_with(
             name="custom",
-            metadata={"hnsw:space": "cosine"},
+            metadata={"hnsw:space": "cosine", **IDENTITY, "embedding_dimension": 1},
         )
 
 
@@ -196,7 +269,7 @@ class TestSearch:
         mock_col = _mock_collection()
         svc._client = _mock_client([mock_col])
 
-        mock_embed_svc = MagicMock()
+        mock_embed_svc = _mock_embeddings()
         mock_embed_svc.embed_text = AsyncMock(return_value=[0.1, 0.2])
 
         with patch("app.services.vector_store.asyncio.to_thread") as mock_thread:
@@ -217,7 +290,7 @@ class TestSearch:
         mock_col = _mock_collection(query_result=query_result)
         svc._client = _mock_client([mock_col])
 
-        mock_embed_svc = MagicMock()
+        mock_embed_svc = _mock_embeddings()
         mock_embed_svc.embed_text = AsyncMock(return_value=[0.1, 0.2])
 
         with patch("app.services.vector_store.asyncio.to_thread") as mock_thread:
@@ -241,7 +314,7 @@ class TestSearch:
         mock_col = _mock_collection(query_result=query_result)
         svc._client = _mock_client([mock_col])
 
-        mock_embed_svc = MagicMock()
+        mock_embed_svc = _mock_embeddings()
         mock_embed_svc.embed_text = AsyncMock(return_value=[0.1])
 
         with patch("app.services.vector_store.asyncio.to_thread") as mock_thread:
@@ -257,7 +330,7 @@ class TestSearch:
         mock_col = _mock_collection()
         svc._client = _mock_client([mock_col])
 
-        mock_embed_svc = MagicMock()
+        mock_embed_svc = _mock_embeddings()
         mock_embed_svc.embed_text = AsyncMock(return_value=[0.1])
 
         with patch("app.services.vector_store.asyncio.to_thread") as mock_thread:
@@ -280,7 +353,7 @@ class TestSearch:
         mock_col = _mock_collection(query_result=query_result)
         svc._client = _mock_client([mock_col])
 
-        mock_embed_svc = MagicMock()
+        mock_embed_svc = _mock_embeddings()
         mock_embed_svc.embed_text = AsyncMock(return_value=[0.1])
 
         with patch("app.services.vector_store.asyncio.to_thread") as mock_thread:

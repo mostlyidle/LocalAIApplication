@@ -185,7 +185,7 @@ class TestRAGIngest:
         mock_parsed.word_count = 6
         mock_parsed.metadata = {"format": "pdf"}
         mock_parser.parse = AsyncMock(return_value=mock_parsed)
-        mock_parser.chunk_text = MagicMock(
+        mock_parser.chunk_document = MagicMock(
             return_value=[
                 {
                     "text": "The report shows quarterly revenue growth.",
@@ -271,7 +271,7 @@ class TestRAGIngest:
         mock_parsed.word_count = 0
         mock_parsed.metadata = {"format": "pdf"}
         mock_parser.parse = AsyncMock(return_value=mock_parsed)
-        mock_parser.chunk_text = MagicMock(return_value=[])
+        mock_parser.chunk_document = MagicMock(return_value=[])
 
         from app.dependencies import get_document_parser
 

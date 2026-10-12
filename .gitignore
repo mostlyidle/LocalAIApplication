@@ -16,6 +16,7 @@ ENV/
 
 # uv
 .python-version
+!backend/.python-version
 
 # Node.js
 node_modules/

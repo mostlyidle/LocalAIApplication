@@ -55,7 +55,7 @@ class TestIngestDocument:
             patch("app.tools.rag_tools.document_parser_service") as mock_parser,
             patch("app.tools.rag_tools.vector_store_service") as mock_vs,
         ):
-            mock_parser.chunk_text = MagicMock(
+            mock_parser.chunk_document = MagicMock(
                 return_value=[
                     {"text": "Some text to chunk", "metadata": {"source": "doc.txt"}},
                     {"text": "and embed.", "metadata": {"source": "doc.txt"}},
@@ -84,7 +84,7 @@ class TestIngestDocument:
             patch("app.tools.rag_tools.document_parser_service") as mock_parser,
             patch("app.tools.rag_tools.vector_store_service") as mock_vs,
         ):
-            mock_parser.chunk_text = MagicMock(return_value=[{"text": "chunk", "metadata": {}}])
+            mock_parser.chunk_document = MagicMock(return_value=[{"text": "chunk", "metadata": {}}])
             mock_vs.add_documents = AsyncMock(return_value=1)
 
             from app.tools.rag_tools import ingest_document
@@ -105,7 +105,7 @@ class TestIngestDocument:
             patch("app.tools.rag_tools.document_parser_service") as mock_parser,
             patch("app.tools.rag_tools.vector_store_service") as mock_vs,
         ):
-            mock_parser.chunk_text = MagicMock(return_value=[])
+            mock_parser.chunk_document = MagicMock(return_value=[])
 
             from app.tools.rag_tools import ingest_document
 
@@ -234,7 +234,7 @@ class TestRAGIngestTool:
             patch("app.tools.rag_tools.document_parser_service") as mock_parser,
             patch("app.tools.rag_tools.vector_store_service") as mock_vs,
         ):
-            mock_parser.chunk_text = MagicMock(return_value=[{"text": "chunk", "metadata": {}}])
+            mock_parser.chunk_document = MagicMock(return_value=[{"text": "chunk", "metadata": {}}])
             mock_vs.add_documents = AsyncMock(return_value=1)
 
             from app.tools.rag_tools import rag_ingest_tool
