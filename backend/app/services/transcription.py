@@ -195,9 +195,11 @@ class MLXWhisperTranscriptionEngine(TranscriptionEngine):
             raise ValueError("ASR_MODEL_DIR must be an existing absolute local MLX directory")
         if not (path / "config.json").is_file() or not any(
             (path / name).is_file()
-            for name in ("model.safetensors", "weights.safetensors", "weights.npz")
+            for name in ("weights.safetensors", "weights.npz")
         ):
-            raise ValueError("MLX model directory must contain config.json and local weights")
+            raise ValueError(
+                "MLX model directory must contain config.json and weights.safetensors or weights.npz"
+            )
         self.model_dir = path.resolve()
         self._loaded = False
         self._load_task: asyncio.Task[None] | None = None
