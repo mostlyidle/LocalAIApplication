@@ -79,13 +79,13 @@ class TestParseClassification:
     def test_json_with_extra_whitespace(self):
         assert _parse_classification('  {"agent": "document"}  ') == "document"
 
-    def test_json_in_markdown_code_block(self):
+    def test_rejects_json_in_markdown_code_block(self):
         content = '```json\n{"agent": "web"}\n```'
-        assert _parse_classification(content) == "web"
+        assert _parse_classification(content) == "chat"
 
-    def test_plain_text_agent_name(self):
+    def test_rejects_plain_text_agent_name(self):
         result = _parse_classification("I think this is a sql question.")
-        assert result == "sql"
+        assert result == "chat"
 
     def test_fallback_to_chat(self):
         result = _parse_classification("I have no idea what this is.")
@@ -157,6 +157,9 @@ class TestClassifyIntent:
             result = await classify_intent(state)
 
         assert result["next_agent"] == "sql"
+        schema = mock_service.get_chat_model.call_args.kwargs["format"]
+        assert schema["properties"]["agent"]
+        assert schema["required"] == ["agent"]
 
     async def test_llm_failure_falls_back_to_chat(self, mock_llm):
         """If the LLM call throws, we gracefully fall back to chat."""

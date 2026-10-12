@@ -18,12 +18,12 @@ Design decisions:
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import structlog
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, StateGraph
+from pydantic import BaseModel, ValidationError
 
 from app.agents.chat_agent import chat_agent_node
 from app.agents.document_agent import document_agent_node
@@ -61,6 +61,12 @@ Rules:
 VALID_AGENTS = {member.value for member in AgentType}
 
 
+class RouterDecision(BaseModel):
+    """Schema enforced by local Ollama for intent routing."""
+
+    agent: AgentType
+
+
 async def classify_intent(state: AgentState) -> dict[str, Any]:
     """Classify the user's intent and set ``next_agent`` in state.
 
@@ -94,7 +100,9 @@ async def classify_intent(state: AgentState) -> dict[str, Any]:
         }
 
     # LLM-based classification
-    llm = llm_service.get_chat_model(temperature=0.0, max_tokens=64)
+    llm = llm_service.get_chat_model(
+        temperature=0.0, max_tokens=64, format=RouterDecision.model_json_schema(),
+    )
 
     classification_messages = [
         SystemMessage(content=ROUTER_SYSTEM_PROMPT),
@@ -163,37 +171,12 @@ def _heuristic_classify(
 
 
 def _parse_classification(content: str) -> str:
-    """Parse the LLM classification response and extract the agent name.
-
-    Handles both clean JSON and messy responses with embedded JSON.
-    Falls back to ``"chat"`` if parsing fails.
-    """
-    # Try direct JSON parse
+    """Validate schema-constrained routing JSON and fall back to chat on invalid output."""
     try:
-        data = json.loads(content)
-        agent = data.get("agent", "").lower().strip()
-        if agent in VALID_AGENTS:
-            return agent
-    except (json.JSONDecodeError, AttributeError):
-        pass
-
-    # Try to find JSON in the response (LLM may wrap it in markdown)
-    import re
-
-    json_match = re.search(r'\{[^}]*"agent"\s*:\s*"(\w+)"[^}]*\}', content)
-    if json_match:
-        agent = json_match.group(1).lower().strip()
-        if agent in VALID_AGENTS:
-            return agent
-
-    # Last resort: look for any valid agent name in the raw text
-    lower = content.lower()
-    for agent_type in VALID_AGENTS:
-        if agent_type in lower:
-            return agent_type
-
-    logger.warning("unparseable_classification", raw=content)
-    return AgentType.CHAT
+        return RouterDecision.model_validate_json(content).agent
+    except ValidationError:
+        logger.warning("unparseable_classification")
+        return AgentType.CHAT
 
 
 # ---------------------------------------------------------------------------

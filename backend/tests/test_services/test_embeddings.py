@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 
 from app.services.embeddings import EmbeddingService
-
 
 # =============================================================================
 # Init
@@ -32,6 +32,32 @@ class TestEmbeddingServiceInit:
         svc = EmbeddingService(model="test-model")
         assert svc.model_name == "test-model"
 
+    async def test_identity_records_installed_digest(self) -> None:
+        response = httpx.Response(200, json={"models": [{
+            "name": "qwen3-embedding:0.6b", "digest": "sha256:actual-weights",
+        }]}, request=httpx.Request("GET", "http://localhost:11434/api/tags"))
+        client = AsyncMock()
+        client.__aenter__.return_value = client
+        client.get.return_value = response
+        with patch("app.services.embeddings.httpx.AsyncClient", return_value=client):
+            identity = await EmbeddingService("qwen3-embedding:0.6b").get_identity()
+        assert identity["embedding_digest"] == "sha256:actual-weights"
+        assert identity["embedding_profile"] == "qwen3-embedding-retrieval-v1"
+
+    async def test_malformed_inventory_is_actionable(self) -> None:
+        from app.api.middleware.error_handler import LLMConnectionError
+
+        client = AsyncMock()
+        client.__aenter__.return_value = client
+        client.get.return_value = httpx.Response(
+            200, json=[], request=httpx.Request("GET", "http://localhost:11434/api/tags"),
+        )
+        with (
+            patch("app.services.embeddings.httpx.AsyncClient", return_value=client),
+            pytest.raises(LLMConnectionError, match="identify"),
+        ):
+            await EmbeddingService().get_identity()
+
 
 # =============================================================================
 # embed_text
@@ -40,6 +66,22 @@ class TestEmbeddingServiceInit:
 
 class TestEmbedText:
     """Test single-text embedding."""
+
+    @pytest.mark.parametrize(
+        ("model", "query", "document"),
+        [
+            ("qwen3-embedding:0.6b", "Instruct: Retrieve relevant passages that answer the query\nQuery: hello", "hello"),
+            ("embeddinggemma", "task: search result | query: hello", "title: none | text: hello"),
+        ],
+    )
+    async def test_retrieval_input_profiles(self, model: str, query: str, document: str) -> None:
+        client = AsyncMock()
+        with patch("app.services.embeddings.OllamaEmbeddings", return_value=client):
+            service = EmbeddingService(model)
+            await service.embed_text("hello")
+            await service.embed_texts(["hello"])
+        client.aembed_query.assert_awaited_once_with(query)
+        client.aembed_documents.assert_awaited_once_with([document])
 
     async def test_returns_embedding_vector(self):
         mock_embeddings = AsyncMock()
