@@ -16,13 +16,14 @@ import uuid
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 
 from app.agents.sql_agent import sql_agent_node
 from app.agents.state import create_initial_state
 from app.api.middleware.error_handler import InputValidationError
 from app.api.middleware.rate_limiting import limiter
 from app.config import settings
+from app.dependencies import get_authenticated_session
 from app.models.schemas import (
     DatabaseConnectionRequest,
     DatabaseSchema,
@@ -30,6 +31,7 @@ from app.models.schemas import (
     SQLQueryRequest,
     SQLQueryResult,
 )
+from app.services.auth import AuthenticatedSession  # noqa: TC001
 from app.tools.sql_tools import (
     execute_query,
     introspect_schema,
@@ -50,6 +52,7 @@ router = APIRouter()
 async def natural_language_query(
     request: Request,
     body: SQLQueryRequest,
+    _authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
 ) -> SQLQueryResult:
     """Convert a natural language question to SQL, execute, and return results.
 
@@ -111,6 +114,7 @@ async def natural_language_query(
 async def execute_raw_query(
     request: Request,
     body: SQLExecuteRequest,
+    _authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
 ) -> dict[str, Any]:
     """Execute a raw SQL query (validated for safety) and return results.
 
@@ -147,6 +151,7 @@ async def execute_raw_query(
 @router.get("/sql/schema", response_model=DatabaseSchema)
 async def get_schema(
     database: str = "default",
+    _authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
 ) -> DatabaseSchema:
     """Get the schema of the target database including tables, columns, and types."""
     try:
@@ -184,6 +189,7 @@ async def get_schema(
 @router.post("/sql/connections")
 async def register_connection(
     request: DatabaseConnectionRequest,
+    _authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
 ) -> dict[str, str]:
     """Register a new database connection for the SQL agent.
 
@@ -209,7 +215,9 @@ async def register_connection(
 
 
 @router.get("/sql/connections")
-async def list_connections() -> list[dict[str, str]]:
+async def list_connections(
+    _authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+) -> list[dict[str, str]]:
     """List all registered database connections."""
     from app.services.database import _sql_engines
 

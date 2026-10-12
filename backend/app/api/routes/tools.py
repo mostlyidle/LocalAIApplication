@@ -14,10 +14,11 @@ from typing import Any
 
 import httpx
 import structlog
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 
 from app.api.middleware.rate_limiting import limiter
 from app.config import settings
+from app.dependencies import get_authenticated_session
 from app.models.enums import AgentType
 from app.models.schemas import (
     HealthResponse,
@@ -26,6 +27,7 @@ from app.models.schemas import (
     ToolExecuteResponse,
     ToolInfo,
 )
+from app.services.auth import AuthenticatedSession  # noqa: TC001
 from app.tools import (
     all_tools,
     calculator_tools,
@@ -66,7 +68,9 @@ _TOOL_LOOKUP = {tool.name: tool for tool in all_tools}
 
 
 @router.get("/tools", response_model=list[ToolInfo])
-async def list_tools() -> list[ToolInfo]:
+async def list_tools(
+    _authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+) -> list[ToolInfo]:
     """List all available tools with their metadata and parameter schemas."""
     result = []
     for tool in all_tools:
@@ -99,6 +103,7 @@ async def list_tools() -> list[ToolInfo]:
 async def execute_tool(
     request: Request,
     body: ToolExecuteRequest,
+    _authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
 ) -> ToolExecuteResponse:
     """Execute a tool directly by name with the provided arguments.
 
@@ -333,7 +338,9 @@ async def health_check() -> HealthResponse:
             ServiceHealth(
                 name="comfyui",
                 healthy=healthy,
-                message="ComfyUI is reachable" if healthy else f"Unexpected status: {response.status_code}",
+                message="ComfyUI is reachable"
+                if healthy
+                else f"Unexpected status: {response.status_code}",
                 latency_ms=round((time.perf_counter() - start) * 1000, 2),
                 optional_for_answers=True,
             )
@@ -351,7 +358,9 @@ async def health_check() -> HealthResponse:
     # Check Qdrant
     try:
         start = time.perf_counter()
-        from app.services.hybrid_vector_store import hybrid_vector_store_service as vector_store_service
+        from app.services.hybrid_vector_store import (
+            hybrid_vector_store_service as vector_store_service,
+        )
 
         collections = await vector_store_service.list_collections()
         latency = (time.perf_counter() - start) * 1000
@@ -413,9 +422,5 @@ async def health_check() -> HealthResponse:
     else:
         status = "unhealthy"
 
-    meeting_ready = all(
-        service.healthy
-        for service in services
-        if service.required_for_meeting
-    )
+    meeting_ready = all(service.healthy for service in services if service.required_for_meeting)
     return HealthResponse(status=status, services=services, meeting_ready=meeting_ready)
