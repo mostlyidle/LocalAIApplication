@@ -50,7 +50,8 @@ class Message(Base):
     )
     role: Mapped[str] = mapped_column(String(20))  # user | assistant | system | tool
     content: Mapped[str] = mapped_column(Text)
-    agent_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    agent_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    execution_metadata: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
     conversation: Mapped[Conversation] = relationship("Conversation", back_populates="messages")

@@ -5,7 +5,6 @@ import {
   Settings,
   Activity,
   Database,
-  Brain,
   Sun,
   Moon,
   Monitor,
@@ -17,7 +16,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useTheme } from "next-themes";
@@ -25,8 +23,9 @@ import * as api from "@/lib/api";
 
 interface HealthData {
   status: string;
+  services: { name: string; healthy: boolean; message?: string }[];
   ollama: { status: string };
-  chromadb: { status: string };
+  qdrant: { status: string };
   database: { status: string };
 }
 
@@ -90,6 +89,7 @@ export default function SettingsPage() {
     ) : (
       <XCircle className="h-4 w-4 text-destructive" />
     );
+  const optionalService = (name: string) => health?.services.find((service) => service.name === name);
 
   return (
     <div className="container mx-auto max-w-4xl p-6">
@@ -126,11 +126,11 @@ export default function SettingsPage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 rounded-md border px-3 py-2">
-                  <StatusIcon status={health.chromadb.status} />
+                  <StatusIcon status={health.qdrant.status} />
                   <div>
-                    <div className="text-sm font-medium">ChromaDB</div>
+                    <div className="text-sm font-medium">Qdrant</div>
                     <div className="text-[10px] text-muted-foreground">
-                      {health.chromadb.status}
+                      {health.qdrant.status}
                     </div>
                   </div>
                 </div>
@@ -143,6 +143,23 @@ export default function SettingsPage() {
                     </div>
                   </div>
                 </div>
+                {([
+                  ["finnhub_market_data", "Finnhub Market Data"],
+                  ["comfyui", "ComfyUI"],
+                ] as const).map(([name, label]) => {
+                  const service = optionalService(name);
+                  return (
+                    <div key={name} className="flex items-center gap-2 rounded-md border px-3 py-2">
+                      <StatusIcon status={service?.healthy ? "healthy" : "unavailable"} />
+                      <div>
+                        <div className="text-sm font-medium">{label}</div>
+                        <div className="text-[10px] text-muted-foreground">
+                          {service?.message ?? "Not reported"}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             ) : (
               <p className="text-sm text-destructive">

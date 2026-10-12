@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, patch
 
-import pytest
 from fastapi import FastAPI
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 class TestCreateApp:
@@ -42,6 +44,7 @@ class TestCreateApp:
 
         # Check that all expected route prefixes are present
         assert "/api/v1/chat" in route_paths
+        assert "/api/v1/agents" in route_paths
         assert "/api/v1/tools" in route_paths
         assert "/api/v1/health" in route_paths
         assert "/api/v1/sql/query" in route_paths
@@ -78,6 +81,9 @@ class TestLifespan:
             mock_settings.chroma_persist_dir = str(chroma_dir)
             mock_settings.api_port = 8000
             mock_settings.log_level = "warning"
+            mock_settings.finnhub_api_key = None
+            mock_settings.market_data_cache_seconds = 60
+            mock_settings.comfyui_url = "http://localhost:8188"
 
             from app.main import lifespan
 
@@ -101,6 +107,9 @@ class TestLifespan:
             mock_settings.chroma_persist_dir = str(tmp_path / "chroma")
             mock_settings.api_port = 8000
             mock_settings.log_level = "warning"
+            mock_settings.finnhub_api_key = None
+            mock_settings.market_data_cache_seconds = 60
+            mock_settings.comfyui_url = "http://localhost:8188"
 
             from app.main import lifespan
 
@@ -127,6 +136,9 @@ class TestLifespan:
             mock_settings.chroma_persist_dir = str(tmp_path / "chroma")
             mock_settings.api_port = 8000
             mock_settings.log_level = "warning"
+            mock_settings.finnhub_api_key = None
+            mock_settings.market_data_cache_seconds = 60
+            mock_settings.comfyui_url = "http://localhost:8188"
 
             from app.main import lifespan
 
@@ -151,6 +163,9 @@ class TestLifespan:
             mock_settings.chroma_persist_dir = str(tmp_path / "chroma")
             mock_settings.api_port = 8000
             mock_settings.log_level = "warning"
+            mock_settings.finnhub_api_key = None
+            mock_settings.market_data_cache_seconds = 60
+            mock_settings.comfyui_url = "http://localhost:8188"
 
             from app.main import lifespan
 

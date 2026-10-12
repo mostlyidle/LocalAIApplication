@@ -7,17 +7,18 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request as StarletteRequest
 
-from app.models.db_models import Conversation, Message, ToolCallRecord
+from app.models.db_models import Conversation, Document, Message, ToolCallRecord
 from app.models.enums import AgentType, MessageRole
-
 
 # =============================================================================
 # Helper: create a mock agent result
@@ -61,6 +62,78 @@ class TestSendMessage:
         assert data["content"] == "Hi there!"
         assert data["agent_used"] == "chat"
         assert data["conversation_id"] is not None
+
+    async def test_selected_profile_uses_shared_task_runner_and_persists_result(
+        self, client: AsyncClient, db_session: AsyncSession
+    ):
+        from app.models.profile_schemas import AgentResult, ExecutionMetadata
+
+        profile_dir = Path(__file__).resolve().parents[2] / "app" / "prompts"
+        from app.agents.registry import AgentRegistry
+        from app.prompt_store import PromptStore
+
+        prompts = PromptStore(profile_dir)
+        client._transport.app.state.agent_registry = AgentRegistry(profile_dir, prompts)
+        runner = AsyncMock()
+        runner.run.return_value = AgentResult(
+            agent="image_generation",
+            answer="Workflow queued.",
+            artifacts={"prompt_id": "job-1"},
+            metadata=ExecutionMetadata(
+                request_id="req-1",
+                target="image_generation",
+                agent_name="image_generation",
+            ),
+        )
+        client._transport.app.state.task_runner = runner
+
+        response = await client.post(
+            "/api/v1/chat",
+            json={
+                "content": "Create the image.",
+                "agent_name": "image_generation",
+                "workflow": {"1": {"class_type": "SaveImage", "inputs": {}}},
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()["execution"]["artifacts"]["prompt_id"] == "job-1"
+        runner.run.assert_awaited_once()
+        reloaded = await client.get(f"/api/v1/chat/conversations/{response.json()['conversation_id']}")
+        assert reloaded.status_code == 200
+        assert reloaded.json()["messages"][-1]["execution"]["artifacts"]["prompt_id"] == "job-1"
+        messages = (
+            await db_session.execute(
+                select(Message).where(Message.agent_type == "image_generation")
+            )
+        ).scalars().all()
+        assert len(messages) == 1
+        assert json.loads(messages[0].execution_metadata)["artifacts"]["prompt_id"] == "job-1"
+
+    async def test_chat_attachments_resolve_only_uploaded_ids(
+        self, db_session: AsyncSession, tmp_path
+    ):
+        from app.api.routes.chat import _resolve_uploaded_paths
+
+        document_path = tmp_path / "note.txt"
+        document_path.write_text("trusted upload", encoding="utf-8")
+        db_session.add(
+            Document(
+                id="uploaded-note",
+                filename="note.txt",
+                format="text",
+                size_bytes=14,
+                storage_path=str(document_path),
+            )
+        )
+        await db_session.commit()
+
+        assert await _resolve_uploaded_paths(["uploaded-note"], db=db_session) == [str(document_path)]
+        from fastapi import HTTPException
+
+        with pytest.raises(HTTPException) as error:
+            await _resolve_uploaded_paths([str(document_path)], db=db_session)
+        assert error.value.status_code == 404
 
     async def test_reuses_existing_conversation(
         self, client: AsyncClient, db_session: AsyncSession

@@ -31,7 +31,8 @@ async def search_knowledge_base(
     query: str,
     collection: str = "documents",
     top_k: int = 5,
-    score_threshold: float = 0.4,
+    score_threshold: float | None = None,
+    agent_name: str = "rag",
 ) -> str:
     """Search the knowledge base for relevant information.
 
@@ -43,8 +44,9 @@ async def search_knowledge_base(
         collection: The collection to search (default: "documents").
         top_k: Maximum number of results to return.
         score_threshold: Minimum similarity score (0-1).
+        agent_name: Enabled retrieval profile to use.
     """
-    from app.services.vector_store import vector_store_service
+    from app.services.hybrid_vector_store import hybrid_vector_store_service as vector_store_service
 
     try:
         results = await vector_store_service.search(
@@ -52,6 +54,7 @@ async def search_knowledge_base(
             collection=collection,
             top_k=top_k,
             score_threshold=score_threshold,
+            agent_name=agent_name,
         )
 
         if not results:
@@ -62,9 +65,11 @@ async def search_knowledge_base(
             source = r.get("metadata", {}).get("source", "unknown")
             page = r.get("metadata", {}).get("page", "?")
             score = r.get("score", 0)
+            score_type = r.get("score_type", "unknown")
             content = r.get("content", "")[:500]
             output_parts.append(
-                f"[{i}] Score: {score:.4f} | Source: {source}, Page: {page}\n{content}"
+                f"[{i}] {score_type.upper()} score: {score:.4f} | "
+                f"Source: {source}, Page: {page}\n{content}"
             )
 
         return "\n\n".join(output_parts)
@@ -88,7 +93,7 @@ async def ingest_document(
     """
     from app.models.enums import DocumentFormat
     from app.services.document_parser import document_parser_service
-    from app.services.vector_store import vector_store_service
+    from app.services.hybrid_vector_store import hybrid_vector_store_service as vector_store_service
 
     path = Path(file_path)
     if not path.exists():
@@ -101,11 +106,13 @@ async def ingest_document(
 
     try:
         parsed = await document_parser_service.parse(path, doc_format)
+        doc_id = str(uuid.uuid4())
         chunks = document_parser_service.chunk_document(
             parsed,
             metadata={
                 "source": path.name,
                 "format": doc_format.value,
+                "document_id": doc_id,
             },
         )
 
@@ -114,7 +121,6 @@ async def ingest_document(
 
         texts = [c["text"] for c in chunks]
         metadatas = [c["metadata"] for c in chunks]
-        doc_id = str(uuid.uuid4())
         ids = [f"{doc_id}-chunk-{i}" for i in range(len(chunks))]
 
         count = await vector_store_service.add_documents(
@@ -135,7 +141,7 @@ async def ingest_document(
 @rag_mcp.tool()
 async def list_collections() -> str:
     """List all vector store collections with document counts."""
-    from app.services.vector_store import vector_store_service
+    from app.services.hybrid_vector_store import hybrid_vector_store_service as vector_store_service
 
     try:
         collections = await vector_store_service.list_collections()
@@ -153,7 +159,7 @@ async def delete_collection(name: str) -> str:
     Args:
         name: The name of the collection to delete.
     """
-    from app.services.vector_store import vector_store_service
+    from app.services.hybrid_vector_store import hybrid_vector_store_service as vector_store_service
 
     try:
         deleted = await vector_store_service.delete_collection(name)
@@ -171,7 +177,7 @@ async def collection_stats(name: str) -> str:
     Args:
         name: The collection name.
     """
-    from app.services.vector_store import vector_store_service
+    from app.services.hybrid_vector_store import hybrid_vector_store_service as vector_store_service
 
     try:
         count = await vector_store_service.get_collection_count(name)

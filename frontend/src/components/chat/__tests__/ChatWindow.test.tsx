@@ -30,8 +30,10 @@ vi.mock("@/hooks/useChat", () => ({
 
 // Mock uploadDocument from api
 const mockUploadDocument = vi.fn();
+const mockGetAgentCatalog = vi.fn();
 vi.mock("@/lib/api", () => ({
   uploadDocument: (...args: unknown[]) => mockUploadDocument(...args),
+  getAgentCatalog: (...args: unknown[]) => mockGetAgentCatalog(...args),
 }));
 
 // Mock child components to simplify rendering
@@ -80,12 +82,56 @@ describe("ChatWindow", () => {
     vi.clearAllMocks();
     resetChatState();
     mockUploadDocument.mockResolvedValue({ id: "uploaded-doc-1" });
+    mockGetAgentCatalog.mockResolvedValue({ agents: [] });
   });
 
   it("renders empty state when no messages", () => {
     render(<ChatWindow />);
 
     expect(screen.getByText("Start a conversation")).toBeInTheDocument();
+  });
+
+  it("loads available profiles into the agent selector", async () => {
+    mockGetAgentCatalog.mockResolvedValue({ agents: [
+      {
+        name: "image_analysis",
+        target: "image_analysis",
+        description: "Describe uploaded images",
+        default_for_target: true,
+        inference: { allowed_models: ["qwen2.5vl:7b"], defaults: { model: "qwen2.5vl:7b", temperature: 0.1 }, limits: { temperature: { minimum: 0, maximum: 2 } } },
+      },
+    ] });
+    render(<ChatWindow />);
+
+    await waitFor(() => expect(mockGetAgentCatalog).toHaveBeenCalled());
+    expect(screen.getByLabelText("Agent profile").querySelector('option[value="image_analysis"]')).not.toBeNull();
+  });
+
+  it("sends profile-specific ticker and inference settings with chat", async () => {
+    mockGetAgentCatalog.mockResolvedValue({ agents: [
+      {
+        name: "stock_research",
+        target: "stock_research",
+        description: "Research equities",
+        default_for_target: true,
+        inference: { allowed_models: ["qwen2.5:7b", "llama3.2:3b"], defaults: { model: "qwen2.5:7b", temperature: 0.2 }, limits: { temperature: { minimum: 0, maximum: 2 } } },
+      },
+    ] });
+    render(<ChatWindow />);
+    await waitFor(() => expect(screen.getByLabelText("Agent profile").querySelector('option[value="stock_research"]')).not.toBeNull());
+    fireEvent.change(screen.getByLabelText("Agent profile"), { target: { value: "stock_research" } });
+    await waitFor(() => expect(screen.getByLabelText("Agent model")).toHaveValue("qwen2.5:7b"));
+    fireEvent.change(screen.getByLabelText("Ticker symbol"), { target: { value: "AAPL" } });
+    fireEvent.change(screen.getByPlaceholderText("Type a message... (Shift+Enter for new line)"), {
+      target: { value: "Assess current risks." },
+    });
+    fireEvent.submit(screen.getByPlaceholderText("Type a message... (Shift+Enter for new line)").closest("form")!);
+
+    expect(mockSendMessage).toHaveBeenCalledWith("Assess current risks.", [], {
+      agent_name: "stock_research",
+      symbol: "AAPL",
+      inference: { model: "qwen2.5:7b", temperature: 0.2 },
+    });
   });
 
   it("renders messages via MessageBubble", () => {

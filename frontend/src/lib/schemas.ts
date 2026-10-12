@@ -16,7 +16,7 @@ export const healthSchema = z.object({
   return {
     ...data,
     ollama: serviceStatus("ollama"),
-    chromadb: serviceStatus("chromadb"),
+    qdrant: serviceStatus("qdrant"),
     database: serviceStatus("app_database"),
   };
 });
@@ -30,6 +30,20 @@ export const chatResponseSchema = z.object({
   conversation_id: z.string(),
   agent_used: z.string().nullable(),
   tool_calls: z.array(z.unknown()).optional(),
+  execution: z.unknown().optional(),
+});
+
+export const agentCatalogSchema = z.object({
+  agents: z.array(z.object({
+    name: z.string(),
+    target: z.string(),
+    description: z.string(),
+    default_for_target: z.boolean(),
+    inference: z.object({
+      allowed_models: z.array(z.string()),
+      defaults: z.object({ model: z.string(), temperature: z.number() }).passthrough(),
+    }).passthrough().nullable(),
+  }).passthrough()),
 });
 
 export const conversationSummarySchema = z.object({
@@ -145,11 +159,13 @@ export const ragSearchResultSchema = z.object({
     z.object({
       content: z.string(),
       score: z.number(),
+      score_type: z.string().optional(),
       metadata: z.record(z.string(), z.unknown()),
     })
   ),
   query: z.string(),
   total_results: z.number(),
+  retrieval: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const ragIngestSchema = z.object({
