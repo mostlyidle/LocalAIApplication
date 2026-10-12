@@ -207,7 +207,8 @@ class RAGSearchRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=4_000)
     collection: str = "documents"
     top_k: int = Field(default=5, ge=1, le=50)
-    score_threshold: float = Field(default=0.4, ge=0.0, le=1.0)
+    score_threshold: float | None = Field(default=None, ge=0.0, le=1.0)
+    agent_name: str = Field(default="rag", pattern=r"^[a-z][a-z0-9_]{0,62}$")
 
 
 class RAGSearchResult(BaseModel):
@@ -215,6 +216,7 @@ class RAGSearchResult(BaseModel):
 
     content: str
     score: float
+    score_type: str = "cosine"
     source: str
     page: int | None = None
     section: str | None = None
@@ -227,6 +229,7 @@ class RAGSearchResponse(BaseModel):
     query: str
     results: list[RAGSearchResult]
     total_results: int
+    retrieval: dict[str, Any] = Field(default_factory=dict)
 
 
 class CollectionInfo(BaseModel):

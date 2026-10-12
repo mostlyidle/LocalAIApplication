@@ -113,11 +113,13 @@ describe("RAG Page", () => {
         {
           content: "Python is a versatile language.",
           score: 0.95,
+          score_type: "cosine",
           metadata: { source: "intro.pdf", page: 2 },
         },
         {
           content: "It supports async programming.",
           score: 0.82,
+          score_type: "cosine",
           metadata: { source: "guide.md" },
         },
       ],
@@ -141,6 +143,31 @@ describe("RAG Page", () => {
       expect(screen.getByText("p.2")).toBeInTheDocument();
       expect(screen.getByText("95.0%")).toBeInTheDocument();
       expect(screen.getByText("It supports async programming.")).toBeInTheDocument();
+    });
+  });
+
+  it("uses the selected retrieval profile and labels RRF scores as rankings", async () => {
+    mockSearchRAG.mockResolvedValue({
+      results: [{
+        content: "A retrieved passage.",
+        score: 0.0328,
+        score_type: "rrf",
+        metadata: { source: "report.pdf" },
+      }],
+    });
+
+    await act(async () => {
+      render(<RAGPage />);
+    });
+    fireEvent.change(screen.getByLabelText("Retrieval profile"), {
+      target: { value: "rag_v2" },
+    });
+    await userEvent.type(screen.getByPlaceholderText(/Search your knowledge base/i), "revenue");
+    await userEvent.click(screen.getByRole("button", { name: /Search/i }));
+
+    await waitFor(() => {
+      expect(mockSearchRAG).toHaveBeenCalledWith("revenue", undefined, undefined, "rag_v2");
+      expect(screen.getByText("RRF 0.0328")).toBeInTheDocument();
     });
   });
 

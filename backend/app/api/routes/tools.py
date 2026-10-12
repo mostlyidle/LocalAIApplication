@@ -310,16 +310,16 @@ async def health_check() -> HealthResponse:
             )
         )
 
-    # Check ChromaDB
+    # Check Qdrant
     try:
         start = time.perf_counter()
-        from app.services.vector_store import vector_store_service
+        from app.services.hybrid_vector_store import hybrid_vector_store_service as vector_store_service
 
         collections = await vector_store_service.list_collections()
         latency = (time.perf_counter() - start) * 1000
         services.append(
             ServiceHealth(
-                name="chromadb",
+                name="qdrant",
                 healthy=True,
                 message=f"OK — {len(collections)} collections",
                 latency_ms=round(latency, 2),
@@ -329,7 +329,7 @@ async def health_check() -> HealthResponse:
     except Exception as exc:
         services.append(
             ServiceHealth(
-                name="chromadb",
+                name="qdrant",
                 healthy=False,
                 message=str(exc),
                 optional_for_answers=True,

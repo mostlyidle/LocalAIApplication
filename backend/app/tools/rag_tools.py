@@ -1,6 +1,6 @@
 """RAG tools for embedding, searching, and retrieving documents from the vector store.
 
-These tools interface with ChromaDB via the VectorStoreService and handle
+These tools interface with Qdrant via the hybrid vector-store service and handle
 the complete RAG pipeline: ingest (chunk + embed + store) and search.
 """
 
@@ -15,7 +15,7 @@ from langchain_core.tools import tool
 
 from app.config import settings
 from app.services.document_parser import document_parser_service
-from app.services.vector_store import vector_store_service
+from app.services.hybrid_vector_store import hybrid_vector_store_service as vector_store_service
 from app.tools.document_tools import parse_document_file
 
 logger = structlog.get_logger(__name__)
@@ -28,7 +28,7 @@ async def ingest_document(
 ) -> dict[str, Any]:
     """Ingest a document into the vector store.
 
-    Pipeline: parse -> chunk -> embed -> store in ChromaDB.
+    Pipeline: parse -> chunk -> embed -> store in Qdrant.
 
     Args:
         file_path: Path to the document file.
@@ -84,6 +84,7 @@ async def search_documents(
     collection: str | None = None,
     top_k: int | None = None,
     score_threshold: float | None = None,
+    agent_name: str = "rag",
 ) -> list[dict[str, Any]]:
     """Search the vector store for relevant document chunks.
 
@@ -101,6 +102,7 @@ async def search_documents(
         collection=collection,
         top_k=top_k,
         score_threshold=score_threshold,
+        agent_name=agent_name,
     )
 
 
@@ -112,6 +114,7 @@ async def rag_search_tool(
     query: str,
     collection: str = "documents",
     top_k: int = 5,
+    agent_name: str = "rag",
 ) -> str:
     """Search the document knowledge base for relevant information.
 
@@ -131,6 +134,7 @@ async def rag_search_tool(
         query=query,
         collection=collection,
         top_k=top_k,
+        agent_name=agent_name,
     )
 
     if not results:
@@ -140,13 +144,14 @@ async def rag_search_tool(
     for i, r in enumerate(results, 1):
         source = r.get("metadata", {}).get("source", "Unknown")
         score = r.get("score", 0)
+        score_type = r.get("score_type", "unknown")
         page = r.get("metadata", {}).get("page")
         content = r["content"][:500]  # Cap per-chunk display
 
         citation = f"[Source: {source}"
         if page:
             citation += f", Page {page}"
-        citation += f", Relevance: {score:.2f}]"
+        citation += f", {score_type.upper()} score: {score:.4f}]"
 
         parts.append(f"Result {i} {citation}:\n{content}")
 

@@ -83,8 +83,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # ── Shutdown ────────────────────────────────────────────────────
     from app.services.database import close_all_sql_engines, close_app_db
+    from app.services.hybrid_vector_store import hybrid_vector_store_service
 
     await mcp_client.close()
+    await hybrid_vector_store_service.close()
     await close_all_sql_engines()
     await close_app_db()
     logger.info("shutdown_complete")
