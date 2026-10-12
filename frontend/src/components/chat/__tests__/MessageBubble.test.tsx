@@ -8,6 +8,7 @@ vi.mock("lucide-react", () => ({
   ChevronDown: (props: Record<string, unknown>) => <span data-testid="chevron-down" {...props} />,
   ChevronRight: (props: Record<string, unknown>) => <span data-testid="chevron-right" {...props} />,
   Wrench: (props: Record<string, unknown>) => <span data-testid="wrench" {...props} />,
+  BookmarkPlus: (props: Record<string, unknown>) => <span data-testid="bookmark-plus" {...props} />,
 }));
 
 // Mock ToolCallDisplay — must use the path as seen from the component under test
@@ -53,6 +54,14 @@ describe("MessageBubble", () => {
     );
     const wrapper = container.firstElementChild;
     expect(wrapper?.className).toContain("justify-end");
+  });
+
+  it("lets a user review a message before saving it as memory", () => {
+    const message = makeMessage({ role: "user", content: "I prefer concise answers." });
+    const onRemember = vi.fn();
+    render(<MessageBubble message={message} onRemember={onRemember} />);
+    fireEvent.click(screen.getByRole("button", { name: "Remember this" }));
+    expect(onRemember).toHaveBeenCalledWith(message);
   });
 
   it("renders assistant message aligned left", () => {

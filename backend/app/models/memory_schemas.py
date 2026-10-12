@@ -18,6 +18,7 @@ class MemoryCreate(BaseModel):
     project_scope: str | None = Field(default=None, max_length=128)
     source_conversation_id: str | None = Field(default=None, min_length=1, max_length=36)
     source_message_id: str | None = Field(default=None, min_length=1, max_length=36)
+    source_client_turn_id: str | None = Field(default=None, min_length=1, max_length=36)
     origin_agent: str | None = Field(default=None, max_length=64)
 
     @field_validator("content")
@@ -27,6 +28,12 @@ class MemoryCreate(BaseModel):
         if not value:
             raise ValueError("Memory content cannot be blank.")
         return value
+
+    @model_validator(mode="after")
+    def prevent_duplicate_source_ids(self) -> MemoryCreate:
+        if self.source_message_id and self.source_client_turn_id:
+            raise ValueError("Provide a source message ID or client turn ID, not both.")
+        return self
 
 
 class MemoryUpdate(BaseModel):

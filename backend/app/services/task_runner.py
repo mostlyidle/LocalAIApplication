@@ -47,7 +47,10 @@ class TaskRunner:
         self._parser = DocumentParserService()
         self._market_data = market_data
         self._comfyui = comfyui
-        self._on_token: ContextVar[Callable[[str], Awaitable[None]] | None] = ContextVar("task_tokens", default=None)
+        self._on_token: ContextVar[Callable[[str], Awaitable[None]] | None] = ContextVar(
+            "task_tokens", default=None
+        )
+        self._memory_context: ContextVar[str] = ContextVar("task_memory_context", default="")
 
     async def run(
         self,
@@ -60,9 +63,19 @@ class TaskRunner:
         on_token: Callable[[str], Awaitable[None]] | None = None,
     ) -> AgentResult:
         token = self._on_token.set(on_token)
+        memory_token = self._memory_context.set("")
         try:
             execution = self._resolve_execution(request, document)
             target = execution.profile.target
+            if owner_id and target in {
+                "image_analysis",
+                "document",
+                "stock_research",
+                "software_engineer",
+            }:
+                from app.services.memory_context import load_account_memory_context
+
+                self._memory_context.set(await load_account_memory_context(owner_id))
             if target == "image_analysis":
                 result = await self._image_analysis(request, execution, document)
             elif target == "image_fraud":
@@ -95,6 +108,7 @@ class TaskRunner:
             return result.model_copy(update={"metadata": metadata})
         finally:
             self._on_token.reset(token)
+            self._memory_context.reset(memory_token)
 
     def _resolve_execution(self, request: TaskRequest, document: Document | None) -> AgentExecution:
         profile = self._registry.get(request.agent_name) if request.agent_name else None
@@ -230,7 +244,8 @@ class TaskRunner:
             else "I could not find relevant evidence in the selected collection."
         )
         return AgentResult(
-            agent=execution.profile.name, answer=answer,
+            agent=execution.profile.name,
+            answer=answer,
             artifacts={"citations": context.citations, "retrieval": context.retrieval},
             limitations=context.limitations,
         )
@@ -270,7 +285,9 @@ class TaskRunner:
             },
         )
         return AgentResult(
-            agent=execution.profile.name, answer=answer, artifacts=artifacts,
+            agent=execution.profile.name,
+            answer=answer,
+            artifacts=artifacts,
             limitations=snapshot.get("warnings", []),
         )
 
@@ -356,7 +373,15 @@ class TaskRunner:
                 max_tokens=inference.max_output_tokens,
                 num_ctx=inference.context_window,
             )
-            messages = [SystemMessage(content=system), HumanMessage(content=human_content)]
+            messages = [SystemMessage(content=system)]
+            memory_context = self._memory_context.get()
+            if memory_context:
+                from app.agents.memory_context import MEMORY_CONTEXT_INSTRUCTIONS
+
+                messages.append(
+                    SystemMessage(content=f"{MEMORY_CONTEXT_INSTRUCTIONS}\n{memory_context}")
+                )
+            messages.append(HumanMessage(content=human_content))
             on_token = self._on_token.get()
             if on_token is None:
                 response = await model.ainvoke(messages)

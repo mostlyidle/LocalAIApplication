@@ -11,6 +11,7 @@ from typing import Any
 import structlog
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
+from app.agents.memory_context import memory_context_message
 from app.agents.state import AgentState
 from app.services.llm import llm_service
 from app.tools.document_tools import document_tools
@@ -49,6 +50,9 @@ async def document_agent_node(state: AgentState) -> dict[str, Any]:
     llm_with_tools = llm.bind_tools(document_tools)
 
     messages = [SystemMessage(content=DOCUMENT_SYSTEM_PROMPT)]
+    memory_message = memory_context_message(state)
+    if memory_message is not None:
+        messages.append(memory_message)
     messages.extend(state["messages"])
 
     if not any(isinstance(m, HumanMessage) for m in state["messages"]):

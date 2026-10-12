@@ -7,7 +7,7 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.db_models import Account, Conversation, LEGACY_ACCOUNT_ID, Memory, Message
+from app.models.db_models import LEGACY_ACCOUNT_ID, Account, Conversation, Memory, Message
 
 
 async def _ensure_account(db: AsyncSession) -> Account:
@@ -64,8 +64,18 @@ async def test_memory_source_must_belong_to_signed_in_account(
     )
     db_session.add_all(
         [
-            Message(id="owned-memory-message", conversation_id="owned-memory-source", role="user", content="A preference"),
-            Message(id="foreign-memory-message", conversation_id="foreign-memory-source", role="user", content="Private"),
+            Message(
+                id="owned-memory-message",
+                conversation_id="owned-memory-source",
+                role="user",
+                content="A preference",
+            ),
+            Message(
+                id="foreign-memory-message",
+                conversation_id="foreign-memory-source",
+                role="user",
+                content="Private",
+            ),
         ]
     )
     await db_session.commit()
@@ -83,6 +93,73 @@ async def test_memory_source_must_belong_to_signed_in_account(
     assert allowed.status_code == 201
     assert allowed.json()["source_conversation_id"] == "owned-memory-source"
     assert denied.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_memory_links_live_chat_turn_to_persisted_owned_message(
+    client: AsyncClient, db_session: AsyncSession
+):
+    turn_id = "8a948d4f-8194-4e85-aa5f-00fc13bd6cb5"
+    db_session.add_all(
+        [
+            Conversation(id="owned-live-turn", owner_id=LEGACY_ACCOUNT_ID),
+            Message(
+                id="persisted-live-user-message",
+                conversation_id="owned-live-turn",
+                role="user",
+                content="My preferred color is cobalt blue.",
+                client_turn_id=turn_id,
+                turn_status="completed",
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    response = await client.post(
+        "/api/v1/memory",
+        json={
+            "kind": "preference",
+            "content": "Cobalt blue is my preferred color.",
+            "source_conversation_id": "owned-live-turn",
+            "source_client_turn_id": turn_id,
+        },
+        headers={"X-CSRF-Token": "test-csrf-token"},
+    )
+
+    assert response.status_code == 201
+    assert response.json()["source_message_id"] == "persisted-live-user-message"
+
+
+@pytest.mark.asyncio
+async def test_memory_client_turn_source_is_owner_scoped(
+    client: AsyncClient, db_session: AsyncSession
+):
+    db_session.add_all(
+        [
+            Account(
+                id="foreign-turn-owner",
+                username="foreign-turn-owner",
+                display_name="Foreign Owner",
+                password_hash="!test!",
+            ),
+            Conversation(id="foreign-turn-conversation", owner_id="foreign-turn-owner"),
+            Message(
+                id="foreign-turn-message",
+                conversation_id="foreign-turn-conversation",
+                role="user",
+                content="Private text",
+                client_turn_id="foreign-turn-id",
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    response = await client.post(
+        "/api/v1/memory",
+        json={"content": "Try foreign memory", "source_client_turn_id": "foreign-turn-id"},
+        headers={"X-CSRF-Token": "test-csrf-token"},
+    )
+    assert response.status_code == 404
 
 
 @pytest.mark.asyncio
@@ -141,9 +218,7 @@ async def test_settings_are_independent_and_delete_all_advances_epoch(
         headers={"X-CSRF-Token": "test-csrf-token"},
     )
 
-    cleared = await client.delete(
-        "/api/v1/memory", headers={"X-CSRF-Token": "test-csrf-token"}
-    )
+    cleared = await client.delete("/api/v1/memory", headers={"X-CSRF-Token": "test-csrf-token"})
     current = await db_session.scalar(select(Account).where(Account.id == account.id))
     await db_session.refresh(current)
     assert created.status_code == 201

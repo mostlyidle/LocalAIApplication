@@ -96,6 +96,7 @@ export function useChat() {
       conversationIdRef.current = conversationIdForTurn;
       const userMsg: ChatMessage = {
         id: clientTurnId,
+        clientTurnId,
         role: "user",
         content,
         attachments: attachments.length > 0 ? attachments : undefined,
