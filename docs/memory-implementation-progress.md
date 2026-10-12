@@ -15,12 +15,13 @@ Use this file to resume the approved implementation without repeating completed 
 - Added an Alembic migration that creates a disabled `legacy-import-disabled` account and assigns existing conversations, documents, and meetings to it. Existing content is preserved and cannot be mistaken for a real user's data.
 - Added non-null owner IDs to those three top-level data models. New rows temporarily default to the disabled legacy owner until authenticated route creation is wired in.
 - Added a migration regression test that seeds all three record types, upgrades the database, and checks the disabled quarantine owner and preserved record IDs.
-- Verified with `pytest tests/test_services/test_account_identity_migration.py -q` (1 passed), Ruff lint, and Ruff format check.
+- Added Argon2 password hashing and an operator CLI for account creation and password resets. Password resets revoke active sessions. There is no public registration route.
+- Added credential and reset/revocation tests.
+- Verified with `pytest tests/test_services/test_accounts.py tests/test_services/test_account_identity_migration.py -q` (9 passed), Ruff lint, and Ruff format check.
 - The first `uv run` attempt could not reach PyPI to build the project environment. Reused the repository's existing `.venv` directly for the successful checks.
 
 ## Not implemented yet
 
-- Account creation/password reset operator CLI and Argon2 password hashing.
 - Login/logout/current-account API, secure cookies, CSRF checks, and session validation for REST/WebSocket.
 - Ownership filters and authorization for chat, uploaded file access, meetings, RAG collections, SQL connections, workspace roots, tools, and MCP.
 - Dry-run and explicit legacy data assignment/import command.
@@ -28,11 +29,10 @@ Use this file to resume the approved implementation without repeating completed 
 
 ## Resume here
 
-1. Verify the migration test and lint for this checkpoint.
-2. Add operator-managed account creation/password reset using the selected password-hashing package.
-3. Add session login/logout/current-account endpoints and focused security tests.
-4. Protect each resource family and its WebSocket/tool entry points before enabling shared-account access.
-5. Replace the temporary legacy-owner defaults after every creation path supplies the authenticated account.
+1. Add login/logout/current-account endpoints, hashed opaque sessions, secure cookies, CSRF checks, and focused security tests.
+2. Enforce account ownership for each resource family and every WebSocket/tool entry point before enabling shared-account access.
+3. Add dry-run and explicit assignment for quarantined legacy records.
+4. Replace the temporary legacy-owner defaults after every creation path supplies the authenticated account.
 
 ## Important safety decision
 
