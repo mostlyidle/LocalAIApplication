@@ -76,6 +76,8 @@ class Settings(BaseSettings):
     api_port: int = 8000
     cors_origins: list[str] = Field(default=["http://localhost:3000"])
     meeting_allowed_origins: list[str] = Field(default=[])
+    auth_cookie_secure: bool = True
+    auth_session_ttl_hours: int = Field(default=12, ge=1, le=720)
     log_level: str = "info"
 
     # ── RAG ─────────────────────────────────────────────────────────────

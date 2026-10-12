@@ -132,8 +132,9 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
 
     # API routes
-    from app.api.routes import agents, chat, documents, meetings, rag, sql, tasks, tools
+    from app.api.routes import agents, auth, chat, documents, meetings, rag, sql, tasks, tools
 
+    app.include_router(auth.router, prefix="/api/v1")
     app.include_router(agents.router, prefix="/api/v1", tags=["Agents"])
     app.include_router(chat.router, prefix="/api/v1", tags=["Chat"])
     app.include_router(documents.router, prefix="/api/v1", tags=["Documents"])

@@ -7,10 +7,17 @@ available (the lifespan handler creates directories first).
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator  # noqa: TC003
 
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import Depends, HTTPException, Request, WebSocket, WebSocketException
+from sqlalchemy.ext.asyncio import AsyncSession  # noqa: TC002
 
+from app.services.auth import (
+    SESSION_COOKIE,
+    AuthenticatedSession,
+    resolve_session,
+    verify_csrf,
+)
 from app.services.database import get_app_session
 from app.services.meetings import MeetingService, meeting_service
 
@@ -21,16 +28,53 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
+async def get_authenticated_session(
+    request: Request,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+) -> AuthenticatedSession:
+    """Resolve the session cookie and enforce CSRF on state-changing requests."""
+    authenticated = await resolve_session(db, request.cookies.get(SESSION_COOKIE))
+    if authenticated is None:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    if request.method not in {"GET", "HEAD", "OPTIONS"} and not verify_csrf(
+        authenticated.session, request.headers.get("x-csrf-token")
+    ):
+        raise HTTPException(status_code=403, detail="Valid CSRF token required.")
+    return authenticated
+
+
+async def get_websocket_session(
+    websocket: WebSocket,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+) -> AuthenticatedSession:
+    """Authenticate WebSockets and reject browser origins outside app CORS policy."""
+    from app.config import settings
+
+    origin = websocket.headers.get("origin")
+    allowed_origins = {
+        value.rstrip("/") for value in (*settings.cors_origins, *settings.meeting_allowed_origins)
+    }
+    allowed_origins.update(
+        {"tauri://localhost", "http://tauri.localhost", "https://tauri.localhost"}
+    )
+    if origin is None or origin.rstrip("/") not in allowed_origins:
+        raise WebSocketException(code=4403, reason="WebSocket origin is not allowed.")
+    authenticated = await resolve_session(db, websocket.cookies.get("localai_session"))
+    if authenticated is None:
+        raise WebSocketException(code=4401, reason="Authentication required.")
+    return authenticated
+
+
 def get_llm() -> LLMService:
     """Provide the LLM service singleton."""
-    from app.services.llm import LLMService, llm_service  # noqa: F811
+    from app.services.llm import llm_service
 
     return llm_service
 
 
 def get_embeddings() -> EmbeddingService:
     """Provide the embedding service singleton."""
-    from app.services.embeddings import EmbeddingService, embedding_service  # noqa: F811
+    from app.services.embeddings import embedding_service
 
     return embedding_service
 
@@ -44,17 +88,14 @@ def get_vector_store() -> VectorStoreService:
 
 def get_document_parser() -> DocumentParserService:
     """Provide the document parser service singleton."""
-    from app.services.document_parser import (  # noqa: F811
-        DocumentParserService,
-        document_parser_service,
-    )
+    from app.services.document_parser import document_parser_service
 
     return document_parser_service
 
 
 def get_ocr() -> OCRService:
     """Provide the OCR service singleton."""
-    from app.services.ocr import OCRService, ocr_service  # noqa: F811
+    from app.services.ocr import ocr_service
 
     return ocr_service
 
