@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import re
 from datetime import UTC, datetime
 from getpass import getpass
 
@@ -17,6 +18,7 @@ from app.models.db_models import (
     Conversation,
     Document,
     Meeting,
+    RagCollection,
 )
 from app.services.accounts import hash_password, normalize_username
 from app.services.database import close_app_db, get_app_session_factory
@@ -64,6 +66,7 @@ async def _assign_legacy_records(
     conversations: list[str] | None = None,
     documents: list[str] | None = None,
     meetings: list[str] | None = None,
+    rag_collections: list[str] | None = None,
     apply: bool = False,
 ) -> dict[str, dict[str, int]]:
     """Preview or explicitly assign selected quarantined records to an account."""
@@ -72,8 +75,8 @@ async def _assign_legacy_records(
         "documents": (Document, documents or []),
         "meetings": (Meeting, meetings or []),
     }
-    if not any(ids for _, ids in selections.values()):
-        raise ValueError("Select at least one conversation, document, or meeting ID.")
+    if not any(ids for _, ids in selections.values()) and not rag_collections:
+        raise ValueError("Select at least one legacy record ID or RAG collection name.")
 
     factory = get_app_session_factory()
     async with factory() as session:
@@ -85,6 +88,7 @@ async def _assign_legacy_records(
 
         summary: dict[str, dict[str, int]] = {}
         updates = []
+        collections_to_add: list[RagCollection] = []
         for label, (model, ids) in selections.items():
             unique_ids = list(dict.fromkeys(ids))
             if not unique_ids:
@@ -113,10 +117,47 @@ async def _assign_legacy_records(
             }
             updates.extend(pending)
 
+        if rag_collections:
+            from app.services.hybrid_vector_store import hybrid_vector_store_service
+
+            names = list(dict.fromkeys(rag_collections))
+            collection_summary = {"selected": len(names), "to_assign": 0, "already_assigned": 0}
+            for name in names:
+                if len(name) > 63 or re.fullmatch(r"[A-Za-z0-9_-]+", name) is None:
+                    raise ValueError(f"Invalid RAG collection name: {name!r}.")
+                try:
+                    capabilities = await hybrid_vector_store_service.collection_capabilities(name)
+                except Exception as exc:
+                    raise ValueError(f"Unable to inspect RAG collection {name!r}.") from exc
+                if capabilities is None:
+                    raise ValueError(f"RAG collection {name!r} does not exist.")
+                if capabilities.loader_owned:
+                    raise ValueError(f"RAG collection {name!r} is shared and cannot be assigned.")
+                if capabilities.mode == "unsupported":
+                    raise ValueError(f"RAG collection {name!r} uses an unsupported schema.")
+
+                registry = await session.get(RagCollection, name)
+                if registry is not None and registry.owner_id != account.id:
+                    raise ValueError(f"RAG collection {name!r} belongs to another account.")
+                if registry is not None:
+                    collection_summary["already_assigned"] += 1
+                else:
+                    collection_summary["to_assign"] += 1
+                    if apply:
+                        collections_to_add.append(RagCollection(name=name, owner_id=account.id))
+            summary["rag_collections"] = collection_summary
+
         if apply:
             for record in updates:
                 record.owner_id = account.id
-            await session.commit()
+            session.add_all(collections_to_add)
+            try:
+                await session.commit()
+            except IntegrityError as exc:
+                await session.rollback()
+                raise ValueError(
+                    "Legacy ownership changed during assignment; rerun the dry run."
+                ) from exc
         return summary
 
 
@@ -136,6 +177,7 @@ def main() -> None:
     assign.add_argument("--conversation", dest="conversations", action="append", default=[])
     assign.add_argument("--document", dest="documents", action="append", default=[])
     assign.add_argument("--meeting", dest="meetings", action="append", default=[])
+    assign.add_argument("--rag-collection", dest="rag_collections", action="append", default=[])
     assign.add_argument("--apply", action="store_true", help="apply the assignment after review")
     args = parser.parse_args()
 
@@ -148,6 +190,7 @@ def main() -> None:
                     conversations=args.conversations,
                     documents=args.documents,
                     meetings=args.meetings,
+                    rag_collections=args.rag_collections,
                     apply=args.apply,
                 )
             )
