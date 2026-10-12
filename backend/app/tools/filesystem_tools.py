@@ -50,7 +50,7 @@ def _validate_path(file_path: str) -> Path:
     resolved = Path(file_path).resolve()
 
     allowed = _get_allowed_dirs()
-    is_allowed = any(str(resolved).startswith(str(d)) for d in allowed)
+    is_allowed = any(resolved.is_relative_to(d.resolve()) for d in allowed)
 
     if not is_allowed:
         raise PermissionError(
