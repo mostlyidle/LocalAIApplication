@@ -436,6 +436,7 @@ class TestRAGAgent:
 
         calls = []
         evidence = "Background " * 80 + "Revenue was $10M."
+        memory = '[{"type":"past_conversation","conversation_id":"prior-chat","title":"Revenue plan","content":"The user prefers short answers."}]'
 
         async def retrieve(**kwargs):
             calls.append("retrieve")
@@ -457,8 +458,9 @@ class TestRAGAgent:
 
         async def generate(messages):
             calls.append("generate")
-            assert evidence in messages[1].content
-            assert "[report:3]" in messages[1].content
+            assert memory in messages[1].content
+            assert evidence in messages[2].content
+            assert "[report:3]" in messages[2].content
             return AIMessage(content="Revenue was $10M [report:3].")
 
         model = MagicMock()
@@ -470,10 +472,15 @@ class TestRAGAgent:
                 AsyncMock(side_effect=retrieve),
             ),
         ):
-            result = await rag_agent_node(_make_state(user_input="What was revenue?"))
+            result = await rag_agent_node(
+                _make_state(user_input="What was revenue?", memory_context=memory)
+            )
         assert calls == ["retrieve", "generate"]
         assert result["metadata"]["execution"]["artifacts"]["citations"][0]["section"] == "Revenue"
         assert result["metadata"]["execution"]["artifacts"]["citations"][0]["chunk_index"] == 3
+        assert result["metadata"]["execution"]["artifacts"]["memory_sources"] == [
+            {"conversation_id": "prior-chat", "title": "Revenue plan"}
+        ]
 
     async def test_no_evidence_never_invokes_answer_model(self) -> None:
         from types import SimpleNamespace
