@@ -199,6 +199,8 @@ export const githubIssueProposalSchema = z.object({
   repository_id: z.string(), source_id: z.string(), source_title: z.string(),
   suggestions: actionItemProposalSchema.shape.suggestions,
 });
+export const githubIssueWriteSchema = z.object({ number: z.number(), title: z.string(), html_url: z.string().url() });
+export const githubCommentWriteSchema = z.object({ id: z.string(), html_url: z.string().url().nullable() });
 export type GitHubProjectOverview = z.infer<typeof githubProjectOverviewSchema>;
 export type GitHubPullDetail = z.infer<typeof githubPullDetailSchema>;
 export type GitHubIssueProposal = z.infer<typeof githubIssueProposalSchema>;

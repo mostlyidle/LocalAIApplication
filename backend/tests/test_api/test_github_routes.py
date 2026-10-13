@@ -557,3 +557,123 @@ async def test_github_issue_suggestions_require_review_and_revalidate_exact_sour
         headers={"X-CSRF-Token": "test-csrf-token"},
     )
     assert invalid_quote.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_user_confirmed_issue_and_comment_writes_are_limited_to_selected_repositories(
+    client, db_session, authenticated_test_session, monkeypatch
+):
+    github_oauth_client = await _add_selected_project(
+        client, db_session, authenticated_test_session, monkeypatch
+    )
+    post = AsyncMock(
+        side_effect=[
+            {
+                "number": 12,
+                "title": "Review indexes",
+                "html_url": "https://github.com/octocat/project/issues/12",
+            },
+            {
+                "id": 987,
+                "html_url": "https://github.com/octocat/project/issues/12#issuecomment-987",
+            },
+        ]
+    )
+    monkeypatch.setattr(github_oauth_client, "api_post_json", post)
+
+    created = await client.post(
+        "/api/v1/github/agent/repositories/42/issues",
+        json={"title": "  Review indexes  ", "body": "Check query plans."},
+        headers={"X-CSRF-Token": "test-csrf-token"},
+    )
+    assert created.status_code == 201
+    assert created.json()["number"] == 12
+    post.assert_awaited_once_with(
+        "/repos/octocat/project/issues",
+        "ghu-test",
+        {"title": "Review indexes", "body": "Check query plans."},
+    )
+
+    comment = await client.post(
+        "/api/v1/github/agent/repositories/42/issues/12/comments",
+        json={"body": "  I checked the query plan.  "},
+        headers={"X-CSRF-Token": "test-csrf-token"},
+    )
+    assert comment.status_code == 201
+    assert comment.json()["id"] == "987"
+    post.assert_awaited_with(
+        "/repos/octocat/project/issues/12/comments",
+        "ghu-test",
+        {"body": "I checked the query plan."},
+    )
+
+    forbidden = await client.post(
+        "/api/v1/github/agent/repositories/999/issues",
+        json={"title": "Should not post", "body": ""},
+        headers={"X-CSRF-Token": "test-csrf-token"},
+    )
+    assert forbidden.status_code == 404
+    assert post.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_github_write_client_sends_user_reviewed_payload_to_github(monkeypatch):
+    _configure_github(monkeypatch)
+    from app.config import settings
+    from app.services.github_oauth import github_oauth_client
+
+    monkeypatch.setattr(settings, "github_api_url", "https://github.test")
+    requests: list[httpx.Request] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        assert request.method == "POST"
+        assert request.headers["authorization"] == "Bearer ghu-test"
+        return httpx.Response(
+            201,
+            json={"number": 12, "title": "Review indexes", "html_url": "https://github.test/issues/12"},
+        )
+
+    real_async_client = httpx.AsyncClient
+    transport = httpx.MockTransport(respond)
+    monkeypatch.setattr(
+        "app.services.github_oauth.httpx.AsyncClient",
+        lambda **kwargs: real_async_client(transport=transport, **kwargs),
+    )
+
+    payload = await github_oauth_client.api_post_json(
+        "/repos/octocat/project/issues",
+        "ghu-test",
+        {"title": "Review indexes", "body": "Check query plans."},
+    )
+    assert payload["number"] == 12
+    assert requests[0].read() == b'{"title":"Review indexes","body":"Check query plans."}'
+
+
+@pytest.mark.asyncio
+async def test_github_write_client_handles_permission_and_rate_limit_errors(monkeypatch):
+    _configure_github(monkeypatch)
+    from app.config import settings
+    from app.services.github_oauth import GitHubIntegrationError, github_oauth_client
+
+    monkeypatch.setattr(settings, "github_api_url", "https://github.test")
+    remaining = "0"
+
+    def respond(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, headers={"x-ratelimit-remaining": remaining}, json={"message": "denied"})
+
+    real_async_client = httpx.AsyncClient
+    transport = httpx.MockTransport(respond)
+    monkeypatch.setattr(
+        "app.services.github_oauth.httpx.AsyncClient",
+        lambda **kwargs: real_async_client(transport=transport, **kwargs),
+    )
+
+    with pytest.raises(GitHubIntegrationError) as rate_limit:
+        await github_oauth_client.api_post_json("/repos/octocat/project/issues", "ghu-test", {"title": "No write"})
+    assert rate_limit.value.status_code == 429
+
+    remaining = "1"
+    with pytest.raises(GitHubIntegrationError) as permission:
+        await github_oauth_client.api_post_json("/repos/octocat/project/issues", "ghu-test", {"title": "No write"})
+    assert permission.value.status_code == 403
