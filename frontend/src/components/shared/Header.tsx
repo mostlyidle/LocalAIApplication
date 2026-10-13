@@ -21,6 +21,8 @@ const pageTitles: Record<string, string> = {
   "/documents": "Documents",
   "/sql": "SQL Agent",
   "/rag": "RAG Search",
+  "/meetings": "Meetings",
+  "/memory": "Memory",
   "/settings": "Settings",
 };
 
@@ -32,27 +34,31 @@ export function Header() {
   const title = pageTitles[pathname] ?? "Local AI";
 
   return (
-    <header className="flex h-14 items-center gap-3 border-b bg-background px-4">
-      <SidebarTrigger />
-      <Separator orientation="vertical" className="h-6" />
-      <h2 className="text-sm font-medium">{title}</h2>
+    <header className="flex h-16 shrink-0 items-center gap-3 border-b bg-card/80 px-4 sm:px-6">
+      <SidebarTrigger className="size-11" />
+      <Separator orientation="vertical" className="data-[orientation=vertical]:h-5" />
+      <span className="text-sm font-semibold">{title}</span>
       <div className="ml-auto flex items-center gap-2">
         {account && (
           <>
-            <span className="hidden text-sm text-muted-foreground sm:inline">{account.display_name}</span>
+            <span className="hidden items-center gap-2 text-sm font-medium sm:flex">
+              <span aria-hidden="true" className="grid size-8 place-items-center rounded-full bg-peach-soft text-peach-ink">{account.display_name.slice(0, 1).toUpperCase()}</span>
+              {account.display_name}
+            </span>
             <Button
               variant="ghost"
               size="sm"
+              className="min-h-11"
               onClick={() => void signOut().catch((error: unknown) => toast.error(error instanceof Error ? error.message : "Sign out failed."))}
             >
-              <LogOut className="mr-2 h-4 w-4" />
+              <LogOut className="h-4 w-4" aria-hidden="true" />
               Sign out
             </Button>
           </>
         )}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8">
+            <Button variant="outline" size="icon" className="h-11 w-11 rounded-full" aria-label="Change color theme">
               {theme === "dark" ? (
                 <Moon className="h-4 w-4" />
               ) : theme === "light" ? (

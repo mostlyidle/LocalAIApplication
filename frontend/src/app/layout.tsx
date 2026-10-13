@@ -3,8 +3,9 @@ import "./globals.css";
 import { ClientProviders } from "@/components/shared/ClientProviders";
 
 export const metadata: Metadata = {
-  title: "Local AI - Fully Local Intelligence",
-  description: "Production-grade AI application running entirely on your Mac with Ollama",
+  title: "Local AI — Your friendly AI studio",
+  description: "Chat, create, and explore with your own team of local AI agents.",
+  icons: { icon: "/local-ai-logo.svg" },
 };
 
 export default function RootLayout({

@@ -6,6 +6,7 @@ import { getCurrentAccount, login, logout } from "@/lib/api";
 import type { AuthAccount } from "@/lib/api";
 import { setCsrfToken } from "@/lib/auth-session";
 import { ACTIVE_CONVERSATION_STORAGE_PREFIX } from "@/lib/constants";
+import { BrandMark } from "./BrandMark";
 
 interface AuthContextValue {
   account: AuthAccount | null;
@@ -112,16 +113,18 @@ export function AuthenticatedShell({ children }: { children: ReactNode }) {
   }
 
   if (loading) {
-    return <main className="grid min-h-screen place-items-center text-sm text-muted-foreground">Checking session…</main>;
+    return <main className="studio-surface grid min-h-dvh w-full place-content-center justify-items-center gap-4 text-sm text-muted-foreground"><BrandMark className="h-20 w-20" /><p role="status">Checking session…</p></main>;
   }
 
   if (!account) {
     return (
-      <main className="grid min-h-screen place-items-center bg-muted/30 px-4">
-        <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-5 rounded-xl border bg-background p-6 shadow-sm">
-          <div>
-            <h1 className="text-xl font-semibold">Sign in to Local AI</h1>
-            <p className="mt-1 text-sm text-muted-foreground">Use the account provided by your administrator.</p>
+      <main className="studio-surface grid min-h-dvh w-full place-items-center px-4 py-8">
+        <form onSubmit={handleSubmit} className="w-full max-w-md space-y-6 rounded-3xl border bg-card p-6 shadow-sm sm:p-9">
+          <div className="flex flex-col items-center text-center">
+            <BrandMark className="mb-3 h-24 w-24" />
+            <span className="mb-2 rounded-full bg-mint-soft px-3 py-1 text-xs font-semibold text-mint-ink">Your own little AI studio</span>
+            <h1 className="text-2xl font-bold">Sign in to Local AI</h1>
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">A friendly space for your ideas, questions, and discoveries.</p>
           </div>
           <label className="block space-y-1.5 text-sm font-medium">
             Username
@@ -130,7 +133,7 @@ export function AuthenticatedShell({ children }: { children: ReactNode }) {
               required
               value={username}
               onChange={(event) => setUsername(event.target.value)}
-              className="w-full rounded-md border bg-background px-3 py-2 font-normal"
+              className="min-h-12 w-full rounded-xl border border-input bg-background px-4 py-3 text-base font-normal"
             />
           </label>
           <label className="block space-y-1.5 text-sm font-medium">
@@ -141,17 +144,18 @@ export function AuthenticatedShell({ children }: { children: ReactNode }) {
               required
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              className="w-full rounded-md border bg-background px-3 py-2 font-normal"
+              className="min-h-12 w-full rounded-xl border border-input bg-background px-4 py-3 text-base font-normal"
             />
           </label>
           {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
           <button
             type="submit"
             disabled={submitting}
-            className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:opacity-60"
+            className="min-h-12 w-full rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring disabled:opacity-60"
           >
             {submitting ? "Signing in…" : "Sign in"}
           </button>
+          <p className="text-center text-xs leading-relaxed text-muted-foreground">Use the account provided by your administrator.<br />Powered by local models. Made for your curiosity.</p>
         </form>
       </main>
     );
