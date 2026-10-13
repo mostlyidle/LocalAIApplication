@@ -1,73 +1,108 @@
 import Link from "next/link";
-import { MessageSquare, FileText, Database, Search, Settings, Brain } from "lucide-react";
+import { MessageSquare, FileText, Database, Search, Settings, Activity, BrainCircuit, ArrowUpRight, ArrowRight, Sparkles } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { BrandMark } from "@/components/shared/BrandMark";
 
 const features = [
   {
     title: "Chat",
-    description: "Multi-modal conversational AI with streaming responses",
+    description: "A thought partner for questions, big ideas, and little curiosities.",
     href: "/chat",
     icon: MessageSquare,
-    color: "text-blue-500",
+    color: "bg-violet-soft text-violet-ink",
   },
   {
     title: "Documents",
-    description: "Upload, parse, and analyze documents with AI",
+    description: "Turn your files into summaries, answers, and useful insights.",
     href: "/documents",
     icon: FileText,
-    color: "text-amber-500",
+    color: "bg-peach-soft text-peach-ink",
   },
   {
     title: "SQL Agent",
-    description: "Natural language to SQL query generation and execution",
+    description: "Ask your database a question. Let your agent handle the SQL.",
     href: "/sql",
     icon: Database,
-    color: "text-emerald-500",
+    color: "bg-mint-soft text-mint-ink",
   },
   {
     title: "RAG Search",
-    description: "Semantic search across your ingested knowledge base",
+    description: "Find the right answer in your knowledge base, with sources.",
     href: "/rag",
     icon: Search,
-    color: "text-violet-500",
+    color: "bg-sky-soft text-sky-ink",
+  },
+  {
+    title: "Meetings",
+    description: "Capture conversations and turn them into notes and next steps.",
+    href: "/meetings",
+    icon: Activity,
+    color: "bg-rose-soft text-rose-ink",
+  },
+  {
+    title: "Memory",
+    description: "Give your agents a little context. You decide what they remember.",
+    href: "/memory",
+    icon: BrainCircuit,
+    color: "bg-violet-soft text-violet-ink",
   },
   {
     title: "Settings",
-    description: "Configure models, databases, and MCP servers",
+    description: "Make this space yours: models, connections, and appearance.",
     href: "/settings",
     icon: Settings,
-    color: "text-muted-foreground",
+    color: "bg-muted text-muted-foreground",
   },
 ];
 
 export default function HomePage() {
   return (
-    <div className="container mx-auto max-w-5xl p-6">
-      <div className="mb-8 flex items-center gap-3">
-        <Brain className="h-8 w-8 text-primary" />
-        <div>
-          <h1 className="text-2xl font-bold">Local AI Application</h1>
-          <p className="text-muted-foreground">
-            Fully local, production-grade AI — zero cloud dependencies
+    <div className="mx-auto max-w-6xl space-y-8 px-4 py-6 sm:px-8 sm:py-10">
+      <section className="brand-panel relative flex flex-col-reverse items-start gap-4 overflow-hidden rounded-3xl border p-6 sm:flex-row sm:items-center sm:justify-between sm:p-10">
+        <div className="relative max-w-xl">
+          <span className="mb-4 inline-flex items-center gap-2 rounded-full border border-primary/15 bg-card/80 px-3 py-1.5 text-xs font-semibold text-primary"><Sparkles className="size-3.5" aria-hidden="true" /> A little help. A lot of possibility.</span>
+          <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Big ideas start<br className="hidden sm:block" /> with a little hello.</h1>
+          <p className="mt-4 max-w-md text-base leading-relaxed text-muted-foreground">
+            Meet your team of local AI agents. A friendly bunch ready to help you chat, explore, and get things done.
           </p>
+          <Button asChild className="mt-6 h-12 rounded-xl px-5">
+            <Link href="/chat">Let’s chat <ArrowRight className="size-4" aria-hidden="true" /></Link>
+          </Button>
         </div>
-      </div>
-
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div aria-hidden="true" className="relative self-center sm:px-6">
+          <div className="absolute inset-0 rounded-full bg-peach-soft" />
+          <BrandMark className="relative h-28 w-28 sm:h-48 sm:w-48" />
+          <span className="absolute -bottom-1 right-0 rotate-6 rounded-xl border bg-card px-3 py-2 text-sm font-semibold text-primary shadow-xs">Hi, curious human!</span>
+        </div>
+      </section>
+      <section aria-labelledby="agents-heading">
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <h2 id="agents-heading" className="text-xl font-bold">Your helpful little team</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Pick a space and see what we can do together.</p>
+          </div>
+          <span className="rounded-full bg-mint-soft px-3 py-1 text-xs font-medium text-mint-ink">Powered by Ollama</span>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {features.map((feature) => (
-          <Link key={feature.href} href={feature.href}>
-            <Card className="h-full transition-colors hover:bg-accent">
+          <Link key={feature.href} href={feature.href} className="group rounded-2xl">
+            <Card className="h-full gap-3 transition-colors hover:border-primary/40 hover:bg-card/80">
               <CardHeader className="pb-3">
-                <feature.icon className={`h-6 w-6 ${feature.color}`} />
-                <CardTitle className="text-base">{feature.title}</CardTitle>
+                <div className="mb-2 flex items-center justify-between">
+                  <span className={`grid size-12 place-items-center rounded-2xl ${feature.color}`}><feature.icon className="size-6" aria-hidden="true" /></span>
+                  <ArrowUpRight className="size-4 text-muted-foreground transition-colors group-hover:text-primary" aria-hidden="true" />
+                </div>
+                <CardTitle className="text-lg">{feature.title}</CardTitle>
               </CardHeader>
               <CardContent>
-                <CardDescription>{feature.description}</CardDescription>
+                <CardDescription className="leading-relaxed">{feature.description}</CardDescription>
               </CardContent>
             </Card>
           </Link>
         ))}
-      </div>
+        </div>
+      </section>
     </div>
   );
 }
