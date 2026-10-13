@@ -22,6 +22,7 @@ class ActionItemCreate(BaseModel):
     due_date: date | None = None
     source_type: ActionSource | None = None
     source_id: str | None = Field(default=None, min_length=1, max_length=36)
+    source_quote: str | None = Field(default=None, min_length=1, max_length=500)
 
     @field_validator("title")
     @classmethod
@@ -35,6 +36,8 @@ class ActionItemCreate(BaseModel):
     def source_fields_match(self) -> ActionItemCreate:
         if (self.source_type is None) != (self.source_id is None):
             raise ValueError("source_type and source_id must be supplied together.")
+        if self.source_quote is not None and self.source_id is None:
+            raise ValueError("A source quote requires a source record.")
         return self
 
 
@@ -78,6 +81,7 @@ class ActionItemResponse(BaseModel):
     due_date: date | None
     source_type: ActionSource | None
     source_id: str | None
+    source_quote: str | None
     revision: int
     created_at: datetime
     updated_at: datetime
@@ -86,4 +90,30 @@ class ActionItemResponse(BaseModel):
 class ActionItemListResponse(BaseModel):
     items: list[ActionItemResponse]
     total: int
+
+
+class ProposalSourceRequest(BaseModel):
+    """Identify one owned chat, meeting, or document to review for next steps."""
+
+    source_type: Literal["chat", "meeting", "document"]
+    source_id: str = Field(min_length=1, max_length=36)
+
+
+class ActionItemSuggestion(BaseModel):
+    """A candidate action item with a verbatim source quote."""
+
+    title: str = Field(min_length=1, max_length=300)
+    description: str | None = Field(default=None, max_length=1_000)
+    priority: ActionPriority = "normal"
+    due_date: date | None = None
+    source_quote: str = Field(min_length=1, max_length=500)
+
+
+class ActionItemProposalResponse(BaseModel):
+    """Suggestions are returned for user review and are not saved automatically."""
+
+    source_type: Literal["chat", "meeting", "document"]
+    source_id: str
+    source_title: str
+    suggestions: list[ActionItemSuggestion]
 

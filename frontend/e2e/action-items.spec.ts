@@ -8,15 +8,28 @@ test("planner creates, edits, completes, and deletes an action item", async ({ p
   await page.route("**/api/v1/auth/me", (route) => route.fulfill({
     json: { account: { id: "owner-1", username: "planner", display_name: "Planner" }, csrf_token: "csrf" },
   }));
+  await page.route("**/api/v1/chat/conversations", (route) => route.fulfill({
+    json: [{ id: "chat-1", title: "Planning chat", created_at: "2026-10-12T12:00:00Z", last_message_at: "2026-10-12T12:00:00Z", message_count: 1 }],
+  }));
+  await page.route("**/api/v1/documents", (route) => route.fulfill({ json: [] }));
+  await page.route("**/api/v1/meetings", (route) => route.fulfill({ json: [] }));
   await page.route("**/api/v1/action-items**", async (route) => {
     const request = route.request();
     if (request.method() === "GET") return route.fulfill(response());
     if (request.method() === "POST") {
+      if (request.url().endsWith("/proposals")) return route.fulfill({ json: {
+        source_type: "chat", source_id: "chat-1", source_title: "Planning chat",
+        suggestions: [{
+          title: "Send meeting notes", description: "Share with the team", priority: "high",
+          due_date: null, source_quote: "I will send the notes tomorrow.",
+        }],
+      } });
       const body = request.postDataJSON() as Record<string, unknown>;
       items = [{
         id: "task-1", title: body.title, description: body.description ?? null,
         status: "next", priority: body.priority ?? "normal", due_date: body.due_date ?? null,
-        source_type: null, source_id: null, revision, created_at: new Date().toISOString(),
+        source_type: body.source_type ?? null, source_id: body.source_id ?? null,
+        source_quote: body.source_quote ?? null, revision, created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }];
       return route.fulfill({ status: 201, json: items[0] });
@@ -34,6 +47,12 @@ test("planner creates, edits, completes, and deletes an action item", async ({ p
   });
 
   await page.goto("/action-items");
+  await page.getByLabel("Source").selectOption("chat-1");
+  await page.getByRole("button", { name: "Suggest next steps" }).click();
+  await expect(page.getByText("I will send the notes tomorrow.")).toBeVisible();
+  await page.getByRole("button", { name: "Accept" }).click();
+  await expect(page.getByText("Send meeting notes")).toBeVisible();
+
   await page.getByLabel("Title").fill("Send project notes");
   await page.getByLabel("Details").fill("Share the follow-up with the team");
   await page.getByRole("button", { name: "Add to planner" }).click();

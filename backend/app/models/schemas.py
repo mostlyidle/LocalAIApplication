@@ -19,7 +19,7 @@ from app.models.enums import (
     MessageRole,
     StreamEventType,
 )
-from app.models.profile_schemas import InferenceOptions
+from app.models.profile_schemas import InferenceOptions  # noqa: TC001 - Pydantic runtime type.
 
 # =============================================================================
 # Chat
@@ -299,6 +299,14 @@ class MeetingResponse(BaseModel):
     updated_at: datetime
     transcript_segment_count: int = 0
     detected_question_count: int = 0
+
+
+class MeetingSourceListItem(BaseModel):
+    """Minimal metadata for selecting an account-owned meeting as a source."""
+
+    id: str
+    status: MeetingStatus
+    created_at: datetime
 
 
 class MeetingStopResponse(MeetingResponse):

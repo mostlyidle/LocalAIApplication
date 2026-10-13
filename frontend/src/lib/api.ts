@@ -24,6 +24,8 @@ import {
   memoryDeleteAllSchema,
   actionItemListSchema,
   actionItemSchema,
+  actionItemProposalSchema,
+  meetingSourceListSchema,
   conversationMemorySettingsSchema,
   type MemoryRecord,
   type MemorySettings,
@@ -174,11 +176,28 @@ export async function createActionItem(input: {
   description?: string;
   priority?: ActionItemRecord["priority"];
   due_date?: string;
+  source_type?: ActionItemRecord["source_type"];
+  source_id?: string;
+  source_quote?: string;
 }) {
   return apiFetch("/action-items", {
     method: "POST",
     body: JSON.stringify(input),
   }, actionItemSchema);
+}
+
+export async function proposeActionItems(input: {
+  source_type: "chat" | "meeting" | "document";
+  source_id: string;
+}) {
+  return apiFetch("/action-items/proposals", {
+    method: "POST",
+    body: JSON.stringify(input),
+  }, actionItemProposalSchema);
+}
+
+export async function getMeetings() {
+  return apiFetch("/meetings", undefined, meetingSourceListSchema);
 }
 
 export async function updateActionItem(
