@@ -162,6 +162,13 @@ async def ingest_document(
     if doc is None:
         raise NotFoundError("Document", body.document_id)
 
+    container = await db.get(RagCollection, body.collection)
+    if container is not None and container.display_name is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Upload files through the selected container so indexing state stays in sync.",
+        )
+
     file_path = Path(doc.storage_path)
     if not file_path.exists():
         raise NotFoundError("Document file", body.document_id)
@@ -281,6 +288,10 @@ async def delete_collection(
         raise HTTPException(status_code=403, detail="Shared RAG collections cannot be deleted.")
     if access != "owned":
         raise NotFoundError("Collection", name)
+
+    registry = await db.get(RagCollection, name)
+    if registry is not None and registry.display_name is not None:
+        raise HTTPException(status_code=409, detail="Delete this index through its container.")
 
     deleted = await vector_store.delete_collection(name)
 

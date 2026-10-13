@@ -254,6 +254,59 @@ class CollectionInfo(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class RAGContainerCreateRequest(BaseModel):
+    """Create a named, account-private vector index container."""
+
+    display_name: str = Field(..., min_length=1, max_length=120)
+
+    @field_validator("display_name")
+    @classmethod
+    def validate_display_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Container name cannot be empty.")
+        return value
+
+
+class RAGContainerFileInfo(BaseModel):
+    """One staged file and its durable indexing state."""
+
+    id: str
+    relative_path: str
+    status: str
+    chunk_count: int
+    size_bytes: int
+    last_error: str | None = None
+
+
+class RAGContainerFileUploadFailure(BaseModel):
+    """One rejected upload from a multi-file batch."""
+
+    relative_path: str
+    message: str
+
+
+class RAGContainerUploadResult(BaseModel):
+    """Per-file result from a container upload batch."""
+
+    files: list[RAGContainerFileInfo]
+    failures: list[RAGContainerFileUploadFailure]
+
+
+class RAGContainerInfo(BaseModel):
+    """Account-private vector container summary."""
+
+    name: str
+    display_name: str
+    file_count: int
+    indexed_file_count: int
+    staged_file_count: int
+    queued_file_count: int
+    processing_file_count: int
+    failed_file_count: int
+    chunk_count: int
+
+
 # =============================================================================
 # Meetings
 # =============================================================================
