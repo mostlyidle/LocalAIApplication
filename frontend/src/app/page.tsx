@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { MessageSquare, FileText, Database, Search, Settings, Activity, BrainCircuit, ArrowUpRight, ArrowRight, Sparkles } from "lucide-react";
+import { MessageSquare, FileText, Database, Search, Settings, Activity, BrainCircuit, ListTodo, ArrowUpRight, ArrowRight, Sparkles } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { BrandMark } from "@/components/shared/BrandMark";
@@ -46,6 +46,13 @@ const features = [
     href: "/memory",
     icon: BrainCircuit,
     color: "bg-violet-soft text-violet-ink",
+  },
+  {
+    title: "Action Planner",
+    description: "Collect next steps, set priorities, and keep projects moving.",
+    href: "/action-items",
+    icon: ListTodo,
+    color: "bg-peach-soft text-peach-ink",
   },
   {
     title: "Settings",

@@ -10,6 +10,7 @@ import {
   Settings,
   Activity,
   BrainCircuit,
+  ListTodo,
 } from "lucide-react";
 import {
   Sidebar,
@@ -35,6 +36,7 @@ const navItems = [
   { title: "RAG Search", href: "/rag", icon: Search, tone: "bg-sky-soft text-sky-ink" },
   { title: "Meetings", href: "/meetings", icon: Activity, tone: "bg-rose-soft text-rose-ink" },
   { title: "Memory", href: "/memory", icon: BrainCircuit, tone: "bg-violet-soft text-violet-ink" },
+  { title: "Action Planner", href: "/action-items", icon: ListTodo, tone: "bg-peach-soft text-peach-ink" },
   { title: "Settings", href: "/settings", icon: Settings, tone: "bg-muted text-muted-foreground" },
 ];
 

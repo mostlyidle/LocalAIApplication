@@ -125,6 +125,22 @@ export const memoryDeleteAllSchema = z.object({
   past_chat_recall_enabled: z.boolean(),
 });
 
+export const actionItemSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  description: z.string().nullable(),
+  status: z.enum(["next", "in_progress", "done"]),
+  priority: z.enum(["low", "normal", "high"]),
+  due_date: z.string().nullable(),
+  source_type: z.enum(["chat", "meeting", "document", "github"]).nullable(),
+  source_id: z.string().nullable(),
+  revision: z.number(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+export const actionItemListSchema = z.object({ items: z.array(actionItemSchema), total: z.number() });
+export type ActionItemRecord = z.infer<typeof actionItemSchema>;
+
 export type MemoryRecord = z.infer<typeof memorySchema>;
 export type MemorySettings = z.infer<typeof memorySettingsSchema>;
 

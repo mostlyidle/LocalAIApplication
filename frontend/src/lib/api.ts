@@ -22,9 +22,12 @@ import {
   memorySchema,
   memorySettingsSchema,
   memoryDeleteAllSchema,
+  actionItemListSchema,
+  actionItemSchema,
   conversationMemorySettingsSchema,
   type MemoryRecord,
   type MemorySettings,
+  type ActionItemRecord,
 } from "./schemas";
 
 class ApiError extends Error {
@@ -159,6 +162,44 @@ export async function updateMemory(
 
 export async function deleteMemory(id: string, revision: number) {
   return apiFetch<void>(`/memory/${encodeURIComponent(id)}?revision=${revision}`, { method: "DELETE" });
+}
+
+// --- Action item planner ---
+export async function getActionItems() {
+  return apiFetch("/action-items", undefined, actionItemListSchema);
+}
+
+export async function createActionItem(input: {
+  title: string;
+  description?: string;
+  priority?: ActionItemRecord["priority"];
+  due_date?: string;
+}) {
+  return apiFetch("/action-items", {
+    method: "POST",
+    body: JSON.stringify(input),
+  }, actionItemSchema);
+}
+
+export async function updateActionItem(
+  id: string,
+  input: {
+    revision: number;
+    title?: string;
+    description?: string | null;
+    status?: ActionItemRecord["status"];
+    priority?: ActionItemRecord["priority"];
+    due_date?: string | null;
+  },
+) {
+  return apiFetch(`/action-items/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  }, actionItemSchema);
+}
+
+export async function deleteActionItem(id: string) {
+  return apiFetch<void>(`/action-items/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
 export async function getMemorySettings() {
