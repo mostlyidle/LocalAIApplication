@@ -12,6 +12,7 @@ import {
   XCircle,
   Loader2,
   Wrench,
+  Github,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useTheme } from "next-themes";
 import * as api from "@/lib/api";
+import type { GitHubConnection } from "@/lib/schemas";
 
 interface HealthData {
   status: string;
@@ -43,6 +45,9 @@ export default function SettingsPage() {
   const [connName, setConnName] = useState("");
   const [connUrl, setConnUrl] = useState("");
   const [connStatus, setConnStatus] = useState<string | null>(null);
+  const [githubConnection, setGithubConnection] = useState<GitHubConnection | null>(null);
+  const [githubBusy, setGithubBusy] = useState(false);
+  const [githubMessage, setGithubMessage] = useState("");
 
   useEffect(() => {
     async function loadHealth() {
@@ -69,7 +74,37 @@ export default function SettingsPage() {
 
     loadHealth();
     loadTools();
+    api.getGitHubConnection().then(setGithubConnection).catch((cause: unknown) => {
+      setGithubMessage(cause instanceof Error ? cause.message : "Could not load GitHub connection.");
+    });
   }, []);
+
+  const connectGitHub = async () => {
+    setGithubBusy(true);
+    setGithubMessage("");
+    try {
+      const { authorization_url } = await api.startGitHubConnection();
+      window.location.assign(authorization_url);
+    } catch (cause) {
+      setGithubMessage(cause instanceof Error ? cause.message : "Could not start GitHub authorization.");
+      setGithubBusy(false);
+    }
+  };
+
+  const disconnectGitHub = async () => {
+    if (!window.confirm("Disconnect GitHub and revoke this app's access to your account?")) return;
+    setGithubBusy(true);
+    setGithubMessage("");
+    try {
+      await api.disconnectGitHub();
+      setGithubConnection(await api.getGitHubConnection());
+      setGithubMessage("GitHub access revoked and disconnected.");
+    } catch (cause) {
+      setGithubMessage(cause instanceof Error ? cause.message : "Could not revoke GitHub access.");
+    } finally {
+      setGithubBusy(false);
+    }
+  };
 
   const handleAddConnection = async () => {
     if (!connName.trim() || !connUrl.trim()) return;
@@ -99,6 +134,31 @@ export default function SettingsPage() {
       </div>
 
       <div className="space-y-6">
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2"><Github className="h-5 w-5" /><CardTitle className="text-base">GitHub Project Agent</CardTitle></div>
+            <CardDescription>Connect your own GitHub account. The app stores encrypted, expiring credentials for your account only.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {githubConnection?.connected ? (
+              <p className="text-sm">Connected as <span className="font-semibold">@{githubConnection.login}</span>{githubConnection.expires_at ? ` · current access token expires ${new Date(githubConnection.expires_at).toLocaleString()} and refreshes automatically` : ""}</p>
+            ) : githubConnection?.configured ? (
+              <p className="text-sm text-muted-foreground">Install the GitHub App only on repositories you want it to access, then authorize your account here.</p>
+            ) : (
+              <p className="text-sm text-muted-foreground">GitHub App credentials are not configured on this server yet.</p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              {githubConnection?.install_url && <Button asChild variant="outline"><a href={githubConnection.install_url} target="_blank" rel="noreferrer">Install GitHub App</a></Button>}
+              {githubConnection?.connected ? (
+                <Button variant="outline" onClick={() => void disconnectGitHub()} disabled={githubBusy}>{githubBusy ? <Loader2 className="animate-spin" /> : null}Disconnect and revoke</Button>
+              ) : (
+                <Button onClick={() => void connectGitHub()} disabled={githubBusy || !githubConnection?.configured}>{githubBusy ? <Loader2 className="animate-spin" /> : null}Connect GitHub</Button>
+              )}
+            </div>
+            {githubMessage && <p role="status" className="text-sm text-muted-foreground">{githubMessage}</p>}
+          </CardContent>
+        </Card>
+
         {/* System Health */}
         <Card>
           <CardHeader>

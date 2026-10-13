@@ -16,6 +16,7 @@ vi.mock("lucide-react", () => {
     XCircle: (props: Record<string, unknown>) => <span data-testid="x-icon" {...props} />,
     Loader2: (props: Record<string, unknown>) => <span data-testid="loader" {...props} />,
     Wrench: icon,
+    Github: icon,
   };
 });
 
@@ -55,10 +56,16 @@ vi.mock("next-themes", () => ({
 const mockGetHealth = vi.fn();
 const mockGetTools = vi.fn();
 const mockAddSQLConnection = vi.fn();
+const mockGetGitHubConnection = vi.fn();
+const mockStartGitHubConnection = vi.fn();
+const mockDisconnectGitHub = vi.fn();
 vi.mock("@/lib/api", () => ({
   getHealth: (...args: unknown[]) => mockGetHealth(...args),
   getTools: (...args: unknown[]) => mockGetTools(...args),
   addSQLConnection: (...args: unknown[]) => mockAddSQLConnection(...args),
+  getGitHubConnection: (...args: unknown[]) => mockGetGitHubConnection(...args),
+  startGitHubConnection: (...args: unknown[]) => mockStartGitHubConnection(...args),
+  disconnectGitHub: (...args: unknown[]) => mockDisconnectGitHub(...args),
 }));
 
 // Dynamic import of the page (must come after mocks)
@@ -82,11 +89,31 @@ describe("SettingsPage", () => {
         { name: "calculator_tool", description: "Calculate expressions" },
       ],
     });
+    mockGetGitHubConnection.mockResolvedValue({
+      configured: false, connected: false, login: null, expires_at: null, install_url: null,
+    });
   });
 
   it("renders Settings heading", () => {
     render(<SettingsPage />);
     expect(screen.getByText("Settings")).toBeInTheDocument();
+    expect(screen.getByText("GitHub Project Agent")).toBeInTheDocument();
+  });
+
+  it("offers the per-account GitHub setup when configured", async () => {
+    mockGetGitHubConnection.mockResolvedValue({
+      configured: true,
+      connected: false,
+      login: null,
+      expires_at: null,
+      install_url: "https://github.com/apps/local-ai/installations/new",
+    });
+    render(<SettingsPage />);
+    expect(await screen.findByRole("link", { name: "Install GitHub App" })).toHaveAttribute(
+      "href",
+      "https://github.com/apps/local-ai/installations/new",
+    );
+    expect(screen.getByRole("button", { name: "Connect GitHub" })).toBeEnabled();
   });
 
   it("shows loading state for health", () => {

@@ -10,7 +10,7 @@ Keep the existing LocalAIApplication chat and document parsing experience. Add a
 
 - [x] 1. Account-owned action item CRUD and planner UI; verify account isolation and browser workflow.
 - [x] 2. Source-grounded planner proposals from owned chat, meeting, and document records; accept/edit/ignore review flow; verify with mocked LLM and browser.
-- [ ] 3. Per-account GitHub OAuth connection, encrypted credentials, repository selection, disconnect; verify OAuth and API behavior against a local fake GitHub service.
+- [x] 3. Per-account GitHub OAuth connection, encrypted credentials, repository selection, disconnect; verify OAuth and API behavior against a local fake GitHub service.
 - [ ] 4. Read-only GitHub project agent for issues, pull requests/diffs, and checks, with safe links and task proposals; verify pagination, errors, ownership, and prompt-injection handling against fake GitHub.
 - [ ] 5. User-confirmed GitHub issue/comment writes, end-to-end tests, docs and release review.
 
@@ -36,9 +36,19 @@ Keep the existing LocalAIApplication chat and document parsing experience. Add a
 - Browser E2E scenario now covers proposal, acceptance, manual create, edit, completion, and delete, but execution remains blocked by the incomplete Playwright Chromium installation noted above.
 - Commit: `0fef1fd` (`feat(planner): add source-cited action suggestions`).
 
+### Milestone 3 — Per-account GitHub authorization
+
+- Added per-account GitHub connection records and one-time OAuth state bound to the initiating account session. State is hashed, expires after ten minutes, and is consumed before code exchange.
+- Added GitHub App user authorization with `offline_access`, profile verification, Fernet-encrypted access/refresh credentials, eight-hour access-token refresh and refresh-token rotation, and remote grant revocation before local disconnect.
+- Added Settings controls to install, connect, and revoke GitHub access, plus `.env.example` and README setup instructions. Secrets remain server-side.
+- Added migration revision 20 and mocked GitHub HTTP tests for code exchange, profile verification, and revocation.
+- Verification: backend suite `789 passed`; frontend suite `328 passed`; Ruff, ESLint, TypeScript, optimized `next build`, and empty SQLite migration through `20261012_20` passed. OAuth API tests cover session state, replay rejection, encrypted persistence, refresh rotation, and disconnect.
+- Limitations: live GitHub OAuth needs an operator-created GitHub App and its secrets. Playwright browser E2E remains unavailable because Chromium installation did not produce an executable. `uv lock --offline` could not re-resolve this existing Python 3.14+ lock split because the offline index lacks `pwdlib>=0.3.1`; `cryptography` was already present in `uv.lock`, and the direct dependency was added against its existing locked `46.0.5` package.
+- Commit: pending.
+
 ## Resume instructions
 
-Continue with milestone 3: per-account GitHub App user authorization, encrypted expiring credentials, repository selection, and disconnect. Preserve OAuth state/session binding and keep all repository access scoped to the user's authorized installation. After each completed milestone, update this file with changed files, commit SHA, exact checks and results, and the next action. Keep the account owner filter on every persistent record and GitHub request.
+Continue with milestone 4: enumerate repositories reachable by this account's GitHub App authorization, let the user select repositories, and restrict all issue, pull request/diff, and check reads to selected repositories. Test pagination, API errors, authorization boundaries, and prompt-injection content with mocked GitHub responses. After each completed milestone, update this file with changed files, commit SHA, exact checks and results, and the next action. Keep the account owner filter on every persistent record and GitHub request.
 
 ## Resume instructions
 

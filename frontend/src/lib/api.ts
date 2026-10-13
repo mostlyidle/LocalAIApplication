@@ -26,6 +26,8 @@ import {
   actionItemSchema,
   actionItemProposalSchema,
   meetingSourceListSchema,
+  githubConnectionSchema,
+  githubAuthorizationSchema,
   conversationMemorySettingsSchema,
   type MemoryRecord,
   type MemorySettings,
@@ -198,6 +200,19 @@ export async function proposeActionItems(input: {
 
 export async function getMeetings() {
   return apiFetch("/meetings", undefined, meetingSourceListSchema);
+}
+
+// --- GitHub App connection ---
+export async function getGitHubConnection() {
+  return apiFetch("/github/connection", undefined, githubConnectionSchema);
+}
+
+export async function startGitHubConnection() {
+  return apiFetch("/github/connect", { method: "POST" }, githubAuthorizationSchema);
+}
+
+export async function disconnectGitHub() {
+  return apiFetch<void>("/github/connection", { method: "DELETE" });
 }
 
 export async function updateActionItem(

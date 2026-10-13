@@ -159,6 +159,16 @@ export const meetingSourceListSchema = z.array(z.object({
   id: z.string(), status: z.string(), created_at: z.string(),
 }));
 
+export const githubConnectionSchema = z.object({
+  configured: z.boolean(),
+  connected: z.boolean(),
+  login: z.string().nullable(),
+  expires_at: z.string().nullable(),
+  install_url: z.string().nullable(),
+});
+export const githubAuthorizationSchema = z.object({ authorization_url: z.string().url() });
+export type GitHubConnection = z.infer<typeof githubConnectionSchema>;
+
 export type MemoryRecord = z.infer<typeof memorySchema>;
 export type MemorySettings = z.infer<typeof memorySettingsSchema>;
 
