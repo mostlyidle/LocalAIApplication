@@ -17,7 +17,7 @@ WebKit's instructions for choosing a folder by navigating into it and pressing *
 ## What to try next
 
 1. Complete: Safari app E2E selected root and nested `.txt` files. The UI staged `knowledge-base/root-note.txt` and `knowledge-base/reference/nested-note.txt` with paths preserved; both indexed (2 chunks total), and search returned their fixture contents. The chat RAG profile's index selector exposed the new container.
-2. Separately verify Finder folder drag-and-drop if that interaction is in release scope. The uploader already traverses dropped directory entries through `webkitGetAsEntry()`.
+2. Native Finder folder drag-and-drop remains unconfirmed. Finder-to-Safari drag attempts in the UI automation did not visibly reach the browser drop handler. A focused Vitest regression test passes for recursive directory entries and preservation of root and nested relative paths.
 
 The app-level folder upload, indexing, and search now pass in Safari 27.0.1/macOS 27.0.1. Chat generation was not tested because the configured `qwen2.5:7b` model is not installed; index selection was verified.
 

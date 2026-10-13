@@ -15,14 +15,16 @@ do not restart planning or create another feature branch.
 | Durable ingestion | Complete | A database-backed polling worker claims files with a lease, retries up to five times, and reuses app parsing, chunking, Ollama embeddings, and Qdrant. |
 | Container UI | Complete | Create/select containers; choose or drop files/folders; review per-file statuses; load, retry, remove, and delete. UI followed `ui-ux-pro-max`. |
 | Search and chat selection | Complete | Both surfaces select private containers or existing app collections and pass the selected index through existing retrieval. |
-| Focused verification | Complete | Frontend 52 focused tests, TypeScript, and backend focused tests/lint pass. ESLint reports one existing `<img>` warning in `ChatWindow.tsx:583`. |
-| Browser E2E | Complete | Safari 27.0.1 on macOS 27.0.1: folder selection staged root and nested files with relative paths, indexed both through live Qdrant/Ollama, and search returned their fixture text. The RAG chat profile's index selector listed the container. Chat generation not tested; default `qwen2.5:7b` is not installed. |
+| Focused verification | Complete | Frontend 53 focused tests, including recursive folder-drop path coverage; TypeScript, and backend focused tests/lint pass. ESLint reports one existing `<img>` warning in `ChatWindow.tsx:583`. |
+| Browser E2E | Picker/index/search complete; native folder drop unconfirmed | Safari 27.0.1 on macOS 27.0.1: folder selection staged root and nested files with relative paths, indexed both through live Qdrant/Ollama, and search returned their fixture text. Finder-to-Safari drag attempts did not produce a browser drop event in UI automation; the focused Vitest test passes for recursive directory entries and paths. The RAG chat profile's index selector listed the container. Chat generation not tested; default `qwen2.5:7b` is not installed. |
+| Deployment database migration | Verified on deployment schema | `.env.docker` configures the app database as SQLite in the persistent `/app/data` volume. A disposable SQLite database upgraded from revision `20261012_23` to head `20261012_24`; an existing collection remained intact and the new file table/index were created. The live deployment volume was not accessed. |
 | Checkpoint commit and push | Complete | Backend and frontend checkpoints are pushed to `origin/feature/vector-index-containers`. |
 
-**Current result:** implementation, focused verification, and Safari folder upload/index/search
+**Current result:** implementation, focused verification, and Safari folder picker/index/search
 flow are complete. The folder picker fix removes the `accept` hint from the directory input only;
-regular file selection keeps its filter. Still run the migration against the deployment database
-backend before release.
+regular file selection keeps its filter. Migration passed against a disposable database using the
+deployment's SQLite schema. Native Finder drag-and-drop still needs a manual Safari check because
+the UI automation did not deliver the OS folder drag to the browser.
 
 **Checkpoint history:**
 
@@ -55,6 +57,11 @@ backend before release.
   search returned the expected `Copper Finch` and `amberfield` fixture passages. The RAG chat
   profile's Search index selector exposed the container. Chat generation remains untested because
   its configured `qwen2.5:7b` model is not installed.
+- Folder-drop regression and deployment-schema migration check (2026-10-13): focused Vitest coverage
+  passed for a dropped directory with root/nested files and preserved relative paths. Finder-to-
+  Safari native drag attempts did not visibly reach the browser drop handler, so native drag remains
+  unconfirmed. Disposable SQLite upgrade from `20261012_23` to `20261012_24` passed with a seeded
+  existing collection; the live Docker volume was not touched.
 
 ### Implementation choices made
 
@@ -155,7 +162,9 @@ path before offering them as selectable app containers.
   the regular file input retains its filter. Folder selection and relative-path preservation pass
   in Safari. Hidden-file behavior is not separately verified. Backend format validation rejects
   unsupported files individually.
-- Verify the database migration against the repository's supported database backends.
+- Native Finder folder drag into Safari remains unconfirmed; run a manual check where Finder and
+  Safari are visible together. Deployment SQLite migration is verified using a disposable database;
+  no live database volume was modified.
 
 ## Rough estimate
 
