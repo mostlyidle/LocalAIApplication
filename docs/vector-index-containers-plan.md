@@ -16,11 +16,13 @@ do not restart planning or create another feature branch.
 | Container UI | Complete | Create/select containers; choose or drop files/folders; review per-file statuses; load, retry, remove, and delete. UI followed `ui-ux-pro-max`. |
 | Search and chat selection | Complete | Both surfaces select private containers or existing app collections and pass the selected index through existing retrieval. |
 | Focused verification | Complete | Frontend 52 focused tests, TypeScript, and backend focused tests/lint pass. ESLint reports one existing `<img>` warning in `ChatWindow.tsx:583`. |
+| Browser E2E | Core flow passed; folder chooser needs follow-up | Safari test created two containers, uploaded and indexed one file in each using live Qdrant and Ollama embeddings, searched both indexes, and confirmed retrieval stayed within the selected index. RAG chat showed both indexes and allowed switching. Safari's folder picker only allowed selecting individual files, so folder selection/drop and relative paths remain unverified. Chat generation was not run because the RAG profile's default `qwen2.5:7b` model is not installed. |
 | Checkpoint commit and push | Complete | Backend and frontend checkpoints are pushed to `origin/feature/vector-index-containers`. |
 
-**Current result:** implementation and focused verification are complete. The feature branch
-is ready for review. Before release, check directory selection/drop behavior in the supported
-browsers and run the migration against the deployment database backend.
+**Current result:** implementation, focused verification, and the core browser flow are complete.
+The feature branch is ready for review with one browser-compatibility follow-up: validate folder
+selection/drop and relative paths in supported browsers. Also run the migration against the
+deployment database backend before release.
 
 **Checkpoint history:**
 
@@ -36,6 +38,12 @@ browsers and run the migration against the deployment database backend.
 - Frontend ESLint on changed UI/API files — 0 errors, 1 `<img>` warning at `ChatWindow.tsx:583`.
 - `git diff --check` — passed.
 - The backend integration tests use SQLite and mock Qdrant; a live Qdrant server was not available for its client-version warning.
+- Browser E2E (2026-10-13, Safari, isolated local app/database): created `Browser E2E Index`
+  and `Browser E2E Isolation`; uploaded and indexed `amberfield.txt` and `copper-finch.txt`
+  into separate live Qdrant collections using local Ollama embeddings. Searches in each
+  selected index returned that index's own note. The RAG chat profile exposed both containers
+  and accepted switching the selected index. Chat generation was not tested because its
+  default `qwen2.5:7b` model was not installed.
 
 ### Implementation choices made
 
@@ -132,13 +140,12 @@ path before offering them as selectable app containers.
 
 ## Open implementation details
 
-- Check folder selection/drop behavior in the supported browsers, including which hidden
-  files the browser exposes. The file chooser filters by existing supported formats; every
-  received unsupported file gets an individual failure result.
+- Safari's native folder picker opened directories but did not allow selecting a directory;
+  one nested file chosen through the folder control was staged by basename. Verify folder
+  selection/drop and relative-path preservation in supported browsers, including which hidden
+  files are exposed. The file chooser filters by existing supported formats; every received
+  unsupported file gets an individual failure result.
 - Verify the database migration against the repository's supported database backends.
-- Check how the directory chooser and folder-drop expose hidden files in supported browsers.
-  The implementation uses browser `webkit*` directory APIs; this compatibility was not
-  verified during the focused checks.
 
 ## Rough estimate
 
