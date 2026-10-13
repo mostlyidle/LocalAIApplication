@@ -353,6 +353,7 @@ class GitHubOAuthState(Base):
     session_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("account_sessions.id", ondelete="CASCADE"), index=True
     )
+    browser_binding_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 

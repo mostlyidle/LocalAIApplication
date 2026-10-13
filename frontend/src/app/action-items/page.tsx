@@ -152,8 +152,9 @@ export default function ActionItemsPage() {
     }
   };
 
-  const acceptSuggestion = async (suggestion: ActionItemSuggestion, index: number) => {
-    if (!proposalSource) return;
+  const acceptSuggestion = async (suggestion: ActionItemSuggestion) => {
+    if (!proposalSource || saving) return;
+    setSaving(true);
     try {
       await createActionItem({
         title: suggestion.title,
@@ -164,10 +165,12 @@ export default function ActionItemsPage() {
         source_id: proposalSource.id,
         source_quote: suggestion.source_quote,
       });
-      setSuggestions((current) => current.filter((_, i) => i !== index));
+      setSuggestions((current) => current.filter((item) => item !== suggestion));
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save this suggestion.");
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -228,15 +231,15 @@ export default function ActionItemsPage() {
             <Card key={`${proposalSource.id}-${index}`} className="rounded-2xl border-primary/20">
               <CardContent className="space-y-4 py-5">
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-2 sm:col-span-2"><Label htmlFor={`suggestion-title-${index}`}>Suggested task</Label><Input id={`suggestion-title-${index}`} value={suggestion.title} onChange={(event) => setSuggestions((current) => current.map((value, i) => i === index ? { ...value, title: event.target.value } : value))} /></div>
-                  <div className="space-y-2 sm:col-span-2"><Label htmlFor={`suggestion-description-${index}`}>Details</Label><textarea id={`suggestion-description-${index}`} value={suggestion.description ?? ""} onChange={(event) => setSuggestions((current) => current.map((value, i) => i === index ? { ...value, description: event.target.value || null } : value))} rows={2} className="w-full rounded-md border bg-background px-3 py-2 text-sm" /></div>
+                  <div className="space-y-2 sm:col-span-2"><Label htmlFor={`suggestion-title-${index}`}>Suggested task</Label><Input id={`suggestion-title-${index}`} value={suggestion.title} disabled={saving} onChange={(event) => setSuggestions((current) => current.map((value, i) => i === index ? { ...value, title: event.target.value } : value))} /></div>
+                  <div className="space-y-2 sm:col-span-2"><Label htmlFor={`suggestion-description-${index}`}>Details</Label><textarea id={`suggestion-description-${index}`} value={suggestion.description ?? ""} disabled={saving} onChange={(event) => setSuggestions((current) => current.map((value, i) => i === index ? { ...value, description: event.target.value || null } : value))} rows={2} className="w-full rounded-md border bg-background px-3 py-2 text-sm" /></div>
                 </div>
                 <blockquote className="rounded-xl border-l-4 border-primary/50 bg-muted/50 px-4 py-3 text-sm text-muted-foreground">“{suggestion.source_quote}”</blockquote>
                 <div className="flex flex-wrap items-end gap-3">
-                  <div className="space-y-2"><Label htmlFor={`suggestion-priority-${index}`}>Priority</Label><select id={`suggestion-priority-${index}`} value={suggestion.priority} onChange={(event) => setSuggestions((current) => current.map((value, i) => i === index ? { ...value, priority: event.target.value as ActionItemRecord["priority"] } : value))} className="h-10 rounded-md border bg-background px-3 text-sm"><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option></select></div>
-                  <div className="space-y-2"><Label htmlFor={`suggestion-date-${index}`}>Due date</Label><Input id={`suggestion-date-${index}`} type="date" value={suggestion.due_date ?? ""} onChange={(event) => setSuggestions((current) => current.map((value, i) => i === index ? { ...value, due_date: event.target.value || null } : value))} /></div>
-                  <Button onClick={() => void acceptSuggestion(suggestion, index)} disabled={!suggestion.title.trim()}><Check /> Accept</Button>
-                  <Button variant="outline" onClick={() => ignoreSuggestion(index)}>Ignore</Button>
+                  <div className="space-y-2"><Label htmlFor={`suggestion-priority-${index}`}>Priority</Label><select id={`suggestion-priority-${index}`} value={suggestion.priority} disabled={saving} onChange={(event) => setSuggestions((current) => current.map((value, i) => i === index ? { ...value, priority: event.target.value as ActionItemRecord["priority"] } : value))} className="h-10 rounded-md border bg-background px-3 text-sm"><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option></select></div>
+                  <div className="space-y-2"><Label htmlFor={`suggestion-date-${index}`}>Due date</Label><Input id={`suggestion-date-${index}`} type="date" value={suggestion.due_date ?? ""} disabled={saving} onChange={(event) => setSuggestions((current) => current.map((value, i) => i === index ? { ...value, due_date: event.target.value || null } : value))} /></div>
+                  <Button onClick={() => void acceptSuggestion(suggestion)} disabled={saving || !suggestion.title.trim()}><Check /> Accept</Button>
+                  <Button variant="outline" onClick={() => ignoreSuggestion(index)} disabled={saving}>Ignore</Button>
                 </div>
               </CardContent>
             </Card>

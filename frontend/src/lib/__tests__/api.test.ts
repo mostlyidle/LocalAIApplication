@@ -31,6 +31,7 @@ import {
   updateMemorySettings,
   deleteAllMemories,
   updateConversationMemorySettings,
+  getActionItems,
   login,
   logout,
   ApiError,
@@ -268,6 +269,43 @@ describe("API Client", () => {
       expect(result.exclude_from_memory).toBe(true);
       expect(spy.mock.calls[0][0]).toContain("/memory/conversations/conversation%201/settings");
       expect(JSON.parse(spy.mock.calls[0][1].body)).toEqual({ exclude_from_memory: true });
+    });
+  });
+
+  describe("Action item endpoints", () => {
+    it("loads every page of action items", async () => {
+      const item = (id: string) => ({
+        id,
+        title: `Task ${id}`,
+        description: null,
+        status: "next",
+        priority: "normal",
+        due_date: null,
+        source_type: null,
+        source_id: null,
+        source_repository_id: null,
+        source_quote: null,
+        revision: 1,
+        created_at: "2026-10-12T00:00:00Z",
+        updated_at: "2026-10-12T00:00:00Z",
+      });
+      const spy = vi.fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ items: Array.from({ length: 200 }, (_, i) => item(String(i))), total: 201 }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: () => Promise.resolve({ items: [item("200")], total: 201 }),
+        });
+      globalThis.fetch = spy;
+
+      const result = await getActionItems();
+
+      expect(result.items).toHaveLength(201);
+      expect(result.total).toBe(201);
+      expect(spy.mock.calls[0][0]).toContain("/action-items?limit=200&offset=0");
+      expect(spy.mock.calls[1][0]).toContain("/action-items?limit=200&offset=200");
     });
   });
 
