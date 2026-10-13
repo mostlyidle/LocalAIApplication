@@ -8,7 +8,7 @@ The app's folder control uses `<input type="file" webkitdirectory multiple accep
 
 I checked the same fixture folder in Safari 27.0.1 on macOS 27.0.1 with a minimal local page. The unfiltered `<input type="file" webkitdirectory multiple>` let me select the folder and returned both files with correct `webkitRelativePath` values. An otherwise identical input with the app's kind of `accept` filter left **Upload** disabled for the same folder. This A/B points to the `accept` attribute on the directory input as the cause. The earlier app E2E used that filtered input, so it did not demonstrate a Safari directory-picker limitation.
 
-**Smallest likely fix:** remove `accept` from only the folder input. Keep the `accept` filter on the regular file input. `accept` is only a picker hint; it is not validation. The backend already validates file types and returns per-file failures, so unsupported files can continue to be rejected there. Then repeat the app-level folder E2E to verify selection and paths end to end.
+**Fix applied:** removed `accept` from only the folder input and kept it on the regular file input. `accept` is only a picker hint; it is not validation. The backend validates file types and returns per-file failures, so unsupported files continue to be rejected there.
 
 WebKit bug [284457](https://bugs.webkit.org/show_bug.cgi?id=284457), reported against Safari 17.5 and 18.0, describes picker behavior around `webkitdirectory`. The report remains **NEW** (last modified 2025-01-22), and comments disagree on whether it reproduces a directory-selection failure. It does not describe the `accept` interaction found in this Safari 27.0.1 A/B test, so it is not needed to explain this result.
 
@@ -16,11 +16,10 @@ WebKit's instructions for choosing a folder by navigating into it and pressing *
 
 ## What to try next
 
-1. Remove `accept` only from the folder input; keep it on the file input.
-2. Rerun the app E2E in Safari 27.0.1/macOS 27.0.1: select a folder with root and nested supported files; verify both upload and each `webkitRelativePath` is preserved.
-3. Separately verify Finder folder drag-and-drop if that interaction is in release scope. The uploader already traverses dropped directory entries through `webkitGetAsEntry()`.
+1. Complete: Safari app E2E selected root and nested `.txt` files. The UI staged `knowledge-base/root-note.txt` and `knowledge-base/reference/nested-note.txt` with paths preserved; both indexed (2 chunks total), and search returned their fixture contents. The chat RAG profile's index selector exposed the new container.
+2. Separately verify Finder folder drag-and-drop if that interaction is in release scope. The uploader already traverses dropped directory entries through `webkitGetAsEntry()`.
 
-No implementation change was made during this research. Minimal picker A/B passed; actual app folder upload remains unverified until the `accept` adjustment is made and retested. File upload, index, and search passed in the earlier E2E.
+The app-level folder upload, indexing, and search now pass in Safari 27.0.1/macOS 27.0.1. Chat generation was not tested because the configured `qwen2.5:7b` model is not installed; index selection was verified.
 
 ## Sources
 

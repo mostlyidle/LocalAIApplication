@@ -16,12 +16,13 @@ do not restart planning or create another feature branch.
 | Container UI | Complete | Create/select containers; choose or drop files/folders; review per-file statuses; load, retry, remove, and delete. UI followed `ui-ux-pro-max`. |
 | Search and chat selection | Complete | Both surfaces select private containers or existing app collections and pass the selected index through existing retrieval. |
 | Focused verification | Complete | Frontend 52 focused tests, TypeScript, and backend focused tests/lint pass. ESLint reports one existing `<img>` warning in `ChatWindow.tsx:583`. |
-| Browser E2E | Core flow passed; app folder upload needs fix/retest | Safari 27.0.1 on macOS 27.0.1: two containers indexed and searched separately; chat selector exposed both. Minimal picker A/B showed plain `webkitdirectory` selects a folder and preserves paths, while adding the app-style `accept` filter leaves Upload disabled. Likely fix: remove `accept` from folder input, then retest app-level folder upload. Chat generation not tested; default `qwen2.5:7b` is not installed. |
+| Browser E2E | Complete | Safari 27.0.1 on macOS 27.0.1: folder selection staged root and nested files with relative paths, indexed both through live Qdrant/Ollama, and search returned their fixture text. The RAG chat profile's index selector listed the container. Chat generation not tested; default `qwen2.5:7b` is not installed. |
 | Checkpoint commit and push | Complete | Backend and frontend checkpoints are pushed to `origin/feature/vector-index-containers`. |
 
-**Current result:** implementation, focused verification, and the core browser flow are complete.
-Next, remove `accept` from the folder input and rerun Safari folder upload to verify relative
-paths. Also run the migration against the deployment database backend before release.
+**Current result:** implementation, focused verification, and Safari folder upload/index/search
+flow are complete. The folder picker fix removes the `accept` hint from the directory input only;
+regular file selection keeps its filter. Still run the migration against the deployment database
+backend before release.
 
 **Checkpoint history:**
 
@@ -47,6 +48,13 @@ paths. Also run the migration against the deployment database backend before rel
   `<input type="file" webkitdirectory multiple>` selected the fixture folder and returned both
   files with correct `webkitRelativePath`; adding the app-style `accept` filter left Upload
   disabled. See [Safari folder picker research](research/safari-folder-picker.md).
+- Safari folder-picker regression E2E (2026-10-13, fresh temporary account/database and Qdrant):
+  created `Folder Picker Regression E2E`, selected a folder with `root-note.txt` and
+  `reference/nested-note.txt`, and saw both staged as `knowledge-base/root-note.txt` and
+  `knowledge-base/reference/nested-note.txt`. Both indexed successfully (2 files, 2 chunks);
+  search returned the expected `Copper Finch` and `amberfield` fixture passages. The RAG chat
+  profile's Search index selector exposed the container. Chat generation remains untested because
+  its configured `qwen2.5:7b` model is not installed.
 
 ### Implementation choices made
 
@@ -143,10 +151,10 @@ path before offering them as selectable app containers.
 
 ## Open implementation details
 
-- The app's `accept` filter appears to disable Safari folder selection. Remove `accept` from the
-  folder input (keep it on the regular file input), then verify app-level folder selection/drop,
-  relative-path preservation, and hidden-file behavior. Backend format validation already
-  rejects unsupported files individually.
+- Safari folder picker fix is applied: the directory input no longer has an `accept` attribute;
+  the regular file input retains its filter. Folder selection and relative-path preservation pass
+  in Safari. Hidden-file behavior is not separately verified. Backend format validation rejects
+  unsupported files individually.
 - Verify the database migration against the repository's supported database backends.
 
 ## Rough estimate
