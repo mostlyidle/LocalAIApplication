@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 test("planner creates, edits, completes, and deletes an action item", async ({ page }) => {
   let items: Array<Record<string, unknown>> = [];
@@ -29,6 +29,7 @@ test("planner creates, edits, completes, and deletes an action item", async ({ p
         id: "task-1", title: body.title, description: body.description ?? null,
         status: "next", priority: body.priority ?? "normal", due_date: body.due_date ?? null,
         source_type: body.source_type ?? null, source_id: body.source_id ?? null,
+        source_repository_id: body.source_repository_id ?? null,
         source_quote: body.source_quote ?? null, revision, created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }];
@@ -47,7 +48,7 @@ test("planner creates, edits, completes, and deletes an action item", async ({ p
   });
 
   await page.goto("/action-items");
-  await page.getByLabel("Source").selectOption("chat-1");
+  await page.getByLabel("Source", { exact: true }).selectOption("chat-1");
   await page.getByRole("button", { name: "Suggest next steps" }).click();
   await expect(page.getByText("I will send the notes tomorrow.")).toBeVisible();
   await page.getByRole("button", { name: "Accept" }).click();

@@ -3,9 +3,8 @@ import { defineConfig, devices } from "@playwright/test";
 /**
  * Playwright E2E configuration.
  *
- * By default the tests assume the Next.js dev server is already running on
- * port 3000 and the FastAPI backend on port 8000.  Set the `BASE_URL`
- * environment variable to override.
+ * The E2E server uses port 3100 so it cannot silently reuse the app running
+ * in Docker on port 3000. Set `BASE_URL` to test another server explicitly.
  *
  * Run:  pnpm test:e2e          (headless)
  *       pnpm test:e2e:ui       (interactive UI mode)
@@ -19,7 +18,7 @@ export default defineConfig({
   reporter: [["html", { open: "never" }]],
 
   use: {
-    baseURL: process.env.BASE_URL ?? "http://localhost:3000",
+    baseURL: process.env.BASE_URL ?? "http://127.0.0.1:3100",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
   },
@@ -33,9 +32,9 @@ export default defineConfig({
 
   /* Start the Next.js dev server automatically when running E2E tests */
   webServer: {
-    command: "node node_modules/next/dist/bin/next dev",
-    url: "http://localhost:3000",
-    reuseExistingServer: !process.env.CI,
+    command: "node node_modules/next/dist/bin/next dev --hostname 127.0.0.1 --port 3100",
+    url: "http://127.0.0.1:3100",
+    reuseExistingServer: false,
     timeout: 60_000,
   },
 });
