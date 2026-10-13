@@ -10,7 +10,7 @@ Keep the existing LocalAIApplication chat and document parsing experience. Add a
 
 - [x] 1. Account-owned action item CRUD and planner UI; verify account isolation and browser workflow.
 - [x] 2. Source-grounded planner proposals from owned chat, meeting, and document records; accept/edit/ignore review flow; verify with mocked LLM and browser.
-- [x] 3. Per-account GitHub OAuth connection, encrypted credentials, repository selection, disconnect; verify OAuth and API behavior against a local fake GitHub service.
+- [x] 3. Per-account GitHub OAuth connection, encrypted credentials, and disconnect.
 - [ ] 4. Read-only GitHub project agent for issues, pull requests/diffs, and checks, with safe links and task proposals; verify pagination, errors, ownership, and prompt-injection handling against fake GitHub.
 - [ ] 5. User-confirmed GitHub issue/comment writes, end-to-end tests, docs and release review.
 
@@ -46,10 +46,16 @@ Keep the existing LocalAIApplication chat and document parsing experience. Add a
 - Limitations: live GitHub OAuth needs an operator-created GitHub App and its secrets. Playwright browser E2E remains unavailable because Chromium installation did not produce an executable. `uv lock --offline` could not re-resolve this existing Python 3.14+ lock split because the offline index lacks `pwdlib>=0.3.1`; `cryptography` was already present in `uv.lock`, and the direct dependency was added against its existing locked `46.0.5` package.
 - Commit: `58ad1f6` (`feat(github): add encrypted per-account app authorization`).
 
+### Milestone 4a — Per-account repository allowlist
+
+- Added migration revision 21 and an account-owned repository selection table. Disconnect now also clears that account's selections.
+- Added repository enumeration through the authorized user's GitHub token (up to 1,000 results) and selection endpoints. Selecting rechecks that the repository is still accessible to that token; each response returns only repositories visible to the current GitHub authorization.
+- Added the Settings repository checklist and API/client schemas. Each person's selections are isolated by account.
+- Verification: full backend suite `791 passed`; full frontend suite `329 passed`; frontend ESLint and TypeScript passed; optimized `next build` passed; a clean SQLite Alembic upgrade through `20261012_21` passed; `git diff --check` passed.
+- Browser E2E remains unavailable because Playwright Chromium is not installed successfully in this environment. Settings behavior is covered by the component test, and repository selection is exercised through the authenticated API against a mocked GitHub client.
+- Feature commit: `b0f2fce` (`feat(github): add per-account repository allowlist`).
+- Docs checkpoint: pending.
+
 ## Resume instructions
 
-Continue with milestone 4: enumerate repositories reachable by this account's GitHub App authorization, let the user select repositories, and restrict all issue, pull request/diff, and check reads to selected repositories. Test pagination, API errors, authorization boundaries, and prompt-injection content with mocked GitHub responses. After each completed milestone, update this file with changed files, commit SHA, exact checks and results, and the next action. Keep the account owner filter on every persistent record and GitHub request.
-
-## Resume instructions
-
-Start with milestone 1 on this branch. After each completed milestone, update this file with changed files, commit SHA, exact checks and results, and the next action. Keep the account owner filter on every persistent record and GitHub request.
+Continue with milestone 4b: build the read-only project agent for issues, pull requests/diffs, checks, and planner task suggestions. Require a selected repository on every call. Test pagination, API errors, authorization boundaries, and prompt-injection content with mocked GitHub responses. After each completed milestone, update this file with changed files, commit SHA, exact checks and results, and the next action. Keep the account owner filter on every persistent record and GitHub request.
