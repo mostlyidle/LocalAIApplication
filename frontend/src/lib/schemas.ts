@@ -327,6 +327,34 @@ export const ragCollectionsSchema = z.array(z.object({
   })),
 }));
 
+export const ragContainerFileSchema = z.object({
+  id: z.string(),
+  relative_path: z.string(),
+  status: z.string(),
+  chunk_count: z.number(),
+  size_bytes: z.number(),
+  last_error: z.string().nullable().optional(),
+});
+
+export const ragContainerSchema = z.object({
+  name: z.string(),
+  display_name: z.string(),
+  file_count: z.number(),
+  indexed_file_count: z.number(),
+  staged_file_count: z.number(),
+  queued_file_count: z.number(),
+  processing_file_count: z.number(),
+  failed_file_count: z.number(),
+  chunk_count: z.number(),
+});
+
+export const ragContainersSchema = z.array(ragContainerSchema);
+
+export const ragContainerUploadResultSchema = z.object({
+  files: z.array(ragContainerFileSchema),
+  failures: z.array(z.object({ relative_path: z.string(), message: z.string() })),
+});
+
 // ---------------------------------------------------------------------------
 // Tools
 // ---------------------------------------------------------------------------

@@ -10,6 +10,8 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/compone
 import { useChat } from "@/hooks/useChat";
 import {
   createMemory,
+  getRAGCollections,
+  getRAGContainers,
   getAgentCatalog,
   getConversation,
   getConversations,
@@ -18,6 +20,7 @@ import {
 } from "@/lib/api";
 import { ACCEPTED_FILE_TYPES, ACTIVE_CONVERSATION_STORAGE_PREFIX, AGENT_LABELS, MAX_FILE_SIZE } from "@/lib/constants";
 import type { AgentCapability, ChatMessage, ChatTaskOptions } from "@/types/chat";
+import type { RAGContainer } from "@/lib/api";
 import type { MemoryRecord } from "@/lib/schemas";
 import { useAuth } from "@/components/shared/AuthProvider";
 import { BrandMark } from "@/components/shared/BrandMark";
@@ -79,6 +82,8 @@ export function ChatWindow() {
   const [agents, setAgents] = useState<AgentCapability[]>([]);
   const [selectedAgent, setSelectedAgent] = useState("auto");
   const [collection, setCollection] = useState("documents");
+  const [ragContainers, setRagContainers] = useState<RAGContainer[]>([]);
+  const [ragCollections, setRagCollections] = useState<Array<{ name: string; count: number }>>([]);
   const [symbol, setSymbol] = useState("");
   const [workspacePath, setWorkspacePath] = useState("");
   const [context, setContext] = useState("");
@@ -109,6 +114,28 @@ export function ChatWindow() {
   const conversationStorageKey = account
     ? `${ACTIVE_CONVERSATION_STORAGE_PREFIX}${account.id}`
     : undefined;
+
+  useEffect(() => {
+    let active = true;
+    void Promise.all([getRAGContainers(), getRAGCollections()])
+      .then(([containers, collectionResponse]) => {
+        if (!active) return;
+        setRagContainers(containers);
+        setRagCollections(collectionResponse.collections);
+        setCollection((current) => {
+          if (
+            current &&
+            (containers.some((item) => item.name === current) ||
+              collectionResponse.collections.some((item) => item.name === current))
+          ) return current;
+          return containers[0]?.name || collectionResponse.collections[0]?.name || "";
+        });
+      })
+      .catch(() => {
+        if (active) setCollection("");
+      });
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     if (!conversationStorageKey) return;
@@ -366,7 +393,13 @@ export function ChatWindow() {
           return;
         }
       }
-      if (selectedProfile.target === "rag") options.collection = collection.trim() || "documents";
+      if (selectedProfile.target === "rag") {
+        if (!collection) {
+          setProfileError("Create a container on the RAG page before using this profile.");
+          return;
+        }
+        options.collection = collection;
+      }
       if (selectedProfile.target === "stock_research") {
         if (!symbol.trim()) {
           setProfileError("Enter a ticker symbol for stock research.");
@@ -647,7 +680,32 @@ export function ChatWindow() {
             </>
           )}
           {selectedProfile?.target === "rag" && (
-            <label className="flex flex-col gap-1 text-xs text-muted-foreground">Collection<input aria-label="RAG collection" value={collection} onChange={(event) => setCollection(event.target.value)} placeholder="Collection" className="h-11 w-36 rounded-xl border border-input bg-card px-3 text-base sm:text-sm text-foreground" /></label>
+            <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+              Search index
+              <select
+                aria-label="Search index"
+                value={collection}
+                onChange={(event) => setCollection(event.target.value)}
+                disabled={isStreaming}
+                className="h-11 max-w-64 rounded-xl border border-input bg-card px-3 text-base text-foreground sm:text-sm"
+              >
+                <option value="">Select an index</option>
+                {ragContainers.length > 0 && (
+                  <optgroup label="Private containers">
+                    {ragContainers.map((container) => (
+                      <option key={container.name} value={container.name}>{container.display_name}</option>
+                    ))}
+                  </optgroup>
+                )}
+                {ragCollections.some((item) => !ragContainers.some((container) => container.name === item.name)) && (
+                  <optgroup label="Existing collections">
+                    {ragCollections.filter((item) => !ragContainers.some((container) => container.name === item.name)).map((item) => (
+                      <option key={item.name} value={item.name}>{item.name}</option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+            </label>
           )}
           {selectedProfile?.target === "stock_research" && (
             <>
