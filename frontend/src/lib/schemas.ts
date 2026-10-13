@@ -134,6 +134,7 @@ export const actionItemSchema = z.object({
   due_date: z.string().nullable(),
   source_type: z.enum(["chat", "meeting", "document", "github"]).nullable(),
   source_id: z.string().nullable(),
+  source_repository_id: z.string().nullable(),
   source_quote: z.string().nullable(),
   revision: z.number(),
   created_at: z.string(),
@@ -178,6 +179,29 @@ export const githubRepositorySchema = z.object({
 });
 export const githubRepositoryListSchema = z.object({ repositories: z.array(githubRepositorySchema) });
 export type GitHubRepository = z.infer<typeof githubRepositorySchema>;
+const githubProjectItemSchema = z.object({
+  number: z.number(), title: z.string(), body: z.string(), state: z.string(), html_url: z.string().url(),
+  author: z.string().nullable(), updated_at: z.string().nullable(), labels: z.array(z.string()),
+});
+export const githubProjectOverviewSchema = z.object({
+  repository_id: z.string(), repository: z.string(),
+  issues: z.array(githubProjectItemSchema),
+  pull_requests: z.array(githubProjectItemSchema.extend({ draft: z.boolean(), head_sha: z.string().nullable() })),
+});
+export const githubPullDetailSchema = z.object({
+  repository_id: z.string(), number: z.number(), title: z.string(), body: z.string(), state: z.string(),
+  html_url: z.string().url(), head_sha: z.string().nullable(),
+  files: z.array(z.object({ filename: z.string(), status: z.string(), additions: z.number(), deletions: z.number(), patch: z.string().nullable(), html_url: z.string().url().nullable() })),
+  checks: z.array(z.object({ name: z.string(), status: z.string(), conclusion: z.string().nullable(), html_url: z.string().url().nullable() })),
+  files_truncated: z.boolean(), checks_truncated: z.boolean(),
+});
+export const githubIssueProposalSchema = z.object({
+  repository_id: z.string(), source_id: z.string(), source_title: z.string(),
+  suggestions: actionItemProposalSchema.shape.suggestions,
+});
+export type GitHubProjectOverview = z.infer<typeof githubProjectOverviewSchema>;
+export type GitHubPullDetail = z.infer<typeof githubPullDetailSchema>;
+export type GitHubIssueProposal = z.infer<typeof githubIssueProposalSchema>;
 
 export type MemoryRecord = z.infer<typeof memorySchema>;
 export type MemorySettings = z.infer<typeof memorySettingsSchema>;

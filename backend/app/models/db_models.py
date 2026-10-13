@@ -293,6 +293,7 @@ class ActionItem(Base):
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     source_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     source_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    source_repository_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     source_quote: Mapped[str | None] = mapped_column(Text, nullable=True)
     revision: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))

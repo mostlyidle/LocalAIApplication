@@ -11,6 +11,7 @@ import {
   Activity,
   BrainCircuit,
   ListTodo,
+  Github,
 } from "lucide-react";
 import {
   Sidebar,
@@ -37,6 +38,7 @@ const navItems = [
   { title: "Meetings", href: "/meetings", icon: Activity, tone: "bg-rose-soft text-rose-ink" },
   { title: "Memory", href: "/memory", icon: BrainCircuit, tone: "bg-violet-soft text-violet-ink" },
   { title: "Action Planner", href: "/action-items", icon: ListTodo, tone: "bg-peach-soft text-peach-ink" },
+  { title: "GitHub Agent", href: "/github", icon: Github, tone: "bg-sky-soft text-sky-ink" },
   { title: "Settings", href: "/settings", icon: Settings, tone: "bg-muted text-muted-foreground" },
 ];
 
