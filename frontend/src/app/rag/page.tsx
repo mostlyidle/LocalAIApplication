@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Search, Trash2, Database, Loader2, FileText, Upload } from "lucide-react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -308,9 +309,14 @@ export default function RAGPage() {
                   <Skeleton className="h-10 w-full" />
                 </div>
               ) : documents.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  No documents uploaded yet. Upload documents on the Documents page first.
-                </p>
+                <div className="rounded-xl border border-dashed p-6 text-center">
+                  <FileText className="mx-auto mb-2 size-8 text-muted-foreground" aria-hidden="true" />
+                  <p className="text-sm font-medium">No documents uploaded yet</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Upload files first to ingest them into your vector index.</p>
+                  <Button asChild size="sm" variant="outline" className="mt-3">
+                    <Link href="/documents">Go to Documents Upload</Link>
+                  </Button>
+                </div>
               ) : (
                 <ScrollArea className="max-h-64">
                   <div className="space-y-2">

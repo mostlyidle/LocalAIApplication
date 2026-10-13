@@ -15,9 +15,10 @@ interface TableSchema {
 
 interface SchemaBrowserProps {
   database?: string;
+  onInsertText?: (text: string) => void;
 }
 
-export function SchemaBrowser({ database }: SchemaBrowserProps = {}) {
+export function SchemaBrowser({ database, onInsertText }: SchemaBrowserProps = {}) {
   const [tables, setTables] = useState<TableSchema[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [isLoading, setIsLoading] = useState(true);
@@ -69,34 +70,32 @@ export function SchemaBrowser({ database }: SchemaBrowserProps = {}) {
             <div className="space-y-1">
               {tables.map((table) => (
                 <div key={table.name}>
-                  <button
-                    onClick={() => toggleTable(table.name)}
-                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent"
-                  >
+                  <div className="flex items-center gap-1 rounded px-1 hover:bg-accent">
+                    <button type="button" onClick={() => toggleTable(table.name)} aria-label={`${expanded.has(table.name) ? "Collapse" : "Expand"} ${table.name}`} className="grid size-7 shrink-0 place-items-center rounded">
                     {expanded.has(table.name) ? (
                       <ChevronDown className="h-3 w-3" />
                     ) : (
                       <ChevronRight className="h-3 w-3" />
                     )}
+                    </button>
                     <Table2 className="h-3 w-3 text-muted-foreground" />
-                    <span className="font-mono font-medium">{table.name}</span>
+                    <button type="button" onClick={() => { toggleTable(table.name); onInsertText?.(table.name); }} className="min-h-9 text-left font-mono text-xs font-medium hover:underline">
+                      {table.name}
+                    </button>
                     <Badge variant="outline" className="ml-auto text-[10px]">
                       {table.columns.length} cols
                     </Badge>
-                  </button>
+                  </div>
                   {expanded.has(table.name) && (
                     <div className="ml-6 space-y-0.5 pb-1 pl-2 border-l">
                       {table.columns.map((col) => (
-                        <div
-                          key={col.name}
-                          className="flex items-center gap-2 px-2 py-1 text-[11px]"
-                        >
+                        <div key={col.name} className="flex items-center gap-2 px-2 py-1 text-[11px]">
                           {col.primary_key && (
-                            <Key className="h-2.5 w-2.5 text-amber-500" />
+                            <Key className="h-2.5 w-2.5 text-peach-ink" />
                           )}
-                          <span className={cn("font-mono", col.primary_key && "font-semibold")}>
+                          <button type="button" onClick={() => onInsertText?.(col.name)} className={cn("min-h-7 font-mono hover:underline", col.primary_key && "font-semibold")}>
                             {col.name}
-                          </span>
+                          </button>
                           <span className="text-muted-foreground">{col.type}</span>
                           {col.nullable && (
                             <span className="text-muted-foreground/50">nullable</span>

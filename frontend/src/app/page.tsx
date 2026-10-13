@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { MessageSquare, FileText, Database, Search, Settings, Activity, BrainCircuit, ListTodo, ArrowUpRight, ArrowRight, Sparkles } from "lucide-react";
+import { MessageSquare, FileText, Database, Search, Settings, Activity, BrainCircuit, ListTodo, Github, ArrowUpRight, ArrowRight, Sparkles } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { BrandMark } from "@/components/shared/BrandMark";
@@ -53,6 +53,13 @@ const features = [
     href: "/action-items",
     icon: ListTodo,
     color: "bg-peach-soft text-peach-ink",
+  },
+  {
+    title: "GitHub Project Agent",
+    description: "Review repository activity, draft pull request feedback, and track action items.",
+    href: "/github",
+    icon: Github,
+    color: "bg-sky-soft text-sky-ink",
   },
   {
     title: "Settings",

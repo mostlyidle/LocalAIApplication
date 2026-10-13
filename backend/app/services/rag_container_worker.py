@@ -109,6 +109,7 @@ async def process_one_container_file(
             container=container.name,
             file_id=file_id,
             error_type=type(exc).__name__,
+            exc_info=True,
         )
     return True
 

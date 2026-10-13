@@ -47,7 +47,7 @@ describe("constants", () => {
   });
 
   it("AGENT_COLORS has expected entries", () => {
-    expect(AGENT_COLORS.chat).toContain("blue");
-    expect(AGENT_COLORS.sql).toContain("emerald");
+    expect(AGENT_COLORS.chat).toBe("bg-violet-soft text-violet-ink");
+    expect(AGENT_COLORS.sql).toBe("bg-mint-soft text-mint-ink");
   });
 });
