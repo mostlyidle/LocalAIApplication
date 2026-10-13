@@ -44,7 +44,7 @@ Keep the existing LocalAIApplication chat and document parsing experience. Add a
 - Added migration revision 20 and mocked GitHub HTTP tests for code exchange, profile verification, and revocation.
 - Verification: backend suite `789 passed`; frontend suite `328 passed`; Ruff, ESLint, TypeScript, optimized `next build`, and empty SQLite migration through `20261012_20` passed. OAuth API tests cover session state, replay rejection, encrypted persistence, refresh rotation, and disconnect.
 - Limitations: live GitHub OAuth needs an operator-created GitHub App and its secrets. Playwright browser E2E remains unavailable because Chromium installation did not produce an executable. `uv lock --offline` could not re-resolve this existing Python 3.14+ lock split because the offline index lacks `pwdlib>=0.3.1`; `cryptography` was already present in `uv.lock`, and the direct dependency was added against its existing locked `46.0.5` package.
-- Commit: pending.
+- Commit: `58ad1f6` (`feat(github): add encrypted per-account app authorization`).
 
 ## Resume instructions
 
