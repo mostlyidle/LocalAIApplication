@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime  # noqa: TC003 - Pydantic resolves response types at runtime.
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class GitHubConnectionResponse(BaseModel):
@@ -22,3 +22,23 @@ class GitHubAuthorizationResponse(BaseModel):
 
     authorization_url: str
 
+
+class GitHubRepositoryResponse(BaseModel):
+    """Safe repository metadata and this account's explicit selection state."""
+
+    repository_id: str
+    full_name: str
+    html_url: str
+    default_branch: str
+    is_private: bool
+    selected: bool
+
+
+class GitHubRepositoryListResponse(BaseModel):
+    repositories: list[GitHubRepositoryResponse]
+
+
+class GitHubRepositorySelectionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    selected: bool = Field()

@@ -59,6 +59,8 @@ const mockAddSQLConnection = vi.fn();
 const mockGetGitHubConnection = vi.fn();
 const mockStartGitHubConnection = vi.fn();
 const mockDisconnectGitHub = vi.fn();
+const mockGetGitHubRepositories = vi.fn();
+const mockSetGitHubRepositorySelection = vi.fn();
 vi.mock("@/lib/api", () => ({
   getHealth: (...args: unknown[]) => mockGetHealth(...args),
   getTools: (...args: unknown[]) => mockGetTools(...args),
@@ -66,6 +68,8 @@ vi.mock("@/lib/api", () => ({
   getGitHubConnection: (...args: unknown[]) => mockGetGitHubConnection(...args),
   startGitHubConnection: (...args: unknown[]) => mockStartGitHubConnection(...args),
   disconnectGitHub: (...args: unknown[]) => mockDisconnectGitHub(...args),
+  getGitHubRepositories: (...args: unknown[]) => mockGetGitHubRepositories(...args),
+  setGitHubRepositorySelection: (...args: unknown[]) => mockSetGitHubRepositorySelection(...args),
 }));
 
 // Dynamic import of the page (must come after mocks)
@@ -92,6 +96,8 @@ describe("SettingsPage", () => {
     mockGetGitHubConnection.mockResolvedValue({
       configured: false, connected: false, login: null, expires_at: null, install_url: null,
     });
+    mockGetGitHubRepositories.mockResolvedValue({ repositories: [] });
+    mockSetGitHubRepositorySelection.mockResolvedValue(undefined);
   });
 
   it("renders Settings heading", () => {
@@ -114,6 +120,26 @@ describe("SettingsPage", () => {
       "https://github.com/apps/local-ai/installations/new",
     );
     expect(screen.getByRole("button", { name: "Connect GitHub" })).toBeEnabled();
+  });
+
+  it("shows account repositories and persists the agent allowlist selection", async () => {
+    mockGetGitHubConnection.mockResolvedValue({
+      configured: true, connected: true, login: "octocat", expires_at: null, install_url: null,
+    });
+    mockGetGitHubRepositories.mockResolvedValue({ repositories: [{
+      repository_id: "42",
+      full_name: "octocat/hello-world",
+      html_url: "https://github.com/octocat/hello-world",
+      default_branch: "main",
+      is_private: true,
+      selected: false,
+    }] });
+    render(<SettingsPage />);
+    const checkbox = await screen.findByRole("checkbox", { name: "Allow agent to use octocat/hello-world" });
+    expect(checkbox).not.toBeChecked();
+    fireEvent.click(checkbox);
+    await waitFor(() => expect(mockSetGitHubRepositorySelection).toHaveBeenCalledWith("42", true));
+    await waitFor(() => expect(checkbox).toBeChecked());
   });
 
   it("shows loading state for health", () => {

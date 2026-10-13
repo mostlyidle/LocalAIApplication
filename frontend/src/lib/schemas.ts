@@ -168,6 +168,16 @@ export const githubConnectionSchema = z.object({
 });
 export const githubAuthorizationSchema = z.object({ authorization_url: z.string().url() });
 export type GitHubConnection = z.infer<typeof githubConnectionSchema>;
+export const githubRepositorySchema = z.object({
+  repository_id: z.string(),
+  full_name: z.string(),
+  html_url: z.string().url(),
+  default_branch: z.string(),
+  is_private: z.boolean(),
+  selected: z.boolean(),
+});
+export const githubRepositoryListSchema = z.object({ repositories: z.array(githubRepositorySchema) });
+export type GitHubRepository = z.infer<typeof githubRepositorySchema>;
 
 export type MemoryRecord = z.infer<typeof memorySchema>;
 export type MemorySettings = z.infer<typeof memorySettingsSchema>;

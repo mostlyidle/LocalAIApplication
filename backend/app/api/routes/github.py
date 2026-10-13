@@ -8,14 +8,20 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Path
 from fastapi.responses import RedirectResponse
 from sqlalchemy import delete, select
 
 from app.config import settings
 from app.dependencies import get_authenticated_session, get_db
-from app.models.db_models import GitHubConnection, GitHubOAuthState
-from app.models.github_schemas import GitHubAuthorizationResponse, GitHubConnectionResponse
+from app.models.db_models import GitHubConnection, GitHubOAuthState, GitHubRepositorySelection
+from app.models.github_schemas import (
+    GitHubAuthorizationResponse,
+    GitHubConnectionResponse,
+    GitHubRepositoryListResponse,
+    GitHubRepositoryResponse,
+    GitHubRepositorySelectionRequest,
+)
 from app.services.auth import AuthenticatedSession, resolve_session_by_id  # noqa: TC001
 from app.services.github_oauth import (
     GitHubIntegrationError,
@@ -136,5 +142,135 @@ async def disconnect_github(
     if connection is None:
         return
     await github_oauth_client.revoke(decrypt_token(connection.encrypted_access_token))
+    await db.execute(
+        delete(GitHubRepositorySelection).where(
+            GitHubRepositorySelection.owner_id == authenticated.account.id
+        )
+    )
     await db.delete(connection)
+    await db.commit()
+
+
+async def _connected_github(owner_id: str, db: AsyncSession) -> tuple[GitHubConnection, str]:
+    connection = await db.scalar(
+        select(GitHubConnection).where(GitHubConnection.owner_id == owner_id)
+    )
+    if connection is None:
+        raise HTTPException(status_code=409, detail="Connect a GitHub account first.")
+    token = await github_oauth_client.access_token(connection, db)
+    return connection, token
+
+
+async def _accessible_repositories(token: str) -> list[dict[str, object]]:
+    """Enumerate a bounded set of repositories visible to the authorized user."""
+    repositories: list[dict[str, object]] = []
+    for page in range(1, 11):
+        payload = await github_oauth_client.api_get_json(
+            "/user/repos",
+            token,
+            {
+                "affiliation": "owner,collaborator,organization_member",
+                "sort": "full_name",
+                "per_page": 100,
+                "page": page,
+            },
+        )
+        if not isinstance(payload, list):
+            raise GitHubIntegrationError("GitHub returned an invalid repository list.")
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+            repo_id, full_name, html_url = (
+                item.get("id"),
+                item.get("full_name"),
+                item.get("html_url"),
+            )
+            branch = item.get("default_branch")
+            if (
+                isinstance(repo_id, int)
+                and isinstance(full_name, str)
+                and isinstance(html_url, str)
+                and isinstance(branch, str)
+            ):
+                repositories.append(
+                    {
+                        "repository_id": str(repo_id),
+                        "full_name": full_name[:256],
+                        "html_url": html_url,
+                        "default_branch": branch[:256],
+                        "is_private": item.get("private") is True,
+                    }
+                )
+        if len(payload) < 100:
+            return repositories
+    raise GitHubIntegrationError(
+        "GitHub returned too many repositories to safely enumerate; narrow the app installation.",
+        413,
+    )
+
+
+@router.get("/github/repositories", response_model=GitHubRepositoryListResponse)
+async def list_github_repositories(
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+) -> GitHubRepositoryListResponse:
+    """List accessible repositories and mark those explicitly selected by this account."""
+    _, token = await _connected_github(authenticated.account.id, db)
+    accessible = await _accessible_repositories(token)
+    rows = await db.scalars(
+        select(GitHubRepositorySelection).where(
+            GitHubRepositorySelection.owner_id == authenticated.account.id
+        )
+    )
+    selected_ids = {row.repository_id for row in rows.all()}
+    return GitHubRepositoryListResponse(
+        repositories=[
+            GitHubRepositoryResponse(**repo, selected=repo["repository_id"] in selected_ids)
+            for repo in accessible
+        ]
+    )
+
+
+@router.put("/github/repositories/{repository_id}/selection", status_code=204)
+async def set_github_repository_selection(
+    body: GitHubRepositorySelectionRequest,
+    repository_id: str = Path(pattern=r"^[0-9]{1,32}$"),
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+) -> None:
+    """Select only repos currently visible to this account's GitHub authorization."""
+    _, token = await _connected_github(authenticated.account.id, db)
+    selected = await db.scalar(
+        select(GitHubRepositorySelection).where(
+            GitHubRepositorySelection.owner_id == authenticated.account.id,
+            GitHubRepositorySelection.repository_id == repository_id,
+        )
+    )
+    if not body.selected:
+        if selected is not None:
+            await db.delete(selected)
+            await db.commit()
+        return
+
+    accessible = await _accessible_repositories(token)
+    repository = next((repo for repo in accessible if repo["repository_id"] == repository_id), None)
+    if repository is None:
+        raise HTTPException(
+            status_code=404, detail="Repository is not available to this GitHub account."
+        )
+    if selected is None:
+        selected = GitHubRepositorySelection(
+            owner_id=authenticated.account.id,
+            repository_id=repository_id,
+            full_name=str(repository["full_name"]),
+            html_url=str(repository["html_url"]),
+            default_branch=str(repository["default_branch"]),
+            is_private=bool(repository["is_private"]),
+        )
+        db.add(selected)
+    else:
+        selected.full_name = str(repository["full_name"])
+        selected.html_url = str(repository["html_url"])
+        selected.default_branch = str(repository["default_branch"])
+        selected.is_private = bool(repository["is_private"])
     await db.commit()
