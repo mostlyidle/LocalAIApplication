@@ -69,5 +69,8 @@ mcp_servers.json
 *.log
 logs/
 
+# Documentation directory
+/docs/
+
 # Local orchestration state
 .slim/deepwork/
