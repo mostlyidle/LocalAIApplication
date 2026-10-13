@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 
 // Browser regressions use backend wire shapes. The backend contract test separately
 // sends real HTTP responses through these same frontend validators.
