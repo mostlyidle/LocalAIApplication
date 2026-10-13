@@ -36,14 +36,21 @@ function SystemStatusPill() {
 
   useEffect(() => {
     let active = true;
-    api.getHealth()
-      .then((data) => {
-        if (active) setHealth(data.ollama.status === "healthy" ? "connected" : "disconnected");
-      })
-      .catch(() => {
-        if (active) setHealth("disconnected");
-      });
-    return () => { active = false; };
+    const checkHealth = () => {
+      api.getHealth()
+        .then((data) => {
+          if (active) setHealth(data.ollama.status === "healthy" ? "connected" : "disconnected");
+        })
+        .catch(() => {
+          if (active) setHealth("disconnected");
+        });
+    };
+    checkHealth();
+    const interval = window.setInterval(checkHealth, 30_000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
   }, []);
 
   const label = health === "connected" ? "Ollama Online"

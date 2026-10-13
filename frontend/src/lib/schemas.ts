@@ -355,6 +355,9 @@ export const ragContainerUploadResultSchema = z.object({
   failures: z.array(z.object({ relative_path: z.string(), message: z.string() })),
 });
 
+export const ragContainerLoadSchema = z.object({ queued: z.number().int().nonnegative() });
+export const deleteResultSchema = z.object({ deleted: z.boolean() });
+
 // ---------------------------------------------------------------------------
 // Tools
 // ---------------------------------------------------------------------------
