@@ -47,11 +47,15 @@ vi.mock("@/hooks/useChat", () => ({
 // Mock uploadDocument from api
 const mockUploadDocument = vi.fn();
 const mockGetAgentCatalog = vi.fn();
+const mockGetRAGContainers = vi.fn();
+const mockGetRAGCollections = vi.fn();
 vi.mock("@/lib/api", () => ({
   createMemory: (...args: unknown[]) => mockCreateMemory(...args),
   updateConversationMemorySettings: (...args: unknown[]) => mockUpdateConversationMemorySettings(...args),
   uploadDocument: (...args: unknown[]) => mockUploadDocument(...args),
   getAgentCatalog: (...args: unknown[]) => mockGetAgentCatalog(...args),
+  getRAGContainers: (...args: unknown[]) => mockGetRAGContainers(...args),
+  getRAGCollections: (...args: unknown[]) => mockGetRAGCollections(...args),
   getConversation: (...args: unknown[]) => mockGetConversation(...args),
   getConversations: (...args: unknown[]) => mockGetConversations(...args),
 }));
@@ -111,6 +115,8 @@ describe("ChatWindow", () => {
     resetChatState();
     mockUploadDocument.mockResolvedValue({ id: "uploaded-doc-1" });
     mockGetAgentCatalog.mockResolvedValue({ agents: [] });
+    mockGetRAGContainers.mockResolvedValue([]);
+    mockGetRAGCollections.mockResolvedValue({ collections: [] });
     mockGetConversation.mockResolvedValue({ id: "conversation-1", title: "Saved", messages: [] });
     mockGetConversations.mockResolvedValue({ conversations: [] });
     mockCreateMemory.mockResolvedValue({ id: "saved-memory" });
@@ -307,6 +313,7 @@ describe("ChatWindow", () => {
     { availability: { "qwen2.5:7b": false, "llama3.2:3b": false }, selected: "qwen2.5:7b", label: "not installed", blocked: true },
     { availability: { "qwen2.5:7b": null, "llama3.2:3b": null }, selected: "qwen2.5:7b", label: "availability unknown", blocked: false },
   ])("shows actual model availability and chooses $selected ($label)", async ({ availability, selected, label, blocked }) => {
+    mockGetRAGCollections.mockResolvedValue({ collections: [{ name: "documents", count: 0 }] });
     mockGetAgentCatalog.mockResolvedValue({ agents: [{
       name: "rag", target: "rag", description: "Answer from evidence", default_for_target: true,
       model_availability: availability,
