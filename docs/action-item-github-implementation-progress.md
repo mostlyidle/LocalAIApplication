@@ -24,7 +24,7 @@ Keep the existing LocalAIApplication chat and document parsing experience. Add a
 - Added component/API tests and `frontend/e2e/action-items.spec.ts` for the browser workflow.
 - Verification: backend suite `782 passed`; frontend suite `326 passed`; frontend ESLint (0 errors; existing `asChild` test warning), TypeScript check passed; production `next build` passed; Alembic upgrade from an empty SQLite database through `20261012_18` passed.
 - Browser E2E was attempted but could not execute: Playwright Chromium downloads remained partially extracted in this environment, leaving no browser executable. The mocked browser scenario is committed for a machine with a working Playwright browser installation.
-- Commit: pending.
+- Commit: `721d56e` (`feat(planner): add account-owned action item planner`).
 
 ## Resume instructions
 
