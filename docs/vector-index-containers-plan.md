@@ -16,10 +16,16 @@ do not restart planning or create another feature branch.
 | Container UI | Complete | Create/select containers; choose or drop files/folders; review per-file statuses; load, retry, remove, and delete. UI followed `ui-ux-pro-max`. |
 | Search and chat selection | Complete | Both surfaces select private containers or existing app collections and pass the selected index through existing retrieval. |
 | Focused verification | Complete | Frontend 52 focused tests, TypeScript, and backend focused tests/lint pass. ESLint reports one existing `<img>` warning in `ChatWindow.tsx:583`. |
-| Checkpoint commit and push | In progress | Backend checkpoint `c977962` is pushed to `origin/feature/vector-index-containers`; verified frontend changes are awaiting their checkpoint commit. |
+| Checkpoint commit and push | Complete | Backend and frontend checkpoints are pushed to `origin/feature/vector-index-containers`. |
 
-**Next action:** inspect and commit the frontend integration/UI, then push it to the approved
-branch. Record the resulting commit and push status here.
+**Current result:** implementation and focused verification are complete. The feature branch
+is ready for review. Before release, check directory selection/drop behavior in the supported
+browsers and run the migration against the deployment database backend.
+
+**Checkpoint history:**
+
+- `c977962 feat: add private RAG container backend` — pushed.
+- `c7a9e45 feat: add RAG container management UI` — pushed.
 
 **Latest verification:**
 
@@ -131,6 +137,8 @@ path before offering them as selectable app containers.
   received unsupported file gets an individual failure result.
 - Verify the database migration against the repository's supported database backends.
 - Check how the directory chooser and folder-drop expose hidden files in supported browsers.
+  The implementation uses browser `webkit*` directory APIs; this compatibility was not
+  verified during the focused checks.
 
 ## Rough estimate
 
