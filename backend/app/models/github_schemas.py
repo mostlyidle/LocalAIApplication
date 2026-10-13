@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime  # noqa: TC003 - Pydantic resolves response types at runtime.
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.action_item_schemas import ActionItemSuggestion  # noqa: TC001
 
@@ -104,3 +104,43 @@ class GitHubIssueProposalResponse(BaseModel):
     source_id: str
     source_title: str
     suggestions: list[ActionItemSuggestion]
+
+
+class GitHubIssueCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=256)
+    body: str = Field(default="", max_length=10_000)
+
+    @field_validator("title")
+    @classmethod
+    def nonblank_title(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Issue title cannot be blank.")
+        return value
+
+
+class GitHubCommentCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    body: str = Field(min_length=1, max_length=10_000)
+
+    @field_validator("body")
+    @classmethod
+    def nonblank_body(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Comment cannot be blank.")
+        return value
+
+
+class GitHubIssueWriteResponse(BaseModel):
+    number: int
+    title: str
+    html_url: str
+
+
+class GitHubCommentWriteResponse(BaseModel):
+    id: str
+    html_url: str | None

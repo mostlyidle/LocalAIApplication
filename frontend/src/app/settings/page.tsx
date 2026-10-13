@@ -164,7 +164,7 @@ export default function SettingsPage() {
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2"><Github className="h-5 w-5" /><CardTitle className="text-base">GitHub Project Agent</CardTitle></div>
-            <CardDescription>Connect your own GitHub account. The app stores encrypted, expiring credentials for your account only.</CardDescription>
+            <CardDescription>Connect your own GitHub account. Grant Issues read/write for issue and comment posting; the app stores encrypted, expiring credentials for your account only.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {githubConnection?.connected ? (

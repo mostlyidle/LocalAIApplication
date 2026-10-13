@@ -14,6 +14,12 @@ export default function GitHubProjectPage() {
   const [overview, setOverview] = useState<GitHubProjectOverview | null>(null);
   const [pullDetail, setPullDetail] = useState<GitHubPullDetail | null>(null);
   const [proposal, setProposal] = useState<GitHubIssueProposal | null>(null);
+  const [issueTitle, setIssueTitle] = useState("");
+  const [issueBody, setIssueBody] = useState("");
+  const [issueReviewed, setIssueReviewed] = useState(false);
+  const [commentIssueNumber, setCommentIssueNumber] = useState<number | null>(null);
+  const [commentBody, setCommentBody] = useState("");
+  const [commentReviewed, setCommentReviewed] = useState(false);
   const [activeTab, setActiveTab] = useState<"issues" | "pulls">("issues");
   const [loadingRepositories, setLoadingRepositories] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -38,6 +44,9 @@ export default function GitHubProjectPage() {
     setMessage("");
     setProposal(null);
     setPullDetail(null);
+    setIssueReviewed(false);
+    setCommentIssueNumber(null);
+    setCommentReviewed(false);
     try {
       setOverview(await api.getGitHubProjectOverview(repositoryId));
     } catch (cause) {
@@ -99,6 +108,41 @@ export default function GitHubProjectPage() {
     }
   };
 
+  const createIssue = async () => {
+    if (!repositoryId || !issueReviewed || !issueTitle.trim()) return;
+    setBusy(true);
+    setError("");
+    try {
+      const created = await api.createGitHubIssue(repositoryId, { title: issueTitle.trim(), body: issueBody });
+      setIssueTitle("");
+      setIssueBody("");
+      setIssueReviewed(false);
+      await loadProject();
+      setMessage(`Created issue #${created.number}: ${created.title}`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not create the GitHub issue.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const createComment = async () => {
+    if (!repositoryId || commentIssueNumber === null || !commentReviewed || !commentBody.trim()) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api.createGitHubIssueComment(repositoryId, commentIssueNumber, commentBody.trim());
+      setMessage(`Posted your comment to ${overview?.repository} issue #${commentIssueNumber}.`);
+      setCommentIssueNumber(null);
+      setCommentBody("");
+      setCommentReviewed(false);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not post the GitHub comment.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const currentItems = activeTab === "issues" ? overview?.issues ?? [] : overview?.pull_requests ?? [];
 
   return (
@@ -114,10 +158,10 @@ export default function GitHubProjectPage() {
         <CardHeader><CardTitle>Choose a project</CardTitle><CardDescription>The agent can read only repositories you selected in Settings.</CardDescription></CardHeader>
         <CardContent className="flex flex-col gap-3 sm:flex-row">
           {loadingRepositories ? <p className="text-sm text-muted-foreground">Loading selected repositories…</p> : repositories.length ? <>
-            <select aria-label="Selected repository" value={repositoryId} onChange={(event) => { setRepositoryId(event.target.value); setOverview(null); setProposal(null); setPullDetail(null); }} className="h-10 min-w-0 flex-1 rounded-md border bg-background px-3 text-sm">
+            <select aria-label="Selected repository" value={repositoryId} disabled={busy} onChange={(event) => { setRepositoryId(event.target.value); setOverview(null); setProposal(null); setPullDetail(null); setIssueTitle(""); setIssueBody(""); setIssueReviewed(false); setCommentIssueNumber(null); setCommentBody(""); setCommentReviewed(false); }} className="h-10 min-w-0 flex-1 rounded-md border bg-background px-3 text-sm">
               {repositories.map((repository) => <option key={repository.repository_id} value={repository.repository_id}>{repository.full_name}</option>)}
             </select>
-            <Button onClick={() => void loadProject()} disabled={busy || !repositoryId}>{busy ? <Loader2 className="animate-spin" /> : <RefreshCw />} Load project</Button>
+              <Button onClick={() => void loadProject()} disabled={busy || !repositoryId}>{busy ? <Loader2 className="animate-spin" /> : <RefreshCw />} Load project</Button>
           </> : <p className="text-sm text-muted-foreground">No repositories selected. Connect GitHub and choose repositories in <Link className="underline" href="/settings">Settings</Link>.</p>}
         </CardContent>
       </Card>
@@ -126,6 +170,21 @@ export default function GitHubProjectPage() {
       {message && <p role="status" className="rounded-xl border border-primary/30 bg-primary/5 px-4 py-3 text-sm">{message} <Link className="underline" href="/action-items">View planner</Link></p>}
 
       {overview && <>
+        <Card className="rounded-2xl">
+          <CardHeader><CardTitle>Create an issue</CardTitle><CardDescription>Review the exact title and body before the agent submits them to {overview.repository}.</CardDescription></CardHeader>
+          <CardContent className="space-y-3">
+            {!issueReviewed ? <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); setIssueReviewed(true); }}>
+              <label className="block space-y-1 text-sm font-medium">Issue title<input required maxLength={256} value={issueTitle} onChange={(event) => setIssueTitle(event.target.value)} className="mt-1 h-10 w-full rounded-md border bg-background px-3 font-normal" /></label>
+              <label className="block space-y-1 text-sm font-medium">Issue body<textarea maxLength={10000} rows={4} value={issueBody} onChange={(event) => setIssueBody(event.target.value)} className="mt-1 w-full rounded-md border bg-background px-3 py-2 font-normal" /></label>
+              <Button type="submit" disabled={!issueTitle.trim()}>Review issue draft</Button>
+            </form> : <div className="space-y-3 rounded-xl border p-4">
+              <p className="text-xs font-semibold uppercase text-muted-foreground">Will create in {overview.repository}</p>
+              <h3 className="font-semibold">{issueTitle.trim()}</h3>
+              <p className="whitespace-pre-wrap break-words text-sm">{issueBody || "(No body)"}</p>
+              <div className="flex flex-wrap gap-2"><Button onClick={() => void createIssue()} disabled={busy}>{busy ? <Loader2 className="animate-spin" /> : null}Create issue on GitHub</Button><Button variant="outline" onClick={() => setIssueReviewed(false)} disabled={busy}>Edit draft</Button></div>
+            </div>}
+          </CardContent>
+        </Card>
         <div className="flex gap-2" role="tablist" aria-label="Project activity">
           <Button role="tab" aria-selected={activeTab === "issues"} variant={activeTab === "issues" ? "default" : "outline"} onClick={() => setActiveTab("issues")}>Issues ({overview.issues.length})</Button>
           <Button role="tab" aria-selected={activeTab === "pulls"} variant={activeTab === "pulls" ? "default" : "outline"} onClick={() => setActiveTab("pulls")}>Pull requests ({overview.pull_requests.length})</Button>
@@ -138,10 +197,14 @@ export default function GitHubProjectPage() {
             </div>
             {item.body && <p className="whitespace-pre-wrap break-words text-sm text-muted-foreground">{item.body}</p>}
             <div className="flex flex-wrap gap-2">{item.labels.map((label) => <span key={label} className="rounded-full bg-muted px-2 py-1 text-xs">{label}</span>)}</div>
-            {activeTab === "issues" ? <Button variant="outline" size="sm" onClick={() => void suggestTasks(item.number)} disabled={busy}><Sparkles className="size-4" /> Suggest planner tasks</Button> : <Button variant="outline" size="sm" onClick={() => void inspectPull(item.number)} disabled={busy}>View diff and checks</Button>}
+            {activeTab === "issues" ? <div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={() => void suggestTasks(item.number)} disabled={busy}><Sparkles className="size-4" /> Suggest planner tasks</Button><Button variant="outline" size="sm" onClick={() => { setCommentIssueNumber(item.number); setCommentBody(""); setCommentReviewed(false); }}>Write comment</Button></div> : <Button variant="outline" size="sm" onClick={() => void inspectPull(item.number)} disabled={busy}>View diff and checks</Button>}
           </CardContent></Card>) : <Card className="rounded-2xl"><CardContent className="py-8 text-center text-sm text-muted-foreground">No open {activeTab} in this repository.</CardContent></Card>}
         </section>
       </>}
+
+      {commentIssueNumber !== null && overview && <Card className="rounded-2xl border-primary/30"><CardHeader><CardTitle>Comment on issue #{commentIssueNumber}</CardTitle><CardDescription>Review the exact comment and destination before posting to {overview.repository}.</CardDescription></CardHeader><CardContent className="space-y-3">
+        {!commentReviewed ? <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); setCommentReviewed(true); }}><label className="block space-y-1 text-sm font-medium">Comment<textarea required maxLength={10000} rows={4} value={commentBody} onChange={(event) => setCommentBody(event.target.value)} className="mt-1 w-full rounded-md border bg-background px-3 py-2 font-normal" /></label><div className="flex gap-2"><Button type="submit" disabled={!commentBody.trim()}>Review comment</Button><Button variant="outline" type="button" onClick={() => setCommentIssueNumber(null)}>Cancel</Button></div></form> : <div className="space-y-3 rounded-xl border p-4"><p className="text-xs font-semibold uppercase text-muted-foreground">Will post to {overview.repository} issue #{commentIssueNumber}</p><p className="whitespace-pre-wrap break-words text-sm">{commentBody.trim()}</p><div className="flex gap-2"><Button onClick={() => void createComment()} disabled={busy}>{busy ? <Loader2 className="animate-spin" /> : null}Post comment to GitHub</Button><Button variant="outline" onClick={() => setCommentReviewed(false)} disabled={busy}>Edit comment</Button></div></div>}
+      </CardContent></Card>}
 
       {proposal && <Card className="rounded-2xl border-primary/30"><CardHeader><CardTitle>Review planner suggestions</CardTitle><CardDescription>From {proposal.source_title}. GitHub text is treated as untrusted source material; nothing is saved until you accept an item.</CardDescription></CardHeader><CardContent className="space-y-4">
         {proposal.suggestions.length ? proposal.suggestions.map((suggestion, index) => <div key={`${proposal.source_id}-${index}`} className="space-y-3 rounded-xl border p-4">

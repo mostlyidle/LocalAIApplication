@@ -32,6 +32,8 @@ import {
   githubProjectOverviewSchema,
   githubPullDetailSchema,
   githubIssueProposalSchema,
+  githubIssueWriteSchema,
+  githubCommentWriteSchema,
   conversationMemorySettingsSchema,
   type MemoryRecord,
   type MemorySettings,
@@ -241,6 +243,20 @@ export async function getGitHubPullDetail(repositoryId: string, number: number) 
 
 export async function proposeGitHubIssueActions(repositoryId: string, number: number) {
   return apiFetch(`/github/agent/repositories/${encodeURIComponent(repositoryId)}/issues/${number}/proposals`, { method: "POST" }, githubIssueProposalSchema);
+}
+
+export async function createGitHubIssue(repositoryId: string, input: { title: string; body: string }) {
+  return apiFetch(`/github/agent/repositories/${encodeURIComponent(repositoryId)}/issues`, {
+    method: "POST",
+    body: JSON.stringify(input),
+  }, githubIssueWriteSchema);
+}
+
+export async function createGitHubIssueComment(repositoryId: string, issueNumber: number, body: string) {
+  return apiFetch(`/github/agent/repositories/${encodeURIComponent(repositoryId)}/issues/${issueNumber}/comments`, {
+    method: "POST",
+    body: JSON.stringify({ body }),
+  }, githubCommentWriteSchema);
 }
 
 export async function updateActionItem(

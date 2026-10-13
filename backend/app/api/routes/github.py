@@ -20,8 +20,12 @@ from app.models.db_models import GitHubConnection, GitHubOAuthState, GitHubRepos
 from app.models.github_schemas import (
     GitHubAuthorizationResponse,
     GitHubCheckRun,
+    GitHubCommentCreateRequest,
+    GitHubCommentWriteResponse,
     GitHubConnectionResponse,
+    GitHubIssueCreateRequest,
     GitHubIssueProposalResponse,
+    GitHubIssueWriteResponse,
     GitHubProjectIssue,
     GitHubProjectOverviewResponse,
     GitHubProjectPullRequest,
@@ -476,4 +480,61 @@ async def propose_github_issue_actions(
         source_id=str(number),
         source_title=f"{repository.full_name} · #{number} {title[:180]}",
         suggestions=suggestions,
+    )
+
+
+@router.post(
+    "/github/agent/repositories/{repository_id}/issues",
+    response_model=GitHubIssueWriteResponse,
+    status_code=201,
+)
+@limiter.limit(settings.rate_limit_default)
+async def create_github_issue(
+    body: GitHubIssueCreateRequest,
+    request: Request,
+    repository_id: str = Path(pattern=r"^[0-9]{1,32}$"),
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+) -> GitHubIssueWriteResponse:
+    """Create exactly the issue title and body submitted by the signed-in user."""
+    _, token, path = await _selected_repository(authenticated.account.id, repository_id, db)
+    payload = await github_oauth_client.api_post_json(
+        f"{path}/issues", token, {"title": body.title, "body": body.body}
+    )
+    if (
+        not isinstance(payload, dict)
+        or not isinstance(payload.get("number"), int)
+        or not isinstance(payload.get("title"), str)
+        or not isinstance(payload.get("html_url"), str)
+    ):
+        raise GitHubIntegrationError("GitHub returned an invalid issue response.")
+    return GitHubIssueWriteResponse(
+        number=payload["number"], title=payload["title"], html_url=payload["html_url"]
+    )
+
+
+@router.post(
+    "/github/agent/repositories/{repository_id}/issues/{number}/comments",
+    response_model=GitHubCommentWriteResponse,
+    status_code=201,
+)
+@limiter.limit(settings.rate_limit_default)
+async def create_github_issue_comment(
+    body: GitHubCommentCreateRequest,
+    request: Request,
+    repository_id: str = Path(pattern=r"^[0-9]{1,32}$"),
+    number: int = Path(ge=1),
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+) -> GitHubCommentWriteResponse:
+    """Post exactly the comment text submitted by the signed-in user."""
+    _, token, path = await _selected_repository(authenticated.account.id, repository_id, db)
+    payload = await github_oauth_client.api_post_json(
+        f"{path}/issues/{number}/comments", token, {"body": body.body}
+    )
+    if not isinstance(payload, dict) or not isinstance(payload.get("id"), int):
+        raise GitHubIntegrationError("GitHub returned an invalid comment response.")
+    html_url = payload.get("html_url")
+    return GitHubCommentWriteResponse(
+        id=str(payload["id"]), html_url=html_url if isinstance(html_url, str) else None
     )
