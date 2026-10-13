@@ -15,8 +15,8 @@ from pathlib import Path
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Depends, Request, UploadFile
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: TC002
 
 from app.api.middleware.error_handler import (
@@ -31,8 +31,9 @@ from app.dependencies import (
     get_authenticated_session,
     get_db,
     get_document_parser,
+    get_vector_store,
 )
-from app.models.db_models import Document
+from app.models.db_models import Document, RagContainerFile
 from app.models.enums import DocumentFormat, DocumentStatus
 from app.models.schemas import (
     DocumentAnalysisResult,
@@ -41,6 +42,7 @@ from app.models.schemas import (
     ExtractedTable,
 )
 from app.services.auth import AuthenticatedSession  # noqa: TC001
+from app.services.vector_store import VectorStoreService  # noqa: TC001
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()
@@ -276,6 +278,7 @@ async def delete_document(
     document_id: str,
     authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
+    vector_store: VectorStoreService = Depends(get_vector_store),  # noqa: B008
 ) -> dict[str, str]:
     """Delete a document and its file from disk."""
     stmt = select(Document).where(
@@ -287,13 +290,56 @@ async def delete_document(
     if doc is None:
         raise NotFoundError("Document", document_id)
 
-    # Remove file from disk
-    file_path = Path(doc.storage_path)
-    if file_path.exists():
-        file_path.unlink()
-
-    await db.delete(doc)
+    memberships = list(
+        (
+            await db.scalars(
+                select(RagContainerFile).where(
+                    or_(
+                        RagContainerFile.document_id == document_id,
+                        RagContainerFile.indexed_document_id == document_id,
+                    )
+                )
+            )
+        ).all()
+    )
+    if any(item.status in {"processing", "deleting"} for item in memberships):
+        raise HTTPException(status_code=409, detail="Wait for container indexing to finish.")
+    prior_statuses = {item.id: item.status for item in memberships}
+    if memberships:
+        claimed = await db.execute(
+            update(RagContainerFile)
+            .where(
+                RagContainerFile.id.in_(prior_statuses),
+                RagContainerFile.status.not_in(("processing", "deleting")),
+            )
+            .values(status="deleting")
+        )
+        if claimed.rowcount != len(memberships):
+            await db.rollback()
+            raise HTTPException(status_code=409, detail="Wait for container indexing to finish.")
     await db.commit()
+
+    try:
+        for item in memberships:
+            if item.indexed_document_id:
+                await vector_store.delete_asset(item.collection_name, item.indexed_document_id)
+            if item.document_id == document_id:
+                await db.delete(item)
+            else:
+                item.indexed_document_id = None
+                item.status = prior_statuses[item.id]
+        await db.delete(doc)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        for file_id, status in prior_statuses.items():
+            item = await db.get(RagContainerFile, file_id)
+            if item is not None:
+                item.status = status
+        await db.commit()
+        raise
+
+    Path(doc.storage_path).unlink(missing_ok=True)
 
     logger.info("document_deleted", doc_id=document_id)
     return {"status": "deleted", "document_id": document_id}

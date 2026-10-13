@@ -89,12 +89,52 @@ class RagCollection(Base):
     """Private ownership registry for application-managed vector collections."""
 
     __tablename__ = "rag_collections"
+    __table_args__ = (
+        Index(
+            "uq_rag_collections_owner_display_name",
+            "owner_id",
+            "display_name",
+            unique=True,
+        ),
+    )
 
     name: Mapped[str] = mapped_column(String(63), primary_key=True)
+    display_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     owner_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("accounts.id", ondelete="RESTRICT"), index=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
+class RagContainerFile(Base):
+    """Uploaded document membership and durable indexing state for one RAG container."""
+
+    __tablename__ = "rag_container_files"
+    __table_args__ = (
+        UniqueConstraint("collection_name", "relative_path", name="uq_rag_container_file_path"),
+        Index("ix_rag_container_files_status_available", "status", "available_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
+    collection_name: Mapped[str] = mapped_column(
+        String(63), ForeignKey("rag_collections.name", ondelete="CASCADE"), index=True
+    )
+    document_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("documents.id", ondelete="CASCADE"), index=True
+    )
+    indexed_document_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    relative_path: Mapped[str] = mapped_column(String(1024))
+    sha256: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(16), default="staged", server_default="staged")
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    available_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    chunk_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
 
 
 class SqlConnection(Base):
