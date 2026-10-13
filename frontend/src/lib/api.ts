@@ -29,6 +29,9 @@ import {
   githubConnectionSchema,
   githubAuthorizationSchema,
   githubRepositoryListSchema,
+  githubProjectOverviewSchema,
+  githubPullDetailSchema,
+  githubIssueProposalSchema,
   conversationMemorySettingsSchema,
   type MemoryRecord,
   type MemorySettings,
@@ -181,6 +184,7 @@ export async function createActionItem(input: {
   due_date?: string;
   source_type?: ActionItemRecord["source_type"];
   source_id?: string;
+  source_repository_id?: string;
   source_quote?: string;
 }) {
   return apiFetch("/action-items", {
@@ -225,6 +229,18 @@ export async function setGitHubRepositorySelection(repositoryId: string, selecte
     method: "PUT",
     body: JSON.stringify({ selected }),
   });
+}
+
+export async function getGitHubProjectOverview(repositoryId: string) {
+  return apiFetch(`/github/agent/repositories/${encodeURIComponent(repositoryId)}`, undefined, githubProjectOverviewSchema);
+}
+
+export async function getGitHubPullDetail(repositoryId: string, number: number) {
+  return apiFetch(`/github/agent/repositories/${encodeURIComponent(repositoryId)}/pulls/${number}`, undefined, githubPullDetailSchema);
+}
+
+export async function proposeGitHubIssueActions(repositoryId: string, number: number) {
+  return apiFetch(`/github/agent/repositories/${encodeURIComponent(repositoryId)}/issues/${number}/proposals`, { method: "POST" }, githubIssueProposalSchema);
 }
 
 export async function updateActionItem(

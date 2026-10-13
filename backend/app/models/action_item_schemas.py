@@ -22,6 +22,7 @@ class ActionItemCreate(BaseModel):
     due_date: date | None = None
     source_type: ActionSource | None = None
     source_id: str | None = Field(default=None, min_length=1, max_length=36)
+    source_repository_id: str | None = Field(default=None, min_length=1, max_length=32)
     source_quote: str | None = Field(default=None, min_length=1, max_length=500)
 
     @field_validator("title")
@@ -38,6 +39,10 @@ class ActionItemCreate(BaseModel):
             raise ValueError("source_type and source_id must be supplied together.")
         if self.source_quote is not None and self.source_id is None:
             raise ValueError("A source quote requires a source record.")
+        if self.source_type == "github" and self.source_repository_id is None:
+            raise ValueError("GitHub source items require a selected repository.")
+        if self.source_type != "github" and self.source_repository_id is not None:
+            raise ValueError("A repository is only valid for a GitHub source.")
         return self
 
 
@@ -81,6 +86,7 @@ class ActionItemResponse(BaseModel):
     due_date: date | None
     source_type: ActionSource | None
     source_id: str | None
+    source_repository_id: str | None
     source_quote: str | None
     revision: int
     created_at: datetime

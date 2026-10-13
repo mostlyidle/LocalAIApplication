@@ -2,22 +2,31 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import secrets
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException, Path, Request
 from fastapi.responses import RedirectResponse
 from sqlalchemy import delete, select
 
+from app.api.middleware.rate_limiting import limiter
 from app.config import settings
 from app.dependencies import get_authenticated_session, get_db
 from app.models.db_models import GitHubConnection, GitHubOAuthState, GitHubRepositorySelection
 from app.models.github_schemas import (
     GitHubAuthorizationResponse,
+    GitHubCheckRun,
     GitHubConnectionResponse,
+    GitHubIssueProposalResponse,
+    GitHubProjectIssue,
+    GitHubProjectOverviewResponse,
+    GitHubProjectPullRequest,
+    GitHubPullDetailResponse,
+    GitHubPullFile,
     GitHubRepositoryListResponse,
     GitHubRepositoryResponse,
     GitHubRepositorySelectionRequest,
@@ -274,3 +283,197 @@ async def set_github_repository_selection(
         selected.default_branch = str(repository["default_branch"])
         selected.is_private = bool(repository["is_private"])
     await db.commit()
+
+
+async def _selected_repository(
+    owner_id: str, repository_id: str, db: AsyncSession
+) -> tuple[GitHubRepositorySelection, str, str]:
+    repository = await db.scalar(
+        select(GitHubRepositorySelection).where(
+            GitHubRepositorySelection.owner_id == owner_id,
+            GitHubRepositorySelection.repository_id == repository_id,
+        )
+    )
+    if repository is None:
+        raise HTTPException(status_code=404, detail="Select this repository in Settings first.")
+    connection, token = await _connected_github(owner_id, db)
+    parts = repository.full_name.split("/")
+    if len(parts) != 2 or any(not part for part in parts):
+        raise GitHubIntegrationError("Stored GitHub repository metadata is invalid.", 503)
+    path = f"/repos/{quote(parts[0], safe='')}/{quote(parts[1], safe='')}"
+    return repository, token, path
+
+
+def _github_issue_shape(payload: object) -> dict[str, object] | None:
+    if not isinstance(payload, dict):
+        return None
+    number, title, url = payload.get("number"), payload.get("title"), payload.get("html_url")
+    if not isinstance(number, int) or not isinstance(title, str) or not isinstance(url, str):
+        return None
+    author = payload.get("user")
+    labels = payload.get("labels")
+    return {
+        "number": number,
+        "title": title[:300],
+        "body": payload.get("body")[:4_000] if isinstance(payload.get("body"), str) else "",
+        "state": str(payload.get("state", "open"))[:20],
+        "html_url": url,
+        "author": author.get("login") if isinstance(author, dict) and isinstance(author.get("login"), str) else None,
+        "updated_at": payload.get("updated_at") if isinstance(payload.get("updated_at"), str) else None,
+        "labels": [label["name"][:100] for label in labels if isinstance(label, dict) and isinstance(label.get("name"), str)][:20]
+        if isinstance(labels, list)
+        else [],
+    }
+
+
+async def _list_github_items(path: str, token: str, *, issues: bool) -> list[dict[str, object]]:
+    items: list[dict[str, object]] = []
+    for page in range(1, 6):
+        payload = await github_oauth_client.api_get_json(
+            f"{path}/{'issues' if issues else 'pulls'}",
+            token,
+            {"state": "open", "sort": "updated", "direction": "desc", "per_page": 100, "page": page},
+        )
+        if not isinstance(payload, list):
+            raise GitHubIntegrationError("GitHub returned an invalid project item list.")
+        for item in payload:
+            if issues and isinstance(item, dict) and "pull_request" in item:
+                continue
+            shaped = _github_issue_shape(item)
+            if shaped is None:
+                continue
+            if not issues:
+                head = item.get("head") if isinstance(item, dict) else None
+                shaped["draft"] = item.get("draft") is True if isinstance(item, dict) else False
+                shaped["head_sha"] = head.get("sha") if isinstance(head, dict) and isinstance(head.get("sha"), str) else None
+            items.append(shaped)
+        if len(payload) < 100:
+            return items
+    raise GitHubIntegrationError("GitHub returned too many open project items; narrow the query.", 413)
+
+
+@router.get("/github/agent/repositories/{repository_id}", response_model=GitHubProjectOverviewResponse)
+async def get_github_project_overview(
+    repository_id: str = Path(pattern=r"^[0-9]{1,32}$"),
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+) -> GitHubProjectOverviewResponse:
+    """Read open issues and pull requests from one explicitly selected repository."""
+    repository, token, path = await _selected_repository(authenticated.account.id, repository_id, db)
+    issues, pulls = await asyncio.gather(
+        _list_github_items(path, token, issues=True),
+        _list_github_items(path, token, issues=False),
+    )
+    return GitHubProjectOverviewResponse(
+        repository_id=repository_id,
+        repository=repository.full_name,
+        issues=[GitHubProjectIssue(**item) for item in issues],
+        pull_requests=[GitHubProjectPullRequest(**item) for item in pulls],
+    )
+
+
+@router.get(
+    "/github/agent/repositories/{repository_id}/pulls/{number}",
+    response_model=GitHubPullDetailResponse,
+)
+async def get_github_pull_request_detail(
+    repository_id: str = Path(pattern=r"^[0-9]{1,32}$"),
+    number: int = Path(ge=1),
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+) -> GitHubPullDetailResponse:
+    """Read bounded pull request metadata, changed file patches, and check runs."""
+    _, token, path = await _selected_repository(authenticated.account.id, repository_id, db)
+    payload = await github_oauth_client.api_get_json(f"{path}/pulls/{number}", token)
+    if not isinstance(payload, dict) or payload.get("number") != number:
+        raise HTTPException(status_code=404, detail="Pull request was not found.")
+    files_payload = await github_oauth_client.api_get_json(
+        f"{path}/pulls/{number}/files", token, {"per_page": 100, "page": 1}
+    )
+    head = payload.get("head")
+    if not isinstance(files_payload, list):
+        raise GitHubIntegrationError("GitHub returned invalid pull request files.")
+    files: list[GitHubPullFile] = []
+    for item in files_payload[:20]:
+        if not isinstance(item, dict) or not isinstance(item.get("filename"), str):
+            continue
+        files.append(
+            GitHubPullFile(
+                filename=item["filename"][:512],
+                status=str(item.get("status", "modified"))[:32],
+                additions=max(0, int(item.get("additions", 0))) if isinstance(item.get("additions", 0), int) else 0,
+                deletions=max(0, int(item.get("deletions", 0))) if isinstance(item.get("deletions", 0), int) else 0,
+                patch=item.get("patch", "")[:3_000] if isinstance(item.get("patch"), str) else None,
+                html_url=item.get("html_url") if isinstance(item.get("html_url"), str) else None,
+            )
+        )
+    head_sha = head.get("sha") if isinstance(head, dict) and isinstance(head.get("sha"), str) else None
+    checks: list[GitHubCheckRun] = []
+    checks_truncated = False
+    if head_sha:
+        check_payload = await github_oauth_client.api_get_json(
+            f"{path}/commits/{quote(head_sha, safe='')}/check-runs", token, {"per_page": 100, "page": 1}
+        )
+        check_runs = check_payload.get("check_runs") if isinstance(check_payload, dict) else None
+        if not isinstance(check_runs, list):
+            raise GitHubIntegrationError("GitHub returned invalid check run data.")
+        checks_truncated = len(check_runs) > 50
+        for item in check_runs[:50]:
+            if not isinstance(item, dict) or not isinstance(item.get("name"), str):
+                continue
+            checks.append(
+                GitHubCheckRun(
+                    name=item["name"][:200],
+                    status=str(item.get("status", "unknown"))[:32],
+                    conclusion=item.get("conclusion") if isinstance(item.get("conclusion"), str) else None,
+                    html_url=item.get("html_url") if isinstance(item.get("html_url"), str) else None,
+                )
+            )
+    return GitHubPullDetailResponse(
+        repository_id=repository_id,
+        number=number,
+        title=str(payload.get("title", ""))[:300],
+        body=payload.get("body")[:4_000] if isinstance(payload.get("body"), str) else "",
+        state=str(payload.get("state", "open"))[:20],
+        html_url=str(payload.get("html_url", "")),
+        head_sha=head_sha,
+        files=files,
+        checks=checks,
+        files_truncated=len(files_payload) > 20,
+        checks_truncated=checks_truncated,
+    )
+
+
+@router.post(
+    "/github/agent/repositories/{repository_id}/issues/{number}/proposals",
+    response_model=GitHubIssueProposalResponse,
+)
+@limiter.limit(settings.rate_limit_llm)
+async def propose_github_issue_actions(
+    request: Request,
+    repository_id: str = Path(pattern=r"^[0-9]{1,32}$"),
+    number: int = Path(ge=1),
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+) -> GitHubIssueProposalResponse:
+    """Draft cited planner suggestions from one selected repository issue."""
+    repository, token, path = await _selected_repository(authenticated.account.id, repository_id, db)
+    issue = await github_oauth_client.api_get_json(f"{path}/issues/{number}", token)
+    if not isinstance(issue, dict) or issue.get("number") != number or "pull_request" in issue:
+        raise HTTPException(status_code=404, detail="Issue was not found.")
+    title = issue.get("title")
+    body = issue.get("body")
+    if not isinstance(title, str):
+        raise GitHubIntegrationError("GitHub returned an invalid issue.")
+    source_text = f"Issue #{number}: {title}\n{body if isinstance(body, str) else ''}"[:24_000]
+    if not source_text.strip():
+        raise HTTPException(status_code=422, detail="This issue has no readable text.")
+    from app.services.planner_agent import draft_action_items
+
+    suggestions = await draft_action_items(source_text)
+    return GitHubIssueProposalResponse(
+        repository_id=repository_id,
+        source_id=str(number),
+        source_title=f"{repository.full_name} · #{number} {title[:180]}",
+        suggestions=suggestions,
+    )
