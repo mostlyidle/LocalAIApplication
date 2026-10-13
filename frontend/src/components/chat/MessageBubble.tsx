@@ -135,7 +135,7 @@ export function MessageBubble({
             </pre>
           </details>
         )}
-        <div className={cn("mt-2 text-xs", isUser ? "text-primary-foreground" : "text-muted-foreground")}>
+        <div className={cn("mt-2 text-xs", isUser ? "text-primary-foreground/75" : "text-muted-foreground")}>
           {new Date(message.timestamp).toLocaleTimeString()}
         </div>
       </div>

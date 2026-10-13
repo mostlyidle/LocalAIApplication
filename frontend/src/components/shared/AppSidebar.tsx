@@ -47,7 +47,7 @@ export function AppSidebar() {
   const { isMobile, setOpenMobile } = useSidebar();
 
   return (
-    <Sidebar>
+    <Sidebar collapsible="icon">
       <SidebarHeader className="px-5 pb-5 pt-6">
         <Link href="/" className="flex items-center gap-2.5 rounded-lg">
           <BrandMark />
@@ -65,9 +65,14 @@ export function AppSidebar() {
             <SidebarMenu className="gap-1.5">
               {navItems.map((item) => (
                 <SidebarMenuItem key={item.href}>
-                  <SidebarMenuButton asChild className="h-12 rounded-xl px-3 font-medium transition-colors data-[active=true]:bg-card data-[active=true]:shadow-xs" isActive={pathname === item.href || pathname.startsWith(item.href + "/")}>
+                  <SidebarMenuButton
+                    asChild
+                    tooltip={item.title}
+                    className="relative h-11 rounded-xl px-3 font-medium transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground data-[active=true]:bg-sidebar-accent data-[active=true]:font-semibold data-[active=true]:text-sidebar-accent-foreground data-[active=true]:shadow-xs data-[active=true]:before:absolute data-[active=true]:before:left-1 data-[active=true]:before:top-2.5 data-[active=true]:before:bottom-2.5 data-[active=true]:before:w-1 data-[active=true]:before:rounded-full data-[active=true]:before:bg-primary"
+                    isActive={pathname === item.href || pathname.startsWith(item.href + "/")}
+                  >
                     <Link href={item.href} onClick={() => { if (isMobile) setOpenMobile(false); }} aria-current={pathname === item.href || pathname.startsWith(item.href + "/") ? "page" : undefined}>
-                      <span className={`grid size-8 shrink-0 place-items-center rounded-lg ${item.tone}`}>
+                      <span className={`grid size-8 shrink-0 place-items-center rounded-lg transition-colors ${pathname === item.href || pathname.startsWith(item.href + "/") ? item.tone : "bg-muted/60 text-muted-foreground group-hover:bg-accent group-hover:text-foreground"}`}>
                         <item.icon className="h-4 w-4" aria-hidden="true" />
                       </span>
                       <span>{item.title}</span>

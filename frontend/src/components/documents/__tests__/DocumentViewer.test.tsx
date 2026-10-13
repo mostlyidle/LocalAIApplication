@@ -10,6 +10,8 @@ vi.mock("lucide-react", () => ({
   FileText: (props: Record<string, unknown>) => <svg data-testid="file-icon" {...props} />,
   Trash2: (props: Record<string, unknown>) => <svg data-testid="trash-icon" {...props} />,
   Search: (props: Record<string, unknown>) => <svg data-testid="search-icon" {...props} />,
+  Database: (props: Record<string, unknown>) => <svg data-testid="database-icon" {...props} />,
+  XIcon: (props: Record<string, unknown>) => <svg data-testid="close-icon" {...props} />,
   Loader2: (props: Record<string, unknown>) => <svg data-testid="loader-icon" {...props} />,
 }));
 
