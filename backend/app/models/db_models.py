@@ -322,6 +322,24 @@ class GitHubConnection(Base):
     )
 
 
+class GitHubRepositorySelection(Base):
+    """A repository explicitly made available to one account's GitHub agent."""
+
+    __tablename__ = "github_repository_selections"
+    __table_args__ = (UniqueConstraint("owner_id", "repository_id"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
+    owner_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("accounts.id", ondelete="CASCADE"), index=True
+    )
+    repository_id: Mapped[str] = mapped_column(String(32))
+    full_name: Mapped[str] = mapped_column(String(256))
+    html_url: Mapped[str] = mapped_column(String(512))
+    default_branch: Mapped[str] = mapped_column(String(256))
+    is_private: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
 class GitHubOAuthState(Base):
     """One-time OAuth state bound to the initiating account session."""
 

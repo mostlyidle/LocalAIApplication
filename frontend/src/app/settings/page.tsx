@@ -22,6 +22,7 @@ import { Label } from "@/components/ui/label";
 import { useTheme } from "next-themes";
 import * as api from "@/lib/api";
 import type { GitHubConnection } from "@/lib/schemas";
+import type { GitHubRepository } from "@/lib/schemas";
 
 interface HealthData {
   status: string;
@@ -48,6 +49,7 @@ export default function SettingsPage() {
   const [githubConnection, setGithubConnection] = useState<GitHubConnection | null>(null);
   const [githubBusy, setGithubBusy] = useState(false);
   const [githubMessage, setGithubMessage] = useState("");
+  const [githubRepositories, setGithubRepositories] = useState<GitHubRepository[]>([]);
 
   useEffect(() => {
     async function loadHealth() {
@@ -74,7 +76,16 @@ export default function SettingsPage() {
 
     loadHealth();
     loadTools();
-    api.getGitHubConnection().then(setGithubConnection).catch((cause: unknown) => {
+    api.getGitHubConnection().then(async (connection) => {
+      setGithubConnection(connection);
+      if (connection.connected) {
+        try {
+          setGithubRepositories((await api.getGitHubRepositories()).repositories);
+        } catch (cause) {
+          setGithubMessage(cause instanceof Error ? cause.message : "Could not load GitHub repositories.");
+        }
+      }
+    }).catch((cause: unknown) => {
       setGithubMessage(cause instanceof Error ? cause.message : "Could not load GitHub connection.");
     });
   }, []);
@@ -98,9 +109,25 @@ export default function SettingsPage() {
     try {
       await api.disconnectGitHub();
       setGithubConnection(await api.getGitHubConnection());
+      setGithubRepositories([]);
       setGithubMessage("GitHub access revoked and disconnected.");
     } catch (cause) {
       setGithubMessage(cause instanceof Error ? cause.message : "Could not revoke GitHub access.");
+    } finally {
+      setGithubBusy(false);
+    }
+  };
+
+  const toggleGitHubRepository = async (repository: GitHubRepository) => {
+    setGithubBusy(true);
+    setGithubMessage("");
+    try {
+      await api.setGitHubRepositorySelection(repository.repository_id, !repository.selected);
+      setGithubRepositories((current) => current.map((item) => item.repository_id === repository.repository_id
+        ? { ...item, selected: !item.selected }
+        : item));
+    } catch (cause) {
+      setGithubMessage(cause instanceof Error ? cause.message : "Could not update repository access.");
     } finally {
       setGithubBusy(false);
     }
@@ -156,6 +183,15 @@ export default function SettingsPage() {
               )}
             </div>
             {githubMessage && <p role="status" className="text-sm text-muted-foreground">{githubMessage}</p>}
+            {githubConnection?.connected && <div className="space-y-2 border-t pt-3">
+              <p className="text-sm font-medium">Repositories available to the agent</p>
+              {githubRepositories.length ? githubRepositories.map((repository) => <label key={repository.repository_id} className="flex items-center gap-3 rounded-md border px-3 py-2 text-sm">
+                <input type="checkbox" checked={repository.selected} disabled={githubBusy} onChange={() => void toggleGitHubRepository(repository)} aria-label={`Allow agent to use ${repository.full_name}`} />
+                <span className="min-w-0 flex-1">{repository.full_name}{repository.is_private ? " · private" : ""}</span>
+                <span className="text-xs text-muted-foreground">{repository.default_branch}</span>
+              </label>) : <p className="text-sm text-muted-foreground">No repositories were returned. Check the GitHub App installation and repository permissions.</p>}
+              <p className="text-xs text-muted-foreground">Only checked repositories can be read by the project agent.</p>
+            </div>}
           </CardContent>
         </Card>
 

@@ -161,7 +161,10 @@ class GitHubOAuthClient:
                     "DELETE",
                     f"{settings.github_api_url.rstrip('/')}/applications/{client_id}/grant",
                     auth=(client_id, client_secret),
-                    headers={"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": API_VERSION},
+                    headers={
+                        "Accept": "application/vnd.github+json",
+                        "X-GitHub-Api-Version": API_VERSION,
+                    },
                     json={"access_token": access_token},
                 )
                 if response.status_code not in {204, 404}:
@@ -194,10 +197,25 @@ class GitHubOAuthClient:
         return payload
 
     async def _api_get(self, path: str, token: str) -> dict[str, object]:
+        payload = await self._api_request(path, token)
+        if not isinstance(payload, dict):
+            raise GitHubIntegrationError("GitHub returned an invalid account profile.")
+        return payload
+
+    async def api_get_json(
+        self, path: str, token: str, params: dict[str, str | int] | None = None
+    ) -> object:
+        """Read JSON from a fixed, internally constructed GitHub API path."""
+        return await self._api_request(path, token, params)
+
+    async def _api_request(
+        self, path: str, token: str, params: dict[str, str | int] | None = None
+    ) -> object:
         try:
             async with httpx.AsyncClient(timeout=15) as client:
                 response = await client.get(
                     f"{settings.github_api_url.rstrip('/')}{path}",
+                    params=params,
                     headers={
                         "Accept": "application/vnd.github+json",
                         "Authorization": f"Bearer {token}",
@@ -205,13 +223,25 @@ class GitHubOAuthClient:
                         "User-Agent": "LocalAIApplication",
                     },
                 )
+                if (
+                    response.status_code == 403
+                    and response.headers.get("x-ratelimit-remaining") == "0"
+                ):
+                    raise GitHubIntegrationError(
+                        "GitHub API rate limit reached; try again later.", 429
+                    )
                 response.raise_for_status()
                 payload = response.json()
+        except GitHubIntegrationError:
+            raise
         except (httpx.HTTPError, ValueError) as exc:
-            logger.warning("github_profile_fetch_failed", error=type(exc).__name__)
-            raise GitHubIntegrationError("Could not verify the GitHub account.") from exc
-        if not isinstance(payload, dict):
-            raise GitHubIntegrationError("GitHub returned an invalid account profile.")
+            logger.warning("github_api_request_failed", error=type(exc).__name__)
+            status = getattr(getattr(exc, "response", None), "status_code", None)
+            if status in {401, 403}:
+                raise GitHubIntegrationError(
+                    "GitHub denied this request. Check the app's repository permissions.", 403
+                ) from exc
+            raise GitHubIntegrationError("Could not retrieve data from GitHub.") from exc
         return payload
 
     @staticmethod
