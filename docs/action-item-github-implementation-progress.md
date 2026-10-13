@@ -34,7 +34,7 @@ Keep the existing LocalAIApplication chat and document parsing experience. Add a
 - Added a meeting source-list endpoint, planner source picker, editable suggestion cards, and explicit Accept/Ignore actions. Accepted tasks display and retain the source quote.
 - Verification: backend suite `784 passed`; frontend suite `327 passed`; backend Ruff, frontend ESLint and TypeScript passed; clean SQLite migration through `20261012_19` passed; optimized `next build` passed.
 - Browser E2E scenario now covers proposal, acceptance, manual create, edit, completion, and delete, but execution remains blocked by the incomplete Playwright Chromium installation noted above.
-- Commit: pending.
+- Commit: `0fef1fd` (`feat(planner): add source-cited action suggestions`).
 
 ## Resume instructions
 
