@@ -16,10 +16,10 @@ do not restart planning or create another feature branch.
 | Container UI | Complete | Create/select containers; choose or drop files/folders; review per-file statuses; load, retry, remove, and delete. UI followed `ui-ux-pro-max`. |
 | Search and chat selection | Complete | Both surfaces select private containers or existing app collections and pass the selected index through existing retrieval. |
 | Focused verification | Complete | Frontend 52 focused tests, TypeScript, and backend focused tests/lint pass. ESLint reports one existing `<img>` warning in `ChatWindow.tsx:583`. |
-| Checkpoint commit and push | Pending | Commit and push verified milestones to the approved branch after the focused backend rerun. |
+| Checkpoint commit and push | In progress | Backend checkpoint `c977962` is pushed to `origin/feature/vector-index-containers`; verified frontend changes are awaiting their checkpoint commit. |
 
-**Next action:** inspect the final status/diff, commit the verified implementation, and push
-to the approved branch. Record the resulting commit and push status here.
+**Next action:** inspect and commit the frontend integration/UI, then push it to the approved
+branch. Record the resulting commit and push status here.
 
 **Latest verification:**
 
