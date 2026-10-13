@@ -9,7 +9,9 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ContainerManager } from "@/components/rag/ContainerManager";
 import * as api from "@/lib/api";
+import type { RAGContainer } from "@/lib/api";
 
 interface SearchResult {
   content: string;
@@ -34,8 +36,11 @@ interface DocumentItem {
 export default function RAGPage() {
   const [query, setQuery] = useState("");
   const [agentName, setAgentName] = useState("rag");
+  const [selectedCollection, setSelectedCollection] = useState("");
+  const [selectedContainer, setSelectedContainer] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [collections, setCollections] = useState<Collection[]>([]);
+  const [containers, setContainers] = useState<RAGContainer[]>([]);
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isLoadingCollections, setIsLoadingCollections] = useState(true);
@@ -47,11 +52,24 @@ export default function RAGPage() {
   const loadCollections = useCallback(async () => {
     try {
       const data = await api.getRAGCollections();
-      setCollections((data.collections ?? []) as Collection[]);
+      const next = (data.collections ?? []) as Collection[];
+      setCollections(next);
+      setSelectedCollection((current) => current || next[0]?.name || "");
     } catch (err) {
       console.error("Failed to load collections:", err);
     } finally {
       setIsLoadingCollections(false);
+    }
+  }, []);
+
+  const loadContainers = useCallback(async () => {
+    try {
+      const data = await api.getRAGContainers();
+      setContainers(data);
+      setSelectedContainer((current) => current || data[0]?.name || "");
+      setSelectedCollection((current) => current || data[0]?.name || "");
+    } catch (err) {
+      console.error("Failed to load containers:", err);
     }
   }, []);
 
@@ -68,8 +86,13 @@ export default function RAGPage() {
 
   useEffect(() => {
     loadCollections();
+    loadContainers();
     loadDocuments();
-  }, [loadCollections, loadDocuments]);
+  }, [loadCollections, loadContainers, loadDocuments]);
+
+  const refreshRag = useCallback(async () => {
+    await Promise.all([loadContainers(), loadCollections()]);
+  }, [loadCollections, loadContainers]);
 
   const handleSearch = async (e: FormEvent) => {
     e.preventDefault();
@@ -77,7 +100,7 @@ export default function RAGPage() {
     setIsSearching(true);
     setError(null);
     try {
-      const data = await api.searchRAG(query.trim(), undefined, undefined, agentName);
+      const data = await api.searchRAG(query.trim(), selectedCollection, undefined, agentName);
       setResults((data.results ?? []) as SearchResult[]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Search failed");
@@ -86,6 +109,16 @@ export default function RAGPage() {
       setIsSearching(false);
     }
   };
+
+  const selectContainer = (name: string) => {
+    setSelectedContainer(name);
+    if (name) setSelectedCollection(name);
+    else setSelectedCollection((current) => current === selectedContainer ? "" : current);
+  };
+
+  const searchableCollections = collections.filter(
+    (collection) => !containers.some((container) => container.name === collection.name),
+  );
 
   const handleDeleteCollection = async (name: string) => {
     try {
@@ -121,6 +154,15 @@ export default function RAGPage() {
         <div><h1 className="text-2xl font-bold">RAG Search</h1><p className="mt-1 text-sm text-muted-foreground">Find the dots. Connect the ideas.</p></div>
       </div>
 
+      <div className="mb-6">
+        <ContainerManager
+          containers={containers}
+          selectedName={selectedContainer}
+          onSelect={selectContainer}
+          onRefresh={refreshRag}
+        />
+      </div>
+
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-6">
           {/* Search form */}
@@ -136,6 +178,33 @@ export default function RAGPage() {
                   className="min-w-0 basis-full sm:basis-48 sm:flex-1"
                 />
                 <select
+                  aria-label="Search index"
+                  value={selectedCollection}
+                  onChange={(event) => {
+                    setSelectedCollection(event.target.value);
+                    if (containers.some((container) => container.name === event.target.value)) {
+                      setSelectedContainer(event.target.value);
+                    }
+                  }}
+                  className="h-11 max-w-full rounded-xl border border-input bg-card px-3 text-base sm:text-sm"
+                >
+                  <option value="" disabled>Select an index</option>
+                  {containers.length > 0 && (
+                    <optgroup label="Private containers">
+                      {containers.map((container) => (
+                        <option key={container.name} value={container.name}>{container.display_name}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {searchableCollections.length > 0 && (
+                    <optgroup label="Existing collections">
+                      {searchableCollections.map((collection) => (
+                        <option key={collection.name} value={collection.name}>{collection.name}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+                <select
                   aria-label="Retrieval profile"
                   value={agentName}
                   onChange={(e) => setAgentName(e.target.value)}
@@ -144,7 +213,7 @@ export default function RAGPage() {
                   <option value="rag">Hybrid retrieval</option>
                   <option value="rag_v2">Hybrid + query rewrites</option>
                 </select>
-                <Button type="submit" disabled={!query.trim() || isSearching}>
+                  <Button type="submit" disabled={!query.trim() || !selectedCollection || isSearching}>
                   {isSearching ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   ) : (
@@ -298,13 +367,13 @@ export default function RAGPage() {
                   <Skeleton className="h-8 w-full" />
                   <Skeleton className="h-8 w-full" />
                 </div>
-              ) : collections.length === 0 ? (
+              ) : searchableCollections.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
                   No collections yet. Ingest documents via the Documents page or API.
                 </p>
               ) : (
                 <div className="space-y-2">
-                  {collections.map((col) => (
+                  {searchableCollections.map((col) => (
                     <div
                       key={col.name}
                       className="flex items-center justify-between rounded-md border px-3 py-2"

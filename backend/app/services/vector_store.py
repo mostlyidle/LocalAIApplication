@@ -191,6 +191,7 @@ class VectorStoreService:
                 results["documents"][0],
                 results["metadatas"][0],
                 results["distances"][0],
+                strict=True,
             ):
                 # ChromaDB returns cosine distance; convert to similarity
                 score = 1 - dist
@@ -251,6 +252,19 @@ class VectorStoreService:
                 return True
             except ValueError:
                 return False
+
+        return await asyncio.to_thread(_delete)
+
+    async def delete_asset(self, collection: str, asset_id: str) -> bool:
+        """Delete all chunks belonging to one document in a collection."""
+        def _delete() -> bool:
+            client = self._get_client()
+            try:
+                selected = client.get_collection(collection)
+            except Exception:
+                return False
+            selected.delete(where={"document_id": asset_id})
+            return True
 
         return await asyncio.to_thread(_delete)
 

@@ -328,6 +328,9 @@ class HybridVectorStoreService(VectorStoreService):
     async def delete_collection(self, name: str) -> bool:
         return await self._rag.delete_collection(name)
 
+    async def delete_asset(self, collection: str, asset_id: str) -> bool:
+        return await self._rag.delete_asset(collection, asset_id)
+
     async def get_collection_count(self, name: str | None = None) -> int:
         return await self._rag.get_collection_count(name or settings.chroma_collection_name)
 
