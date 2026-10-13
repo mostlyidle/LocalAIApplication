@@ -11,7 +11,7 @@ Keep the existing LocalAIApplication chat and document parsing experience. Add a
 - [x] 1. Account-owned action item CRUD and planner UI; verify account isolation and browser workflow.
 - [x] 2. Source-grounded planner proposals from owned chat, meeting, and document records; accept/edit/ignore review flow; verify with mocked LLM and browser.
 - [x] 3. Per-account GitHub OAuth connection, encrypted credentials, and disconnect.
-- [ ] 4. Read-only GitHub project agent for issues, pull requests/diffs, and checks, with safe links and task proposals; verify pagination, errors, ownership, and prompt-injection handling against fake GitHub.
+- [x] 4. Read-only GitHub project agent for issues, pull requests/diffs, and checks, with safe links and task proposals; verify pagination, errors, ownership, and prompt-injection handling against fake GitHub.
 - [ ] 5. User-confirmed GitHub issue/comment writes, end-to-end tests, docs and release review.
 
 ## Checkpoints
@@ -54,8 +54,19 @@ Keep the existing LocalAIApplication chat and document parsing experience. Add a
 - Verification: full backend suite `791 passed`; full frontend suite `329 passed`; frontend ESLint and TypeScript passed; optimized `next build` passed; a clean SQLite Alembic upgrade through `20261012_21` passed; `git diff --check` passed.
 - Browser E2E remains unavailable because Playwright Chromium is not installed successfully in this environment. Settings behavior is covered by the component test, and repository selection is exercised through the authenticated API against a mocked GitHub client.
 - Feature commit: `b0f2fce` (`feat(github): add per-account repository allowlist`).
+- Docs checkpoint: `67247e7` (`docs: record repository allowlist checkpoint`).
+
+### Milestone 4b — Read-only GitHub Project Agent
+
+- Added `/github` with selected-repository browsing for open issues and pull requests, bounded pull diffs/check runs, and source-cited task suggestions that require explicit acceptance.
+- Added read API calls for issues, pull requests, changed files, and check runs. Every endpoint checks the account's selected repository. API result sizes are bounded; GitHub content renders as text and the extraction prompt treats it as untrusted input.
+- Added migration revision 22 so saved GitHub planner items retain the selected repository ID. On acceptance the API re-fetches the issue and verifies the quoted evidence before saving, and rejects items from repositories no longer selected.
+- Verification: full backend suite `794 passed`; full frontend suite `331 passed`; frontend ESLint and TypeScript passed; optimized `next build` passed; a clean SQLite Alembic upgrade through `20261012_22` passed; Ruff passed. GitHub API route tests cover selection isolation, issue/PR separation, diff/check parsing, citation revalidation, and unselected repository rejection.
+- Ollama smoke: `llama3.2:3b` returned a grounded task with an exact quote against the Docker Ollama service. The configured `llama3.1:8b` process was killed by Ollama with HTTP 500 on this host, so that larger-model run is a local resource limitation.
+- Browser E2E remains unavailable because Playwright Chromium could not be installed successfully. Component and authenticated API integration tests cover the flow; a live GitHub App test also needs operator-configured app credentials.
+- Feature commit: `9a30da7` (`feat(github): add read-only project agent`).
 - Docs checkpoint: pending.
 
 ## Resume instructions
 
-Continue with milestone 4b: build the read-only project agent for issues, pull requests/diffs, checks, and planner task suggestions. Require a selected repository on every call. Test pagination, API errors, authorization boundaries, and prompt-injection content with mocked GitHub responses. After each completed milestone, update this file with changed files, commit SHA, exact checks and results, and the next action. Keep the account owner filter on every persistent record and GitHub request.
+Continue with milestone 5: add only user-confirmed GitHub issue and comment writes. Keep writes limited to explicitly selected repositories, show exact title/body before each request, require a separate user action to submit, handle GitHub permission/API errors, and test with the fake GitHub service. After each completed milestone, update this file with changed files, commit SHA, exact checks and results, and the next action. Keep account ownership filters on every persistent record and GitHub request.
