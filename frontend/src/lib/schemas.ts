@@ -134,12 +134,30 @@ export const actionItemSchema = z.object({
   due_date: z.string().nullable(),
   source_type: z.enum(["chat", "meeting", "document", "github"]).nullable(),
   source_id: z.string().nullable(),
+  source_quote: z.string().nullable(),
   revision: z.number(),
   created_at: z.string(),
   updated_at: z.string(),
 });
 export const actionItemListSchema = z.object({ items: z.array(actionItemSchema), total: z.number() });
 export type ActionItemRecord = z.infer<typeof actionItemSchema>;
+
+export const actionItemProposalSchema = z.object({
+  source_type: z.enum(["chat", "meeting", "document"]),
+  source_id: z.string(),
+  source_title: z.string(),
+  suggestions: z.array(z.object({
+    title: z.string(),
+    description: z.string().nullable(),
+    priority: z.enum(["low", "normal", "high"]),
+    due_date: z.string().nullable(),
+    source_quote: z.string(),
+  })),
+});
+export type ActionItemSuggestion = z.infer<typeof actionItemProposalSchema>["suggestions"][number];
+export const meetingSourceListSchema = z.array(z.object({
+  id: z.string(), status: z.string(), created_at: z.string(),
+}));
 
 export type MemoryRecord = z.infer<typeof memorySchema>;
 export type MemorySettings = z.infer<typeof memorySettingsSchema>;

@@ -5,19 +5,32 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, select, update
 
 from app.api.middleware.error_handler import NotFoundError
-from app.dependencies import get_authenticated_session, get_db
+from app.api.middleware.rate_limiting import limiter
+from app.config import settings
+from app.dependencies import get_authenticated_session, get_db, get_document_parser
 from app.models.action_item_schemas import (
     ActionItemCreate,
     ActionItemListResponse,
+    ActionItemProposalResponse,
     ActionItemResponse,
     ActionItemUpdate,
+    ProposalSourceRequest,
 )
-from app.models.db_models import ActionItem, Conversation, Document, Meeting
+from app.models.db_models import (
+    ActionItem,
+    Conversation,
+    Document,
+    Meeting,
+    Message,
+    TranscriptSegment,
+)
+from app.models.enums import DocumentFormat
 from app.services.auth import AuthenticatedSession  # noqa: TC001
+from app.services.document_parser import DocumentParserService  # noqa: TC001
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,18 +38,62 @@ if TYPE_CHECKING:
 router = APIRouter()
 
 
-async def _validate_source(
-    body: ActionItemCreate, owner_id: str, db: AsyncSession
-) -> None:
-    """Require referenced local source records to belong to the signed-in account."""
-    if body.source_id is None:
-        return
-    models = {"chat": Conversation, "meeting": Meeting, "document": Document}
-    model = models.get(body.source_type or "")
-    if model is None or await db.scalar(
-        select(model.id).where(model.id == body.source_id, model.owner_id == owner_id)
-    ) is None:
-        raise NotFoundError("Source", body.source_id)
+async def _load_owned_source(
+    source_type: str,
+    source_id: str,
+    owner_id: str,
+    db: AsyncSession,
+    parser: DocumentParserService,
+) -> tuple[str, str]:
+    """Load bounded, readable source text only after checking its account owner."""
+    if source_type == "chat":
+        conversation = await db.scalar(
+            select(Conversation).where(
+                Conversation.id == source_id, Conversation.owner_id == owner_id
+            )
+        )
+        if conversation is None:
+            raise NotFoundError("Conversation", source_id)
+        rows = await db.scalars(
+            select(Message)
+            .where(Message.conversation_id == source_id, Message.role.in_(["user", "assistant"]))
+            .order_by(Message.created_at.desc(), Message.id.desc())
+            .limit(40)
+        )
+        messages = list(reversed(rows.all()))
+        return conversation.title, "\n".join(message.content for message in messages)
+
+    if source_type == "meeting":
+        meeting = await db.scalar(
+            select(Meeting).where(Meeting.id == source_id, Meeting.owner_id == owner_id)
+        )
+        if meeting is None:
+            raise NotFoundError("Meeting", source_id)
+        if meeting.status == "active":
+            raise HTTPException(status_code=409, detail="Stop the meeting before creating suggestions.")
+        rows = await db.scalars(
+            select(TranscriptSegment)
+            .where(TranscriptSegment.meeting_id == source_id)
+            .order_by(TranscriptSegment.sequence)
+        )
+        text = "\n".join(segment.text for segment in rows.all())
+        return f"Meeting {meeting.id[:8]}", text
+
+    if source_type == "document":
+        document = await db.scalar(
+            select(Document).where(Document.id == source_id, Document.owner_id == owner_id)
+        )
+        if document is None:
+            raise NotFoundError("Document", source_id)
+        from pathlib import Path
+
+        path = Path(document.storage_path)
+        if not path.is_file():
+            raise NotFoundError("Document file", source_id)
+        parsed = await parser.parse(path, DocumentFormat(document.format))
+        return document.filename, parsed.text
+
+    raise HTTPException(status_code=422, detail="Unsupported planner source type.")
 
 
 @router.get("/action-items", response_model=ActionItemListResponse)
@@ -67,15 +124,51 @@ async def create_action_item(
     body: ActionItemCreate,
     authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
+    parser: DocumentParserService = Depends(get_document_parser),  # noqa: B008
 ) -> ActionItem:
     """Create an action item after verifying its optional source ownership."""
     owner_id = authenticated.account.id
-    await _validate_source(body, owner_id, db)
+    if body.source_id:
+        _, source_text = await _load_owned_source(
+            body.source_type or "", body.source_id, owner_id, db, parser
+        )
+        if not body.source_quote or body.source_quote not in source_text[:24_000]:
+            raise HTTPException(
+                status_code=422,
+                detail="A linked action item requires an exact quote from its source.",
+            )
     item = ActionItem(owner_id=owner_id, **body.model_dump())
     db.add(item)
     await db.commit()
     await db.refresh(item)
     return item
+
+
+@router.post("/action-items/proposals", response_model=ActionItemProposalResponse)
+@limiter.limit(settings.rate_limit_llm)
+async def propose_action_items(
+    body: ProposalSourceRequest,
+    request: Request,
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    parser: DocumentParserService = Depends(get_document_parser),  # noqa: B008
+) -> ActionItemProposalResponse:
+    """Draft suggestions from a source owned by the current account; save nothing."""
+    source_title, source_text = await _load_owned_source(
+        body.source_type, body.source_id, authenticated.account.id, db, parser
+    )
+    bounded_text = source_text[:24_000]
+    if not bounded_text.strip():
+        raise HTTPException(status_code=422, detail="This source has no readable text.")
+    from app.services.planner_agent import draft_action_items
+
+    suggestions = await draft_action_items(bounded_text)
+    return ActionItemProposalResponse(
+        source_type=body.source_type,
+        source_id=body.source_id,
+        source_title=source_title,
+        suggestions=suggestions,
+    )
 
 
 @router.patch("/action-items/{item_id}", response_model=ActionItemResponse)
