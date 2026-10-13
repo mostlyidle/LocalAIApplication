@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from sqlalchemy import (
     Boolean,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -273,6 +274,30 @@ class MemoryVectorCleanupJob(Base):
     lease_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_error: Mapped[str | None] = mapped_column(String(80), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
+class ActionItem(Base):
+    """A private task in an account's project planner."""
+
+    __tablename__ = "action_items"
+    __table_args__ = (Index("ix_action_items_owner_status_due", "owner_id", "status", "due_date"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
+    owner_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("accounts.id", ondelete="RESTRICT"), index=True
+    )
+    title: Mapped[str] = mapped_column(String(300))
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="next", server_default="next")
+    priority: Mapped[str] = mapped_column(String(16), default="normal", server_default="normal")
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    source_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    source_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
 
 
 class ToolCallRecord(Base):

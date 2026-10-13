@@ -151,6 +151,7 @@ def create_app() -> FastAPI:
 
     # API routes
     from app.api.routes import (
+        action_items,
         agents,
         auth,
         chat,
@@ -173,6 +174,7 @@ def create_app() -> FastAPI:
     app.include_router(tools.router, prefix="/api/v1", tags=["Tools"])
     app.include_router(meetings.router, prefix="/api/v1", tags=["Meetings"])
     app.include_router(memory.router, prefix="/api/v1", tags=["Memory"])
+    app.include_router(action_items.router, prefix="/api/v1", tags=["Action Items"])
 
     Instrumentator().instrument(app).expose(app, include_in_schema=False)
 
