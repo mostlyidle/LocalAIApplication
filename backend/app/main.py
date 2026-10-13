@@ -89,6 +89,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         run_recall_worker(app.state.memory_recall_worker_stop),
         name="memory-recall-worker",
     )
+    from app.services.rag_container_worker import run_container_worker
+
+    app.state.rag_container_worker_stop = asyncio.Event()
+    app.state.rag_container_worker_task = asyncio.create_task(
+        run_container_worker(app.state.rag_container_worker_stop),
+        name="rag-container-worker",
+    )
 
     reconciled_meetings = await meeting_service.reconcile_active_meetings()
     logger.info("meeting_startup_reconciliation_complete", count=reconciled_meetings)
@@ -116,6 +123,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except TimeoutError:
         app.state.memory_recall_worker_task.cancel()
         await asyncio.gather(app.state.memory_recall_worker_task, return_exceptions=True)
+    app.state.rag_container_worker_stop.set()
+    try:
+        await asyncio.wait_for(app.state.rag_container_worker_task, timeout=5)
+    except TimeoutError:
+        app.state.rag_container_worker_task.cancel()
+        await asyncio.gather(app.state.rag_container_worker_task, return_exceptions=True)
 
     await mcp_client.close()
     await app.state.market_data.close()
@@ -160,6 +173,7 @@ def create_app() -> FastAPI:
         meetings,
         memory,
         rag,
+        rag_containers,
         sql,
         tasks,
         tools,
@@ -171,6 +185,7 @@ def create_app() -> FastAPI:
     app.include_router(documents.router, prefix="/api/v1", tags=["Documents"])
     app.include_router(sql.router, prefix="/api/v1", tags=["SQL"])
     app.include_router(rag.router, prefix="/api/v1", tags=["RAG"])
+    app.include_router(rag_containers.router, prefix="/api/v1")
     app.include_router(tasks.router, prefix="/api/v1", tags=["Agents"])
     app.include_router(tools.router, prefix="/api/v1", tags=["Tools"])
     app.include_router(meetings.router, prefix="/api/v1", tags=["Meetings"])

@@ -560,6 +560,37 @@ class RagStore:
         await self._call(lambda: self._client.delete_collection(collection_name=collection))
         return True
 
+    async def delete_asset(self, collection: str, asset_id: str) -> bool:
+        """Delete all indexed chunks for one app-owned source document."""
+        if collection == ACCOUNT_MEMORY_COLLECTION:
+            raise RagCollectionSchemaError(
+                "The account memory collection is private to memory recall."
+            )
+        async with self._asset_upsert_lock(collection=collection, asset_id=asset_id):
+            capabilities = await self.capabilities(collection)
+            if capabilities is None:
+                return False
+            if capabilities.mode != "hybrid" or capabilities.loader_owned:
+                raise RagCollectionSchemaError(
+                    f"Collection '{collection}' cannot remove app-owned documents."
+                )
+            await self._call(
+                lambda: self._client.delete(
+                    collection_name=collection,
+                    points_selector=models.FilterSelector(
+                        filter=models.Filter(
+                            must=[
+                                models.FieldCondition(
+                                    key="asset_id", match=models.MatchValue(value=asset_id)
+                                )
+                            ]
+                        )
+                    ),
+                    wait=True,
+                )
+            )
+            return True
+
     @asynccontextmanager
     async def _asset_upsert_lock(self, *, collection: str, asset_id: str) -> AsyncIterator[None]:
         key = (collection, asset_id)
