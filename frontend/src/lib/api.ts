@@ -28,6 +28,7 @@ import {
   meetingSourceListSchema,
   githubConnectionSchema,
   githubAuthorizationSchema,
+  githubRepositoryListSchema,
   conversationMemorySettingsSchema,
   type MemoryRecord,
   type MemorySettings,
@@ -213,6 +214,17 @@ export async function startGitHubConnection() {
 
 export async function disconnectGitHub() {
   return apiFetch<void>("/github/connection", { method: "DELETE" });
+}
+
+export async function getGitHubRepositories() {
+  return apiFetch("/github/repositories", undefined, githubRepositoryListSchema);
+}
+
+export async function setGitHubRepositorySelection(repositoryId: string, selected: boolean) {
+  return apiFetch<void>(`/github/repositories/${encodeURIComponent(repositoryId)}/selection`, {
+    method: "PUT",
+    body: JSON.stringify({ selected }),
+  });
 }
 
 export async function updateActionItem(

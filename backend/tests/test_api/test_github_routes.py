@@ -19,6 +19,7 @@ from app.models.db_models import (
     AccountSession,
     GitHubConnection,
     GitHubOAuthState,
+    GitHubRepositorySelection,
 )
 from app.services.github_oauth import GitHubTokenSet, decrypt_token
 
@@ -28,10 +29,14 @@ def _configure_github(monkeypatch) -> None:
 
     monkeypatch.setattr(settings, "github_app_client_id", "test-client-id")
     monkeypatch.setattr(settings, "github_app_client_secret", "test-client-secret")
-    monkeypatch.setattr(settings, "github_app_callback_url", "http://localhost:8000/api/v1/github/callback")
+    monkeypatch.setattr(
+        settings, "github_app_callback_url", "http://localhost:8000/api/v1/github/callback"
+    )
     monkeypatch.setattr(settings, "github_app_slug", "local-ai-test")
     monkeypatch.setattr(settings, "github_frontend_url", "http://localhost:3000")
-    monkeypatch.setattr(settings, "github_token_encryption_key", Fernet.generate_key().decode("ascii"))
+    monkeypatch.setattr(
+        settings, "github_token_encryption_key", Fernet.generate_key().decode("ascii")
+    )
 
 
 async def _ensure_session(db_session, authenticated_test_session) -> None:
@@ -88,19 +93,20 @@ async def test_oauth_state_is_one_time_and_tokens_are_encrypted(
     )
     monkeypatch.setattr("app.api.routes.github.github_oauth_client.exchange_code", exchange)
 
-    start = await client.post(
-        "/api/v1/github/connect", headers={"X-CSRF-Token": "test-csrf-token"}
-    )
+    start = await client.post("/api/v1/github/connect", headers={"X-CSRF-Token": "test-csrf-token"})
     assert start.status_code == 200
     authorization_url = start.json()["authorization_url"]
     params = parse_qs(urlparse(authorization_url).query)
     assert params["scope"] == ["offline_access"]
     state = params["state"][0]
     assert re.fullmatch(r"[A-Za-z0-9_-]{40,}", state)
-    assert await db_session.get(
-        GitHubOAuthState,
-        hashlib.sha256(state.encode()).hexdigest(),
-    ) is not None
+    assert (
+        await db_session.get(
+            GitHubOAuthState,
+            hashlib.sha256(state.encode()).hexdigest(),
+        )
+        is not None
+    )
 
     callback = await client.get(
         "/api/v1/github/callback", params={"state": state, "code": "single-use-code"}
@@ -212,12 +218,15 @@ async def test_github_oauth_http_exchange_profile_and_revoke_use_expected_tokens
         seen.append(request)
         if request.url.path == "/login/oauth/access_token":
             assert parse_qs(request.content.decode())["code"] == ["single-use"]
-            return httpx.Response(200, json={
-                "access_token": "ghu-test-access",
-                "refresh_token": "ghr-test-refresh",
-                "expires_in": 28_800,
-                "refresh_token_expires_in": 15_897_600,
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "access_token": "ghu-test-access",
+                    "refresh_token": "ghr-test-refresh",
+                    "expires_in": 28_800,
+                    "refresh_token_expires_in": 15_897_600,
+                },
+            )
         if request.url.path == "/user":
             assert request.headers["authorization"] == "Bearer ghu-test-access"
             return httpx.Response(200, json={"id": 123, "login": "octocat"})
@@ -239,5 +248,142 @@ async def test_github_oauth_http_exchange_profile_and_revoke_use_expected_tokens
     assert token_set.access_token == "ghu-test-access"
     await github_oauth_client.revoke(token_set.access_token)
     assert [request.url.path for request in seen] == [
-        "/login/oauth/access_token", "/user", "/applications/test-client-id/grant",
+        "/login/oauth/access_token",
+        "/user",
+        "/applications/test-client-id/grant",
     ]
+
+
+@pytest.mark.asyncio
+async def test_repository_list_is_account_scoped_and_selection_is_explicit(
+    client, db_session, authenticated_test_session, monkeypatch
+):
+    _configure_github(monkeypatch)
+    await _ensure_session(db_session, authenticated_test_session)
+    from app.services.github_oauth import github_oauth_client
+
+    db_session.add(
+        GitHubConnection(
+            owner_id=LEGACY_ACCOUNT_ID,
+            github_user_id="12345",
+            github_login="octocat",
+            encrypted_access_token="unused",
+            encrypted_refresh_token="unused",
+            expires_at=datetime.now(UTC) + timedelta(hours=8),
+            refresh_expires_at=datetime.now(UTC) + timedelta(days=180),
+        )
+    )
+    db_session.add(
+        Account(
+            id="00000000-0000-4000-8000-000000000001",
+            username="other-github-owner",
+            display_name="Other Owner",
+            password_hash="!test!",
+        )
+    )
+    db_session.add(
+        GitHubRepositorySelection(
+            owner_id="00000000-0000-4000-8000-000000000001",
+            repository_id="42",
+            full_name="other/private",
+            html_url="https://github.com/other/private",
+            default_branch="main",
+            is_private=True,
+        )
+    )
+    await db_session.commit()
+    monkeypatch.setattr(github_oauth_client, "access_token", AsyncMock(return_value="ghu-test"))
+    monkeypatch.setattr(
+        github_oauth_client,
+        "api_get_json",
+        AsyncMock(
+            return_value=[
+                {
+                    "id": 42,
+                    "full_name": "octocat/hello-world",
+                    "html_url": "https://github.com/octocat/hello-world",
+                    "default_branch": "main",
+                    "private": False,
+                }
+            ]
+        ),
+    )
+
+    listed = await client.get("/api/v1/github/repositories")
+    assert listed.status_code == 200
+    repo = listed.json()["repositories"][0]
+    assert repo == {
+        "repository_id": "42",
+        "full_name": "octocat/hello-world",
+        "html_url": "https://github.com/octocat/hello-world",
+        "default_branch": "main",
+        "is_private": False,
+        "selected": False,
+    }
+    github_oauth_client.api_get_json.assert_awaited_once_with(
+        "/user/repos",
+        "ghu-test",
+        {
+            "affiliation": "owner,collaborator,organization_member",
+            "sort": "full_name",
+            "per_page": 100,
+            "page": 1,
+        },
+    )
+
+    selected = await client.put(
+        "/api/v1/github/repositories/42/selection",
+        json={"selected": True},
+        headers={"X-CSRF-Token": "test-csrf-token"},
+    )
+    assert selected.status_code == 204
+    saved = await db_session.scalar(
+        select(GitHubRepositorySelection).where(
+            GitHubRepositorySelection.owner_id == LEGACY_ACCOUNT_ID
+        )
+    )
+    assert saved is not None and saved.full_name == "octocat/hello-world"
+
+    listed_again = await client.get("/api/v1/github/repositories")
+    assert listed_again.json()["repositories"][0]["selected"] is True
+
+    monkeypatch.setattr(github_oauth_client, "api_get_json", AsyncMock(return_value=[]))
+    unavailable = await client.put(
+        "/api/v1/github/repositories/999/selection",
+        json={"selected": True},
+        headers={"X-CSRF-Token": "test-csrf-token"},
+    )
+    assert unavailable.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_repository_enumeration_follows_pagination(monkeypatch):
+    from app.api.routes.github import _accessible_repositories
+    from app.services.github_oauth import github_oauth_client
+
+    first_page = [
+        {
+            "id": repository_id,
+            "full_name": f"octocat/project-{repository_id}",
+            "html_url": f"https://github.com/octocat/project-{repository_id}",
+            "default_branch": "main",
+            "private": False,
+        }
+        for repository_id in range(100)
+    ]
+    last_page = [{
+        "id": 100,
+        "full_name": "octocat/project-100",
+        "html_url": "https://github.com/octocat/project-100",
+        "default_branch": "main",
+        "private": True,
+    }]
+    fetch_page = AsyncMock(side_effect=[first_page, last_page])
+    monkeypatch.setattr(github_oauth_client, "api_get_json", fetch_page)
+
+    repositories = await _accessible_repositories("ghu-test")
+
+    assert len(repositories) == 101
+    assert fetch_page.await_count == 2
+    assert fetch_page.await_args_list[0].args[2]["page"] == 1
+    assert fetch_page.await_args_list[1].args[2]["page"] == 2
