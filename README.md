@@ -221,6 +221,25 @@ All REST endpoints use the `/api/v1` prefix. Use `/docs` or `/openapi.json` for 
 | SQL | `POST /sql/query`, `POST /sql/execute`, `GET /sql/schema`, `POST /sql/connections`, `GET /sql/connections` |
 | Tools | `GET /tools`, `POST /tools/execute` |
 | Meetings | `POST /meetings`, `GET /meetings/{id}`, `POST /meetings/{id}/stop`, `DELETE /meetings/{id}`, `WS /meetings/{id}/stream` |
+| Action planner | `GET /action-items`, `POST /action-items`, `PATCH /action-items/{id}`, `DELETE /action-items/{id}`, `POST /action-items/proposals` |
+| GitHub account | `GET /github/connection`, `POST /github/connect`, `GET /github/callback`, `DELETE /github/connection` |
+
+## GitHub App setup
+
+The GitHub Project Agent uses each signed-in person's GitHub App authorization. Create a GitHub App, enable expiring user access tokens, set its callback URL to `http://localhost:8000/api/v1/github/callback` for local development, and set its setup URL to `http://localhost:3000/settings`. Install the app only on repositories you want it to access. GitHub App user tokens are limited by the app's installed repository permissions and expire after eight hours; the encrypted refresh token is rotated automatically. See GitHub's [user token flow](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-user-access-token-for-a-github-app) and [refresh token guidance](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/refreshing-user-access-tokens).
+
+Add these values to `.env.docker` (or `.env` for local backend development), then restart the backend:
+
+```dotenv
+GITHUB_APP_CLIENT_ID=your-client-id
+GITHUB_APP_CLIENT_SECRET=your-client-secret
+GITHUB_APP_SLUG=your-app-slug
+GITHUB_APP_CALLBACK_URL=http://localhost:8000/api/v1/github/callback
+GITHUB_FRONTEND_URL=http://localhost:3000
+GITHUB_TOKEN_ENCRYPTION_KEY=generate-a-stable-fernet-key
+```
+
+Generate the encryption key with `python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'`. Keep it private and stable; changing it makes already stored tokens unreadable, so each affected account must reconnect. The Settings page provides separate install, connect, and disconnect actions. Disconnect revokes the GitHub App authorization before removing the encrypted credentials.
 
 ## Configuration and local development
 

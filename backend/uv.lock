@@ -1987,6 +1987,7 @@ dependencies = [
     { name = "alembic" },
     { name = "beautifulsoup4" },
     { name = "chromadb" },
+    { name = "cryptography" },
     { name = "easyocr" },
     { name = "fastapi" },
     { name = "fastembed" },

@@ -43,6 +43,14 @@ class Settings(BaseSettings):
     market_data_cache_seconds: int = 60
     comfyui_url: str = "http://localhost:8188"
     agent_workspace_root: Path = Path("./workspace")
+    github_app_client_id: str | None = None
+    github_app_client_secret: str | None = None
+    github_app_callback_url: str | None = None
+    github_app_slug: str | None = None
+    github_frontend_url: str = "http://localhost:3000"
+    github_token_encryption_key: str | None = None
+    github_api_url: str = "https://api.github.com"
+    github_oauth_url: str = "https://github.com/login/oauth"
 
     # ── Meeting transcription ───────────────────────────────────────────
     asr_model_dir: str | None = None
