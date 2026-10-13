@@ -1,0 +1,73 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+
+const api = vi.hoisted(() => ({
+  createActionItem: vi.fn(),
+  deleteActionItem: vi.fn(),
+  getActionItems: vi.fn(),
+  updateActionItem: vi.fn(),
+}));
+
+vi.mock("@/lib/api", () => api);
+
+import ActionItemsPage from "../page";
+
+const item = {
+  id: "planner-task-1",
+  title: "Send meeting notes",
+  description: "Share with the team",
+  status: "next" as const,
+  priority: "high" as const,
+  due_date: "2026-10-20",
+  source_type: null,
+  source_id: null,
+  revision: 1,
+  created_at: "2026-10-12T12:00:00Z",
+  updated_at: "2026-10-12T12:00:00Z",
+};
+
+describe("ActionItemsPage", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    api.getActionItems.mockResolvedValue({ items: [], total: 0 });
+    api.createActionItem.mockResolvedValue(item);
+    api.updateActionItem.mockResolvedValue({ ...item, status: "done", revision: 2 });
+  });
+
+  it("creates and lists an action item", async () => {
+    api.getActionItems
+      .mockResolvedValueOnce({ items: [], total: 0 })
+      .mockResolvedValueOnce({ items: [item], total: 1 });
+    render(<ActionItemsPage />);
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: item.title } });
+    fireEvent.change(screen.getByLabelText("Details"), { target: { value: item.description } });
+    fireEvent.click(screen.getByRole("button", { name: "Add to planner" }));
+
+    await waitFor(() => expect(api.createActionItem).toHaveBeenCalledWith({
+      title: item.title,
+      description: item.description,
+      priority: "normal",
+    }));
+    expect(await screen.findByText(item.title)).toBeTruthy();
+  });
+
+  it("updates task status", async () => {
+    api.getActionItems.mockResolvedValueOnce({ items: [item], total: 1 });
+    render(<ActionItemsPage />);
+
+    fireEvent.change(await screen.findByLabelText(`Status for ${item.title}`), {
+      target: { value: "done" },
+    });
+    await waitFor(() => expect(api.updateActionItem).toHaveBeenCalledWith(item.id, {
+      revision: 1,
+      status: "done",
+    }));
+
+  });
+
+  it("shows a readable error when the planner fails to load", async () => {
+    api.getActionItems.mockRejectedValueOnce(new Error("Network unavailable"));
+    render(<ActionItemsPage />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Network unavailable");
+  });
+});

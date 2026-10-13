@@ -23,6 +23,7 @@ const pageTitles: Record<string, string> = {
   "/rag": "RAG Search",
   "/meetings": "Meetings",
   "/memory": "Memory",
+  "/action-items": "Action Planner",
   "/settings": "Settings",
 };
 
