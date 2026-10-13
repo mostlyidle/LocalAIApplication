@@ -6,6 +6,8 @@ from datetime import datetime  # noqa: TC003 - Pydantic resolves response types 
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.models.action_item_schemas import ActionItemSuggestion  # noqa: TC001
+
 
 class GitHubConnectionResponse(BaseModel):
     """Connection status without exposing any credential material."""
@@ -42,3 +44,63 @@ class GitHubRepositorySelectionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     selected: bool = Field()
+
+
+class GitHubProjectIssue(BaseModel):
+    number: int
+    title: str
+    body: str
+    state: str
+    html_url: str
+    author: str | None
+    updated_at: str | None
+    labels: list[str]
+
+
+class GitHubProjectPullRequest(GitHubProjectIssue):
+    draft: bool
+    head_sha: str | None
+
+
+class GitHubProjectOverviewResponse(BaseModel):
+    repository_id: str
+    repository: str
+    issues: list[GitHubProjectIssue]
+    pull_requests: list[GitHubProjectPullRequest]
+
+
+class GitHubPullFile(BaseModel):
+    filename: str
+    status: str
+    additions: int
+    deletions: int
+    patch: str | None
+    html_url: str | None
+
+
+class GitHubCheckRun(BaseModel):
+    name: str
+    status: str
+    conclusion: str | None
+    html_url: str | None
+
+
+class GitHubPullDetailResponse(BaseModel):
+    repository_id: str
+    number: int
+    title: str
+    body: str
+    state: str
+    html_url: str
+    head_sha: str | None
+    files: list[GitHubPullFile]
+    checks: list[GitHubCheckRun]
+    files_truncated: bool
+    checks_truncated: bool
+
+
+class GitHubIssueProposalResponse(BaseModel):
+    repository_id: str
+    source_id: str
+    source_title: str
+    suggestions: list[ActionItemSuggestion]

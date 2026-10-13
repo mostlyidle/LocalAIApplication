@@ -29,6 +29,7 @@ vi.mock("lucide-react", () => {
     Settings: icon,
     Brain: icon,
     BrainCircuit: icon,
+    Github: icon,
     Activity: icon,
     ListTodo: icon,
   };
@@ -91,6 +92,7 @@ describe("AppSidebar", () => {
     expect(screen.getByText("RAG Search")).toBeDefined();
     expect(screen.getByText("Memory")).toBeDefined();
     expect(screen.getByText("Action Planner")).toBeDefined();
+    expect(screen.getByText("GitHub Agent")).toBeDefined();
     expect(screen.getByText("Settings")).toBeDefined();
   });
 
@@ -105,6 +107,7 @@ describe("AppSidebar", () => {
     expect(hrefs).toContain("/rag");
     expect(hrefs).toContain("/memory");
     expect(hrefs).toContain("/action-items");
+    expect(hrefs).toContain("/github");
     expect(hrefs).toContain("/settings");
   });
 

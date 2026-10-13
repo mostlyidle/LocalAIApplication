@@ -24,6 +24,8 @@ from app.models.db_models import (
     ActionItem,
     Conversation,
     Document,
+    GitHubConnection,
+    GitHubRepositorySelection,
     Meeting,
     Message,
     TranscriptSegment,
@@ -31,6 +33,7 @@ from app.models.db_models import (
 from app.models.enums import DocumentFormat
 from app.services.auth import AuthenticatedSession  # noqa: TC001
 from app.services.document_parser import DocumentParserService  # noqa: TC001
+from app.services.github_oauth import github_oauth_client
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,6 +47,7 @@ async def _load_owned_source(
     owner_id: str,
     db: AsyncSession,
     parser: DocumentParserService,
+    source_repository_id: str | None = None,
 ) -> tuple[str, str]:
     """Load bounded, readable source text only after checking its account owner."""
     if source_type == "chat":
@@ -93,6 +97,39 @@ async def _load_owned_source(
         parsed = await parser.parse(path, DocumentFormat(document.format))
         return document.filename, parsed.text
 
+    if source_type == "github":
+        if not source_repository_id or not source_id.isdecimal():
+            raise HTTPException(status_code=422, detail="A GitHub issue source needs its selected repository.")
+        repository = await db.scalar(
+            select(GitHubRepositorySelection).where(
+                GitHubRepositorySelection.owner_id == owner_id,
+                GitHubRepositorySelection.repository_id == source_repository_id,
+            )
+        )
+        if repository is None:
+            raise NotFoundError("Selected GitHub repository", source_repository_id)
+        connection = await db.scalar(
+            select(GitHubConnection).where(GitHubConnection.owner_id == owner_id)
+        )
+        if connection is None:
+            raise HTTPException(status_code=409, detail="Connect a GitHub account first.")
+        token = await github_oauth_client.access_token(connection, db)
+        parts = repository.full_name.split("/")
+        if len(parts) != 2 or any(not part for part in parts):
+            raise HTTPException(status_code=409, detail="The selected repository metadata is invalid.")
+        from urllib.parse import quote
+
+        payload = await github_oauth_client.api_get_json(
+            f"/repos/{quote(parts[0], safe='')}/{quote(parts[1], safe='')}/issues/{source_id}",
+            token,
+        )
+        if not isinstance(payload, dict) or payload.get("number") != int(source_id):
+            raise NotFoundError("GitHub issue", source_id)
+        title, body = payload.get("title"), payload.get("body")
+        if not isinstance(title, str):
+            raise HTTPException(status_code=502, detail="GitHub returned an invalid issue.")
+        return title, f"Issue #{source_id}: {title}\n{body if isinstance(body, str) else ''}"
+
     raise HTTPException(status_code=422, detail="Unsupported planner source type.")
 
 
@@ -130,7 +167,12 @@ async def create_action_item(
     owner_id = authenticated.account.id
     if body.source_id:
         _, source_text = await _load_owned_source(
-            body.source_type or "", body.source_id, owner_id, db, parser
+            body.source_type or "",
+            body.source_id,
+            owner_id,
+            db,
+            parser,
+            body.source_repository_id,
         )
         if not body.source_quote or body.source_quote not in source_text[:24_000]:
             raise HTTPException(
