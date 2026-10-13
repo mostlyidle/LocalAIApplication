@@ -109,7 +109,6 @@ export function ContainerUploader({ containerName, onUploaded }: ContainerUpload
         ref={folderInputRef}
         type="file"
         multiple
-        accept={ACCEPTED_FILE_TYPES.join(",")}
         aria-label="Select folder to add to container"
         className="sr-only"
         onChange={handleInput}
