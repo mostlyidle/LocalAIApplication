@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import RAGPage from "../page";
@@ -16,15 +16,24 @@ vi.mock("lucide-react", () => ({
 // Mock the API module
 vi.mock("@/lib/api", () => ({
   getRAGCollections: vi.fn(),
+  getRAGContainers: vi.fn(),
   searchRAG: vi.fn(),
   deleteRAGCollection: vi.fn(),
   getDocuments: vi.fn(),
   ingestRAG: vi.fn(),
+  getRAGContainerFiles: vi.fn(),
+  createRAGContainer: vi.fn(),
+  uploadRAGContainerFiles: vi.fn(),
+  loadRAGContainer: vi.fn(),
+  retryRAGContainerFile: vi.fn(),
+  deleteRAGContainerFile: vi.fn(),
+  deleteRAGContainer: vi.fn(),
 }));
 
 import * as api from "@/lib/api";
 
 const mockGetCollections = api.getRAGCollections as ReturnType<typeof vi.fn>;
+const mockGetContainers = api.getRAGContainers as ReturnType<typeof vi.fn>;
 const mockSearchRAG = api.searchRAG as ReturnType<typeof vi.fn>;
 const mockDeleteCollection = api.deleteRAGCollection as ReturnType<typeof vi.fn>;
 const mockGetDocuments = api.getDocuments as ReturnType<typeof vi.fn>;
@@ -39,6 +48,7 @@ describe("RAG Page", () => {
         { name: "reports", count: 3 },
       ],
     });
+    mockGetContainers.mockResolvedValue([]);
     mockGetDocuments.mockResolvedValue({
       documents: [
         { id: "d1", filename: "report.pdf", format: "pdf", size_bytes: 10240, status: "completed" },
@@ -68,9 +78,9 @@ describe("RAG Page", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText("documents")).toBeInTheDocument();
+      expect(within(screen.getByLabelText("Search index")).getByRole("option", { name: "documents" })).toBeInTheDocument();
       expect(screen.getByText("10 documents")).toBeInTheDocument();
-      expect(screen.getByText("reports")).toBeInTheDocument();
+      expect(within(screen.getByLabelText("Search index")).getByRole("option", { name: "reports" })).toBeInTheDocument();
       expect(screen.getByText("3 documents")).toBeInTheDocument();
     });
   });
@@ -166,7 +176,7 @@ describe("RAG Page", () => {
     await userEvent.click(screen.getByRole("button", { name: /Search/i }));
 
     await waitFor(() => {
-      expect(mockSearchRAG).toHaveBeenCalledWith("revenue", undefined, undefined, "rag_v2");
+      expect(mockSearchRAG).toHaveBeenCalledWith("revenue", "documents", undefined, "rag_v2");
       expect(screen.getByText("RRF 0.0328")).toBeInTheDocument();
     });
   });
@@ -213,7 +223,7 @@ describe("RAG Page", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText("documents")).toBeInTheDocument();
+      expect(within(screen.getByLabelText("Search index")).getByRole("option", { name: "documents" })).toBeInTheDocument();
     });
 
     // Find the delete button for the first collection
@@ -235,7 +245,7 @@ describe("RAG Page", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText("documents")).toBeInTheDocument();
+      expect(within(screen.getByLabelText("Search index")).getByRole("option", { name: "documents" })).toBeInTheDocument();
     });
 
     const trashIcons = screen.getAllByTestId("trash-icon");

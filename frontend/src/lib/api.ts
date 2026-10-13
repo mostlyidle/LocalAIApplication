@@ -1,6 +1,6 @@
 import { API_V1 } from "./constants";
 import { getCsrfToken } from "./auth-session";
-import type { z } from "zod";
+import { z } from "zod";
 import {
   healthSchema,
   chatResponseSchema,
@@ -16,6 +16,10 @@ import {
   ragSearchResultSchema,
   ragIngestSchema,
   ragCollectionsSchema,
+  ragContainerFileSchema,
+  ragContainerSchema,
+  ragContainersSchema,
+  ragContainerUploadResultSchema,
   toolsListSchema,
   agentCatalogSchema,
   memoryListSchema,
@@ -39,6 +43,9 @@ import {
   type MemorySettings,
   type ActionItemRecord,
 } from "./schemas";
+
+export type RAGContainer = z.infer<typeof ragContainerSchema>;
+export type RAGContainerFile = z.infer<typeof ragContainerFileSchema>;
 
 class ApiError extends Error {
   constructor(
@@ -420,6 +427,78 @@ export async function getRAGCollections() {
 
 export async function deleteRAGCollection(name: string) {
   return apiFetch<{ deleted: boolean }>(`/rag/collections/${name}`, { method: "DELETE" });
+}
+
+export async function getRAGContainers() {
+  return apiFetch("/rag/containers", undefined, ragContainersSchema);
+}
+
+export async function createRAGContainer(displayName: string) {
+  return apiFetch("/rag/containers", {
+    method: "POST",
+    body: JSON.stringify({ display_name: displayName }),
+  }, ragContainerSchema);
+}
+
+export async function getRAGContainerFiles(name: string) {
+  return apiFetch(
+    `/rag/containers/${encodeURIComponent(name)}/files`,
+    undefined,
+    z.array(ragContainerFileSchema),
+  );
+}
+
+export async function uploadRAGContainerFiles(
+  name: string,
+  entries: Array<{ file: File; relativePath: string }>,
+) {
+  const formData = new FormData();
+  for (const { file, relativePath } of entries) {
+    formData.append("files", file, file.name);
+    formData.append("relative_paths", relativePath);
+  }
+  const csrfToken = getCsrfToken();
+  const response = await fetch(`${API_V1}/rag/containers/${encodeURIComponent(name)}/files`, {
+    method: "POST",
+    body: formData,
+    credentials: "include",
+    headers: csrfToken ? { "X-CSRF-Token": csrfToken } : {},
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new ApiError(
+      body?.error?.code ?? "UPLOAD_ERROR",
+      body?.error?.message ?? body?.detail ?? response.statusText,
+      response.status,
+    );
+  }
+  return ragContainerUploadResultSchema.parse(await response.json());
+}
+
+export async function loadRAGContainer(name: string) {
+  return apiFetch<{ queued: number }>(`/rag/containers/${encodeURIComponent(name)}/load`, {
+    method: "POST",
+  });
+}
+
+export async function retryRAGContainerFile(name: string, fileId: string) {
+  return apiFetch(
+    `/rag/containers/${encodeURIComponent(name)}/files/${encodeURIComponent(fileId)}/retry`,
+    { method: "POST" },
+    ragContainerFileSchema,
+  );
+}
+
+export async function deleteRAGContainerFile(name: string, fileId: string) {
+  return apiFetch<{ deleted: boolean }>(`/rag/containers/${encodeURIComponent(name)}/files/${encodeURIComponent(fileId)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function deleteRAGContainer(name: string) {
+  return apiFetch<{ deleted: boolean }>(`/rag/containers/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
 }
 
 // --- Health ---
