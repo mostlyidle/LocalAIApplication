@@ -4,12 +4,15 @@ import userEvent from "@testing-library/user-event";
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import { DocumentViewer } from "../DocumentViewer";
 import type { Document } from "@/types/document";
+import * as api from "@/lib/api";
 
 // Mock lucide-react icons
 vi.mock("lucide-react", () => ({
   FileText: (props: Record<string, unknown>) => <svg data-testid="file-icon" {...props} />,
   Trash2: (props: Record<string, unknown>) => <svg data-testid="trash-icon" {...props} />,
   Search: (props: Record<string, unknown>) => <svg data-testid="search-icon" {...props} />,
+  Database: (props: Record<string, unknown>) => <svg data-testid="database-icon" {...props} />,
+  XIcon: (props: Record<string, unknown>) => <svg data-testid="close-icon" {...props} />,
   Loader2: (props: Record<string, unknown>) => <svg data-testid="loader-icon" {...props} />,
 }));
 
@@ -114,6 +117,42 @@ describe("DocumentViewer", () => {
       <DocumentViewer document={pendingDoc} onDelete={onDelete} onAnalyze={onAnalyze} />
     );
     expect(screen.getByRole("button", { name: /Analyze/i })).not.toBeDisabled();
+  });
+
+  it("queues an existing document in the selected private container", async () => {
+    vi.spyOn(api, "getRAGContainers").mockResolvedValue([
+      {
+        name: "container_research",
+        display_name: "Research",
+        file_count: 0,
+        indexed_file_count: 0,
+        staged_file_count: 0,
+        queued_file_count: 0,
+        processing_file_count: 0,
+        failed_file_count: 0,
+        chunk_count: 0,
+      },
+    ]);
+    const queueDocument = vi.spyOn(api, "queueDocumentInRAGContainer").mockResolvedValue({
+      id: "file-1",
+      relative_path: "report.pdf",
+      status: "queued",
+      chunk_count: 0,
+      size_bytes: baseDoc.sizeBytes,
+      last_error: null,
+    });
+    const user = userEvent.setup();
+    render(
+      <DocumentViewer document={baseDoc} onDelete={onDelete} onAnalyze={onAnalyze} />
+    );
+
+    await user.click(screen.getByRole("button", { name: /Add to Knowledge Base/i }));
+    await screen.findByRole("option", { name: "Research" });
+    await user.click(screen.getByRole("button", { name: /Add to container/i }));
+
+    await waitFor(() => {
+      expect(queueDocument).toHaveBeenCalledWith("container_research", "doc-1");
+    });
   });
 
   it("disables Analyze button during analysis", async () => {

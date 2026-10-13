@@ -11,15 +11,28 @@ interface QueryEditorProps {
   onNaturalLanguageQuery: (query: string) => Promise<void>;
   onRawSQLExecute: (sql: string) => Promise<void>;
   isLoading: boolean;
+  rawSQL?: string;
+  onRawSQLChange?: (sql: string) => void;
+  activeTab?: "natural" | "sql";
+  onActiveTabChange?: (tab: "natural" | "sql") => void;
 }
 
 export function QueryEditor({
   onNaturalLanguageQuery,
   onRawSQLExecute,
   isLoading,
+  rawSQL: rawSQLProp,
+  onRawSQLChange,
+  activeTab: activeTabProp,
+  onActiveTabChange,
 }: QueryEditorProps) {
   const [nlQuery, setNlQuery] = useState("");
-  const [rawSQL, setRawSQL] = useState("");
+  const [localRawSQL, setLocalRawSQL] = useState("");
+  const [localActiveTab, setLocalActiveTab] = useState<"natural" | "sql">("natural");
+  const rawSQL = rawSQLProp ?? localRawSQL;
+  const updateRawSQL = onRawSQLChange ?? setLocalRawSQL;
+  const activeTab = activeTabProp ?? localActiveTab;
+  const updateActiveTab = onActiveTabChange ?? setLocalActiveTab;
 
   const handleNLSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -39,7 +52,7 @@ export function QueryEditor({
         <CardTitle className="text-sm">Query</CardTitle>
       </CardHeader>
       <CardContent>
-        <Tabs defaultValue="natural">
+        <Tabs value={activeTab} onValueChange={(value) => updateActiveTab(value as "natural" | "sql")}>
           <TabsList className="mb-3">
             <TabsTrigger value="natural" className="text-xs">
               <Sparkles className="mr-1.5 h-3 w-3" />
@@ -75,7 +88,7 @@ export function QueryEditor({
             <form onSubmit={handleSQLSubmit} className="space-y-3">
               <Textarea
                 value={rawSQL}
-                onChange={(e) => setRawSQL(e.target.value)}
+                onChange={(e) => updateRawSQL(e.target.value)}
                 placeholder="SELECT * FROM customers LIMIT 10;"
                 className="min-h-[80px] resize-none font-mono text-sm"
                 rows={3}

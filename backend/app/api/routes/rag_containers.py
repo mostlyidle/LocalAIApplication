@@ -46,6 +46,7 @@ async def list_containers(
     authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> list[RAGContainerInfo]:
+    """List the authenticated account's private RAG containers."""
     containers = list(
         (
             await db.scalars(
@@ -93,6 +94,7 @@ async def create_container(
     authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> RAGContainerInfo:
+    """Create a private RAG container for the authenticated account."""
     container = RagCollection(
         name=f"container_{uuid.uuid4().hex}",
         display_name=body.display_name,
@@ -123,6 +125,7 @@ async def load_container(
     authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> dict[str, int]:
+    """Queue staged files in a private container for indexing."""
     await _owned_container(db, name, authenticated.account.id)
     result = await db.execute(
         update(RagContainerFile)
@@ -142,6 +145,7 @@ async def list_container_files(
     authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> list[RAGContainerFileInfo]:
+    """List files staged or indexed in an owned private container."""
     await _owned_container(db, name, authenticated.account.id)
     rows = (
         await db.execute(
@@ -154,6 +158,67 @@ async def list_container_files(
     return [_file_info(staged, size_bytes) for staged, size_bytes in rows]
 
 
+@router.post(
+    "/{name}/documents/{document_id}",
+    response_model=RAGContainerFileInfo,
+    status_code=202,
+)
+async def queue_existing_document(
+    name: str,
+    document_id: str,
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+) -> RAGContainerFileInfo:
+    """Queue an existing owned document for indexing in a private container."""
+    await _owned_container(db, name, authenticated.account.id)
+    document = await db.scalar(
+        select(Document).where(
+            Document.id == document_id,
+            Document.owner_id == authenticated.account.id,
+        )
+    )
+    if document is None:
+        raise NotFoundError("Document", document_id)
+
+    relative_path = document.filename.replace("\\", "/").rsplit("/", 1)[-1]
+    _validate_relative_path(relative_path, relative_path)
+    file_path = Path(document.storage_path)
+    if not file_path.is_file():
+        raise NotFoundError("Document file", document_id)
+    digest = hashlib.sha256(file_path.read_bytes()).hexdigest()
+    staged = await db.scalar(
+        select(RagContainerFile).where(
+            RagContainerFile.collection_name == name,
+            RagContainerFile.relative_path == relative_path,
+        )
+    )
+    if staged is not None and staged.document_id != document_id:
+        raise HTTPException(
+            status_code=409,
+            detail="A different document with this filename is already in the container.",
+        )
+    if staged is None:
+        staged = RagContainerFile(
+            collection_name=name,
+            document_id=document_id,
+            relative_path=relative_path,
+            sha256=digest,
+            status="queued",
+            available_at=datetime.now(UTC),
+        )
+        db.add(staged)
+    elif staged.status in {"staged", "failed"}:
+        staged.sha256 = digest
+        staged.status = "queued"
+        staged.attempts = 0
+        staged.available_at = datetime.now(UTC)
+        staged.lease_until = None
+        staged.last_error = None
+    await db.commit()
+    await db.refresh(staged)
+    return _file_info(staged, document.size_bytes)
+
+
 @router.post("/{name}/files", response_model=RAGContainerUploadResult)
 @limiter.limit(settings.rate_limit_upload)
 async def upload_container_file(
@@ -164,6 +229,7 @@ async def upload_container_file(
     authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> RAGContainerUploadResult:
+    """Stage supported files under validated relative paths."""
     await _owned_container(db, name, authenticated.account.id)
     if len(files) != len(relative_paths):
         raise HTTPException(status_code=422, detail="Each file needs one relative path.")
@@ -211,6 +277,7 @@ async def upload_container_file(
                 container=name,
                 relative_path=label,
                 error_type=type(exc).__name__,
+                exc_info=True,
             )
             failures.append(
                 RAGContainerFileUploadFailure(
@@ -330,6 +397,7 @@ async def retry_container_file(
     authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> RAGContainerFileInfo:
+    """Retry indexing for a failed file in an owned container."""
     await _owned_container(db, name, authenticated.account.id)
     staged = await _container_file(db, name, file_id)
     if staged.status != "failed":
@@ -362,6 +430,7 @@ async def delete_container_file(
     db: AsyncSession = Depends(get_db),  # noqa: B008
     vector_store: VectorStoreService = Depends(get_vector_store),  # noqa: B008
 ) -> dict[str, bool]:
+    """Remove a file and its indexed vectors from an owned container."""
     await _owned_container(db, name, authenticated.account.id)
     staged = await _container_file(db, name, file_id)
     if staged.status in {"processing", "deleting"}:
@@ -401,6 +470,7 @@ async def delete_container(
     db: AsyncSession = Depends(get_db),  # noqa: B008
     vector_store: VectorStoreService = Depends(get_vector_store),  # noqa: B008
 ) -> dict[str, bool]:
+    """Remove an owned container and all of its staged files and vectors."""
     container = await _owned_container(db, name, authenticated.account.id)
     files = list(
         (

@@ -147,7 +147,7 @@ export default function SettingsPage() {
 
   const StatusIcon = ({ status }: { status: string }) =>
     status === "ok" || status === "healthy" ? (
-      <CheckCircle className="h-4 w-4 text-green-500" />
+      <CheckCircle className="h-4 w-4 text-mint-ink" />
     ) : (
       <XCircle className="h-4 w-4 text-destructive" />
     );

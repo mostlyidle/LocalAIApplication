@@ -1,12 +1,14 @@
 "use client";
 
-import { useRef, useEffect, useState, type FormEvent, type ChangeEvent } from "react";
-import { Send, Plus, Loader2, Paperclip, X, Image as ImageIcon, History, Sparkles, Lightbulb, BookOpen, ListChecks, PenLine } from "lucide-react";
+import { useRef, useEffect, useState, type FormEvent, type ChangeEvent, type ReactNode } from "react";
+import Link from "next/link";
+import { Send, Plus, Loader2, Paperclip, X, Image as ImageIcon, History, Sparkles, Lightbulb, BookOpen, ListChecks, PenLine, SlidersHorizontal, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useChat } from "@/hooks/useChat";
 import {
   createMemory,
@@ -15,6 +17,7 @@ import {
   getAgentCatalog,
   getConversation,
   getConversations,
+  getDocuments,
   updateConversationMemorySettings,
   uploadDocument,
 } from "@/lib/api";
@@ -90,9 +93,11 @@ export function ChatWindow() {
   const [workflowText, setWorkflowText] = useState("");
   const [selectedModel, setSelectedModel] = useState("");
   const [temperature, setTemperature] = useState(0.1);
-  const [profileError, setProfileError] = useState("");
+  const [profileError, setProfileError] = useState<ReactNode>("");
+  const [optionsOpen, setOptionsOpen] = useState(false);
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyQuery, setHistoryQuery] = useState("");
   const [historyLoading, setHistoryLoading] = useState(false);
   const [conversationError, setConversationError] = useState("");
   const [conversations, setConversations] = useState<Awaited<ReturnType<typeof getConversations>>["conversations"]>([]);
@@ -111,6 +116,31 @@ export function ChatWindow() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const selectedProfile = agents.find((agent) => agent.name === selectedAgent);
+  const filteredConversations = conversations.filter((conversation) =>
+    (conversation.title || "Untitled conversation").toLowerCase().includes(historyQuery.trim().toLowerCase()),
+  );
+
+  useEffect(() => {
+    const documentId = new URLSearchParams(window.location.search).get("documentId");
+    if (!documentId) return;
+
+    let active = true;
+    getDocuments().then(({ documents }) => {
+      const document = documents.find((item) => item.id === documentId);
+      if (!active || !document) return;
+      setAttachments((current) => current.some((item) => item.uploadedPath === document.id)
+        ? current
+        : [...current, {
+            file: new File([], document.filename),
+            uploadedPath: document.id,
+            uploading: false,
+          }]);
+      setInput((current) => current || `Help me understand ${document.filename}.`);
+    }).catch(() => {
+      if (active) setProfileError("Could not prepare the selected document for chat.");
+    });
+    return () => { active = false; };
+  }, []);
   const conversationStorageKey = account
     ? `${ACTIVE_CONVERSATION_STORAGE_PREFIX}${account.id}`
     : undefined;
@@ -395,7 +425,14 @@ export function ChatWindow() {
       }
       if (selectedProfile.target === "rag") {
         if (!collection) {
-          setProfileError("Create a container on the RAG page before using this profile.");
+          setProfileError(
+            <span>
+              No vector container selected for RAG search.
+              <Link href="/rag" className="ml-2 font-semibold underline hover:text-foreground">
+                Open RAG Containers →
+              </Link>
+            </span>,
+          );
           return;
         }
         options.collection = collection;
@@ -496,28 +533,44 @@ export function ChatWindow() {
         </div>
       </div>
       {recallSettingError && <p role="alert" className="border-b px-4 py-2 text-xs text-destructive">{recallSettingError}</p>}
-      {historyOpen && (
-        <div aria-label="Conversation history" className="max-h-48 space-y-1 overflow-y-auto border-b p-2">
-          {historyLoading && <p className="px-2 py-1 text-xs text-muted-foreground">Loading conversations…</p>}
-          {!historyLoading && conversations.length === 0 && !conversationError && (
-            <p className="px-2 py-1 text-xs text-muted-foreground">No saved conversations yet.</p>
-          )}
-          {conversations.map((conversation) => (
-            <button
-              key={conversation.id}
-              type="button"
-              onClick={() => void selectConversation(conversation.id)}
-              disabled={restoringConversation || isStreaming}
-              className={`flex w-full items-center justify-between gap-3 rounded-md px-2 py-2 text-left text-sm hover:bg-muted disabled:opacity-50 ${conversation.id === conversationId ? "bg-muted" : ""}`}
-            >
-              <span className="truncate">{conversation.title || "Untitled conversation"}</span>
-              <span className="shrink-0 text-xs text-muted-foreground">
-                {conversation.message_count} · {new Date(conversation.last_message_at).toLocaleDateString()}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
+      <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>
+        <SheetContent aria-label="Conversation history" className="gap-0 p-0 sm:max-w-md">
+          <SheetHeader className="border-b">
+            <SheetTitle>Conversation history</SheetTitle>
+            <SheetDescription>Return to a conversation from your saved chats.</SheetDescription>
+          </SheetHeader>
+          <div className="border-b p-3">
+            <label htmlFor="conversation-search" className="sr-only">Search conversations</label>
+            <div className="flex items-center gap-2 rounded-lg border bg-card px-3">
+              <Search className="size-4 text-muted-foreground" aria-hidden="true" />
+              <input id="conversation-search" value={historyQuery} onChange={(event) => setHistoryQuery(event.target.value)} placeholder="Search conversations" className="h-11 min-w-0 flex-1 bg-transparent text-sm outline-none" />
+            </div>
+          </div>
+          <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-3">
+            {historyLoading && <p className="px-2 py-1 text-sm text-muted-foreground">Loading conversations…</p>}
+            {!historyLoading && conversations.length === 0 && !conversationError && (
+              <p className="px-2 py-1 text-sm text-muted-foreground">No saved conversations yet.</p>
+            )}
+            {!historyLoading && conversations.length > 0 && filteredConversations.length === 0 && (
+              <p className="px-2 py-1 text-sm text-muted-foreground">No conversations match that search.</p>
+            )}
+            {filteredConversations.map((conversation) => (
+              <button
+                key={conversation.id}
+                type="button"
+                onClick={() => void selectConversation(conversation.id)}
+                disabled={restoringConversation || isStreaming}
+                className={`flex min-h-11 w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm hover:bg-muted disabled:opacity-50 ${conversation.id === conversationId ? "bg-muted" : ""}`}
+              >
+                <span className="truncate">{conversation.title || "Untitled conversation"}</span>
+                <span className="shrink-0 text-xs text-muted-foreground">
+                  {conversation.message_count} · {new Date(conversation.last_message_at).toLocaleDateString()}
+                </span>
+              </button>
+            ))}
+          </div>
+        </SheetContent>
+      </Sheet>
       {conversationError && <p role="alert" className="border-b px-4 py-2 text-xs text-destructive">{conversationError}</p>}
       {/* Messages area */}
       <ScrollArea ref={scrollRef} className="min-h-0 flex-1 px-4 py-5 sm:px-6">
@@ -645,6 +698,12 @@ export function ChatWindow() {
               </option>
             ))}
           </select>
+          <Button type="button" variant="ghost" size="sm" className="min-h-11 rounded-xl" onClick={() => setOptionsOpen((open) => !open)} aria-expanded={optionsOpen} aria-controls="agent-options">
+            <SlidersHorizontal className="size-3.5" aria-hidden="true" />
+            Options
+          </Button>
+        </div>
+        {optionsOpen && <div id="agent-options" className="mx-auto mb-3 flex max-w-3xl flex-wrap items-end gap-3 rounded-xl border bg-muted/40 p-3">
           {selectedProfile?.inference && (
             <>
               <label className="text-xs text-muted-foreground" htmlFor="agent-model">Model</label>
@@ -722,8 +781,8 @@ export function ChatWindow() {
           {selectedProfile?.target === "image_generation" && (
             <label className="flex min-w-48 flex-1 flex-col gap-1 text-xs text-muted-foreground">ComfyUI workflow<textarea aria-label="ComfyUI workflow" value={workflowText} onChange={(event) => setWorkflowText(event.target.value)} placeholder="Paste exported ComfyUI API workflow JSON" rows={2} className="min-h-11 w-full rounded-xl border border-input bg-card px-3 py-2 text-base sm:text-sm text-foreground" /></label>
           )}
-        </div>
-        {selectedProfile && <p className="mx-auto mb-3 max-w-3xl text-xs leading-relaxed text-muted-foreground">{selectedProfile.description}</p>}
+          {selectedProfile && <p className="w-full text-xs leading-relaxed text-muted-foreground">{selectedProfile.description}</p>}
+        </div>}
         <form
           onSubmit={handleSubmit}
           className="mx-auto max-w-3xl rounded-2xl border border-input bg-card p-3 shadow-sm focus-within:border-primary/60 sm:p-4"
