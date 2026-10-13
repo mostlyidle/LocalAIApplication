@@ -208,14 +208,26 @@ class GitHubOAuthClient:
         """Read JSON from a fixed, internally constructed GitHub API path."""
         return await self._api_request(path, token, params)
 
+    async def api_post_json(self, path: str, token: str, payload: dict[str, str]) -> object:
+        """Write a caller-reviewed issue or comment to a fixed GitHub API path."""
+        return await self._api_request(path, token, json_body=payload, method="POST")
+
     async def _api_request(
-        self, path: str, token: str, params: dict[str, str | int] | None = None
+        self,
+        path: str,
+        token: str,
+        params: dict[str, str | int] | None = None,
+        *,
+        method: str = "GET",
+        json_body: dict[str, str] | None = None,
     ) -> object:
         try:
             async with httpx.AsyncClient(timeout=15) as client:
-                response = await client.get(
+                response = await client.request(
+                    method,
                     f"{settings.github_api_url.rstrip('/')}{path}",
                     params=params,
+                    json=json_body,
                     headers={
                         "Accept": "application/vnd.github+json",
                         "Authorization": f"Bearer {token}",
