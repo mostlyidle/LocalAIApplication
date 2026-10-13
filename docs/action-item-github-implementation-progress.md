@@ -12,7 +12,7 @@ Keep the existing LocalAIApplication chat and document parsing experience. Add a
 - [x] 2. Source-grounded planner proposals from owned chat, meeting, and document records; accept/edit/ignore review flow; verify with mocked LLM and browser.
 - [x] 3. Per-account GitHub OAuth connection, encrypted credentials, and disconnect.
 - [x] 4. Read-only GitHub project agent for issues, pull requests/diffs, and checks, with safe links and task proposals; verify pagination, errors, ownership, and prompt-injection handling against fake GitHub.
-- [ ] 5. User-confirmed GitHub issue/comment writes, end-to-end tests, docs and release review.
+- [x] 5. User-confirmed GitHub issue/comment writes, end-to-end tests, docs and release review.
 
 ## Checkpoints
 
@@ -65,8 +65,18 @@ Keep the existing LocalAIApplication chat and document parsing experience. Add a
 - Ollama smoke: `llama3.2:3b` returned a grounded task with an exact quote against the Docker Ollama service. The configured `llama3.1:8b` process was killed by Ollama with HTTP 500 on this host, so that larger-model run is a local resource limitation.
 - Browser E2E remains unavailable because Playwright Chromium could not be installed successfully. Component and authenticated API integration tests cover the flow; a live GitHub App test also needs operator-configured app credentials.
 - Feature commit: `9a30da7` (`feat(github): add read-only project agent`).
+- Docs checkpoint: `f082318` (`docs: record GitHub project agent checkpoint`).
+
+### Milestone 5 — User-confirmed GitHub issue and comment writes
+
+- Added only two GitHub write operations: create an issue and post a comment. Both endpoints require a currently selected repository, validate bounded content, use the user's token, and return safe response fields. Permission and rate-limit errors remain explicit and safe.
+- Added a two-step UI for both operations: review the exact repository and title/body, then separately click to submit. Switching repositories clears reviewed drafts; planner suggestions never trigger GitHub writes.
+- Updated setup docs for least-privilege GitHub App permissions: Metadata read, Pull requests read, Checks read, and Issues read/write for issue/comment creation.
+- Verification: full backend suite `797 passed`; full frontend suite `333 passed`; Ruff, ESLint, TypeScript, `git diff --check`, and optimized `next build` passed. Mocked GitHub tests cover exact HTTP methods/payloads, selected-repo boundaries, permission denial, and rate limits; component tests verify no write occurs before final confirmation.
+- Limitations: browser-run E2E remains unavailable because Playwright Chromium could not be installed. The current running GitHub App has no live OAuth credentials in this environment; live writes were not sent to a real repository.
+- Feature commit: `2e7f9c3` (`feat(github): add confirmed issue and comment writes`).
 - Docs checkpoint: pending.
 
 ## Resume instructions
 
-Continue with milestone 5: add only user-confirmed GitHub issue and comment writes. Keep writes limited to explicitly selected repositories, show exact title/body before each request, require a separate user action to submit, handle GitHub permission/API errors, and test with the fake GitHub service. After each completed milestone, update this file with changed files, commit SHA, exact checks and results, and the next action. Keep account ownership filters on every persistent record and GitHub request.
+Implementation stages 1–5 are complete on this feature branch. If resuming, run the release review and verify the target GitHub App's Issues write permission before deploying; do not merge to `main` unless the user requests it. All persistent GitHub data and outbound calls remain scoped to the signed-in account and explicitly selected repositories.
