@@ -33,8 +33,8 @@ export function DocumentViewer({ document: doc, onDelete, onAnalyze }: DocumentV
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
   const [indexDialogOpen, setIndexDialogOpen] = useState(false);
-  const [collections, setCollections] = useState<string[]>([]);
-  const [collection, setCollection] = useState("documents");
+  const [containers, setContainers] = useState<api.RAGContainer[]>([]);
+  const [containerName, setContainerName] = useState("");
   const [isIndexing, setIsIndexing] = useState(false);
   const [indexError, setIndexError] = useState<string | null>(null);
 
@@ -55,8 +55,11 @@ export function DocumentViewer({ document: doc, onDelete, onAnalyze }: DocumentV
     setIndexError(null);
     setIndexDialogOpen(true);
     try {
-      const result = await api.getRAGCollections();
-      setCollections(result.collections.map((item) => item.name));
+      const result = await api.getRAGContainers();
+      setContainers(result);
+      setContainerName((current) => result.some((item) => item.name === current)
+        ? current
+        : result[0]?.name ?? "");
     } catch (error) {
       setIndexError(error instanceof Error ? error.message : "Could not load RAG indexes.");
     }
@@ -66,7 +69,8 @@ export function DocumentViewer({ document: doc, onDelete, onAnalyze }: DocumentV
     setIsIndexing(true);
     setIndexError(null);
     try {
-      await api.ingestRAG(doc.id, collection);
+      if (!containerName) return;
+      await api.queueDocumentInRAGContainer(containerName, doc.id);
       setIndexDialogOpen(false);
     } catch (error) {
       setIndexError(error instanceof Error ? error.message : "Could not add this document to the index.");
@@ -180,21 +184,29 @@ export function DocumentViewer({ document: doc, onDelete, onAnalyze }: DocumentV
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add to Knowledge Base</DialogTitle>
-            <DialogDescription>Choose the RAG index that should include {doc.filename}.</DialogDescription>
+            <DialogDescription>Choose the private container that should index {doc.filename}.</DialogDescription>
           </DialogHeader>
-          <label className="grid gap-2 text-sm font-medium" htmlFor={`rag-index-${doc.id}`}>
-            Target index
-            <select id={`rag-index-${doc.id}`} value={collection} onChange={(event) => setCollection(event.target.value)} className="h-11 rounded-xl border border-input bg-card px-3 text-base sm:text-sm">
-              {[...new Set(["documents", ...collections])].map((name) => <option key={name} value={name}>{name}</option>)}
-            </select>
-          </label>
+          {containers.length > 0 ? (
+            <label className="grid gap-2 text-sm font-medium" htmlFor={`rag-container-${doc.id}`}>
+              Target container
+              <select id={`rag-container-${doc.id}`} value={containerName} onChange={(event) => setContainerName(event.target.value)} className="h-11 rounded-xl border border-input bg-card px-3 text-base sm:text-sm">
+                {containers.map((container) => <option key={container.name} value={container.name}>{container.display_name}</option>)}
+              </select>
+            </label>
+          ) : !indexError ? (
+            <p className="text-sm text-muted-foreground">Create a private container before adding documents.</p>
+          ) : null}
           {indexError && <p role="alert" className="text-sm text-destructive">{indexError}</p>}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setIndexDialogOpen(false)}>Cancel</Button>
-            <Button type="button" onClick={() => void handleIndex()} disabled={isIndexing}>
+            {containers.length === 0 && !indexError ? (
+              <Button asChild><Link href="/rag">Create a container</Link></Button>
+            ) : (
+              <Button type="button" onClick={() => void handleIndex()} disabled={isIndexing || !containerName}>
               {isIndexing && <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />}
-              Add to index
-            </Button>
+                Add to container
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

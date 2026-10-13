@@ -20,6 +20,8 @@ import {
   ragContainerSchema,
   ragContainersSchema,
   ragContainerUploadResultSchema,
+  ragContainerLoadSchema,
+  deleteResultSchema,
   toolsListSchema,
   agentCatalogSchema,
   memoryListSchema,
@@ -476,9 +478,19 @@ export async function uploadRAGContainerFiles(
 }
 
 export async function loadRAGContainer(name: string) {
-  return apiFetch<{ queued: number }>(`/rag/containers/${encodeURIComponent(name)}/load`, {
-    method: "POST",
-  });
+  return apiFetch(
+    `/rag/containers/${encodeURIComponent(name)}/load`,
+    { method: "POST" },
+    ragContainerLoadSchema,
+  );
+}
+
+export async function queueDocumentInRAGContainer(name: string, documentId: string) {
+  return apiFetch(
+    `/rag/containers/${encodeURIComponent(name)}/documents/${encodeURIComponent(documentId)}`,
+    { method: "POST" },
+    ragContainerFileSchema,
+  );
 }
 
 export async function retryRAGContainerFile(name: string, fileId: string) {
@@ -490,15 +502,19 @@ export async function retryRAGContainerFile(name: string, fileId: string) {
 }
 
 export async function deleteRAGContainerFile(name: string, fileId: string) {
-  return apiFetch<{ deleted: boolean }>(`/rag/containers/${encodeURIComponent(name)}/files/${encodeURIComponent(fileId)}`, {
-    method: "DELETE",
-  });
+  return apiFetch(
+    `/rag/containers/${encodeURIComponent(name)}/files/${encodeURIComponent(fileId)}`,
+    { method: "DELETE" },
+    deleteResultSchema,
+  );
 }
 
 export async function deleteRAGContainer(name: string) {
-  return apiFetch<{ deleted: boolean }>(`/rag/containers/${encodeURIComponent(name)}`, {
-    method: "DELETE",
-  });
+  return apiFetch(
+    `/rag/containers/${encodeURIComponent(name)}`,
+    { method: "DELETE" },
+    deleteResultSchema,
+  );
 }
 
 // --- Health ---
