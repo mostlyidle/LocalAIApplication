@@ -73,6 +73,75 @@ class TestRAGContainers:
         summary = await client.get("/api/v1/rag/containers")
         assert summary.json()[0]["staged_file_count"] == 1
 
+    async def test_add_existing_document_to_container_queues_it_for_indexing(
+        self,
+        client: AsyncClient,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "upload_dir", str(tmp_path / "uploads"))
+        container = await _create_container(client)
+        uploaded = await client.post(
+            "/api/v1/documents/upload",
+            files={"file": ("report.txt", io.BytesIO(b"Report contents"), "text/plain")},
+        )
+        assert uploaded.status_code == 200
+        document = uploaded.json()
+
+        queued = await client.post(
+            f"/api/v1/rag/containers/{container['name']}/documents/{document['id']}"
+        )
+        listed = await client.get(f"/api/v1/rag/containers/{container['name']}/files")
+
+        assert queued.status_code == 202
+        assert queued.json()["relative_path"] == "report.txt"
+        assert queued.json()["status"] == "queued"
+        assert listed.json() == [queued.json()]
+
+    async def test_add_existing_document_rejects_another_accounts_document(
+        self,
+        client: AsyncClient,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        from app.config import settings
+        from app.dependencies import get_authenticated_session
+        from app.models.db_models import Account, AccountSession
+        from app.services.auth import AuthenticatedSession
+
+        monkeypatch.setattr(settings, "upload_dir", str(tmp_path / "uploads"))
+        container = await _create_container(client)
+        uploaded = await client.post(
+            "/api/v1/documents/upload",
+            files={"file": ("report.txt", io.BytesIO(b"Report contents"), "text/plain")},
+        )
+        document_id = uploaded.json()["id"]
+        other_account = Account(
+            id="10000000-0000-4000-8000-000000000000",
+            username="other-account",
+            display_name="Other Account",
+            password_hash="!test!",
+        )
+        other = AuthenticatedSession(
+            account=other_account,
+            session=AccountSession(
+                id="other-session",
+                account_id=other_account.id,
+                token_hash="1" * 64,
+                csrf_token="other-csrf-token",
+                expires_at=datetime.now(UTC),
+            ),
+        )
+        client._transport.app.dependency_overrides[get_authenticated_session] = lambda: other
+
+        response = await client.post(
+            f"/api/v1/rag/containers/{container['name']}/documents/{document_id}"
+        )
+
+        assert response.status_code == 404
+
     async def test_container_data_is_private(self, client: AsyncClient) -> None:
         from app.dependencies import get_authenticated_session
         from app.models.db_models import Account, AccountSession
