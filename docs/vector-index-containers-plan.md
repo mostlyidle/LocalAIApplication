@@ -16,13 +16,12 @@ do not restart planning or create another feature branch.
 | Container UI | Complete | Create/select containers; choose or drop files/folders; review per-file statuses; load, retry, remove, and delete. UI followed `ui-ux-pro-max`. |
 | Search and chat selection | Complete | Both surfaces select private containers or existing app collections and pass the selected index through existing retrieval. |
 | Focused verification | Complete | Frontend 52 focused tests, TypeScript, and backend focused tests/lint pass. ESLint reports one existing `<img>` warning in `ChatWindow.tsx:583`. |
-| Browser E2E | Core flow passed; folder chooser needs follow-up | Safari test created two containers, uploaded and indexed one file in each using live Qdrant and Ollama embeddings, searched both indexes, and confirmed retrieval stayed within the selected index. RAG chat showed both indexes and allowed switching. Safari's folder picker only allowed selecting individual files, so folder selection/drop and relative paths remain unverified. Chat generation was not run because the RAG profile's default `qwen2.5:7b` model is not installed. |
+| Browser E2E | Core flow passed; app folder upload needs fix/retest | Safari 27.0.1 on macOS 27.0.1: two containers indexed and searched separately; chat selector exposed both. Minimal picker A/B showed plain `webkitdirectory` selects a folder and preserves paths, while adding the app-style `accept` filter leaves Upload disabled. Likely fix: remove `accept` from folder input, then retest app-level folder upload. Chat generation not tested; default `qwen2.5:7b` is not installed. |
 | Checkpoint commit and push | Complete | Backend and frontend checkpoints are pushed to `origin/feature/vector-index-containers`. |
 
 **Current result:** implementation, focused verification, and the core browser flow are complete.
-The feature branch is ready for review with one browser-compatibility follow-up: validate folder
-selection/drop and relative paths in supported browsers. Also run the migration against the
-deployment database backend before release.
+Next, remove `accept` from the folder input and rerun Safari folder upload to verify relative
+paths. Also run the migration against the deployment database backend before release.
 
 **Checkpoint history:**
 
@@ -44,6 +43,10 @@ deployment database backend before release.
   selected index returned that index's own note. The RAG chat profile exposed both containers
   and accepted switching the selected index. Chat generation was not tested because its
   default `qwen2.5:7b` model was not installed.
+- Minimal Safari picker A/B (Safari 27.0.1/macOS 27.0.1): plain
+  `<input type="file" webkitdirectory multiple>` selected the fixture folder and returned both
+  files with correct `webkitRelativePath`; adding the app-style `accept` filter left Upload
+  disabled. See [Safari folder picker research](research/safari-folder-picker.md).
 
 ### Implementation choices made
 
@@ -140,11 +143,10 @@ path before offering them as selectable app containers.
 
 ## Open implementation details
 
-- Safari's native folder picker opened directories but did not allow selecting a directory;
-  one nested file chosen through the folder control was staged by basename. Verify folder
-  selection/drop and relative-path preservation in supported browsers, including which hidden
-  files are exposed. The file chooser filters by existing supported formats; every received
-  unsupported file gets an individual failure result.
+- The app's `accept` filter appears to disable Safari folder selection. Remove `accept` from the
+  folder input (keep it on the regular file input), then verify app-level folder selection/drop,
+  relative-path preservation, and hidden-file behavior. Backend format validation already
+  rejects unsupported files individually.
 - Verify the database migration against the repository's supported database backends.
 
 ## Rough estimate
