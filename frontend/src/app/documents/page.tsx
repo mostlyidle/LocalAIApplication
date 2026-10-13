@@ -1,6 +1,7 @@
 "use client";
 
-import { FileText } from "lucide-react";
+import { FileText, FileUp } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDocuments } from "@/hooks/useDocuments";
 import { DocumentUploader } from "@/components/documents/DocumentUploader";
@@ -33,8 +34,19 @@ export default function DocumentsPage() {
           ))}
         </div>
       ) : documents.length === 0 ? (
-        <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
-          No documents uploaded yet
+        <div className="flex min-h-56 flex-col items-center justify-center rounded-2xl border border-dashed bg-card/60 px-6 py-8 text-center">
+          <span className="mb-4 grid size-16 place-items-center rounded-2xl bg-peach-soft text-peach-ink">
+            <FileUp className="size-10" aria-hidden="true" />
+          </span>
+          <h2 className="text-lg font-semibold">Your document vault is empty</h2>
+          <p className="mt-2 max-w-lg text-sm text-muted-foreground">
+            Upload PDFs, Office documents, CSVs, or images to summarize, chat, or index them.
+          </p>
+          <div className="mt-4 flex flex-wrap justify-center gap-2">
+            {["PDF", "DOCX", "XLSX", "CSV", "PNG", "TXT"].map((format) => (
+              <Badge key={format} variant="secondary">{format}</Badge>
+            ))}
+          </div>
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

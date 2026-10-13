@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Moon, Sun, Monitor, LogOut } from "lucide-react";
 import { toast } from "sonner";
@@ -14,6 +15,8 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { useTheme } from "next-themes";
 import { useAuth } from "./AuthProvider";
+import * as api from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 const pageTitles: Record<string, string> = {
   "/": "Dashboard",
@@ -28,6 +31,37 @@ const pageTitles: Record<string, string> = {
   "/settings": "Settings",
 };
 
+function SystemStatusPill() {
+  const [health, setHealth] = useState<"connected" | "disconnected" | "checking">("checking");
+
+  useEffect(() => {
+    let active = true;
+    api.getHealth()
+      .then((data) => {
+        if (active) setHealth(data.ollama.status === "healthy" ? "connected" : "disconnected");
+      })
+      .catch(() => {
+        if (active) setHealth("disconnected");
+      });
+    return () => { active = false; };
+  }, []);
+
+  const label = health === "connected" ? "Ollama Online"
+    : health === "disconnected" ? "Ollama Offline" : "Checking Ollama";
+
+  return (
+    <div aria-live="polite" className="hidden items-center gap-2 rounded-full border bg-background/80 px-2.5 py-1 text-xs sm:flex">
+      <span aria-hidden="true" className={cn(
+        "size-2 rounded-full",
+        health === "connected" && "animate-pulse bg-mint-ink",
+        health === "disconnected" && "bg-destructive",
+        health === "checking" && "bg-peach-ink",
+      )} />
+      <span className="font-medium text-muted-foreground">{label}</span>
+    </div>
+  );
+}
+
 export function Header() {
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
@@ -41,6 +75,7 @@ export function Header() {
       <Separator orientation="vertical" className="data-[orientation=vertical]:h-5" />
       <span className="text-sm font-semibold">{title}</span>
       <div className="ml-auto flex items-center gap-2">
+        <SystemStatusPill />
         {account && (
           <>
             <span className="hidden items-center gap-2 text-sm font-medium sm:flex">

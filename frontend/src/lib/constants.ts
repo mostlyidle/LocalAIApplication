@@ -31,16 +31,16 @@ export const AGENT_LABELS: Record<string, string> = {
 };
 
 export const AGENT_COLORS: Record<string, string> = {
-  chat: "bg-blue-500",
-  sql: "bg-emerald-500",
-  document: "bg-amber-500",
-  rag: "bg-violet-500",
-  rag_v2: "bg-indigo-600",
-  web: "bg-rose-500",
-  image_analysis: "bg-cyan-500",
-  image_fraud: "bg-orange-500",
-  stock_research: "bg-green-600",
-  software_engineer: "bg-slate-600",
-  image_generation: "bg-fuchsia-500",
-  document_analytics: "bg-amber-600",
+  chat: "bg-violet-soft text-violet-ink",
+  sql: "bg-mint-soft text-mint-ink",
+  document: "bg-peach-soft text-peach-ink",
+  rag: "bg-sky-soft text-sky-ink",
+  rag_v2: "bg-sky-soft text-sky-ink",
+  web: "bg-rose-soft text-rose-ink",
+  image_analysis: "bg-sky-soft text-sky-ink",
+  image_fraud: "bg-peach-soft text-peach-ink",
+  stock_research: "bg-mint-soft text-mint-ink",
+  software_engineer: "bg-muted text-muted-foreground",
+  image_generation: "bg-violet-soft text-violet-ink",
+  document_analytics: "bg-peach-soft text-peach-ink",
 };

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { FileText, Trash2, Search, Loader2 } from "lucide-react";
+import Link from "next/link";
+import { FileText, Trash2, Search, Loader2, Database } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +10,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import type { Document } from "@/types/document";
 import { ExtractionResults } from "./ExtractionResults";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import * as api from "@/lib/api";
 
 interface AnalysisData {
   text: string;
@@ -29,6 +32,11 @@ export function DocumentViewer({ document: doc, onDelete, onAnalyze }: DocumentV
   const [analysis, setAnalysis] = useState<AnalysisData | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
+  const [indexDialogOpen, setIndexDialogOpen] = useState(false);
+  const [collections, setCollections] = useState<string[]>([]);
+  const [collection, setCollection] = useState("documents");
+  const [isIndexing, setIsIndexing] = useState(false);
+  const [indexError, setIndexError] = useState<string | null>(null);
 
   const handleAnalyze = async () => {
     setIsAnalyzing(true);
@@ -43,12 +51,36 @@ export function DocumentViewer({ document: doc, onDelete, onAnalyze }: DocumentV
     }
   };
 
+  const openIndexDialog = async () => {
+    setIndexError(null);
+    setIndexDialogOpen(true);
+    try {
+      const result = await api.getRAGCollections();
+      setCollections(result.collections.map((item) => item.name));
+    } catch (error) {
+      setIndexError(error instanceof Error ? error.message : "Could not load RAG indexes.");
+    }
+  };
+
+  const handleIndex = async () => {
+    setIsIndexing(true);
+    setIndexError(null);
+    try {
+      await api.ingestRAG(doc.id, collection);
+      setIndexDialogOpen(false);
+    } catch (error) {
+      setIndexError(error instanceof Error ? error.message : "Could not add this document to the index.");
+    } finally {
+      setIsIndexing(false);
+    }
+  };
+
   const statusColor = {
-    pending: "bg-yellow-500",
-    processing: "bg-blue-500",
-    completed: "bg-green-500",
-    failed: "bg-red-500",
-  }[doc.status] ?? "bg-gray-500";
+    pending: "bg-peach-ink",
+    processing: "bg-sky-ink",
+    completed: "bg-mint-ink",
+    failed: "bg-destructive",
+  }[doc.status] ?? "bg-muted-foreground";
 
   const sizeLabel =
     doc.sizeBytes < 1024
@@ -118,6 +150,16 @@ export function DocumentViewer({ document: doc, onDelete, onAnalyze }: DocumentV
             )}
             Analyze
           </Button>
+          <div className="grid grid-cols-2 gap-2">
+            <Button asChild size="sm" variant="outline" className="min-h-10">
+              <Link href={`/chat?documentId=${encodeURIComponent(doc.id)}`}>
+                <Search className="mr-2 size-3.5" aria-hidden="true" /> Ask in Chat
+              </Link>
+            </Button>
+            <Button type="button" size="sm" variant="outline" className="min-h-10" onClick={() => void openIndexDialog()}>
+              <Database className="mr-2 size-3.5" aria-hidden="true" /> Add to Knowledge Base
+            </Button>
+          </div>
         </div>
 
         {analyzeError && (
@@ -134,6 +176,28 @@ export function DocumentViewer({ document: doc, onDelete, onAnalyze }: DocumentV
           />
         )}
       </CardContent>
+      <Dialog open={indexDialogOpen} onOpenChange={setIndexDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add to Knowledge Base</DialogTitle>
+            <DialogDescription>Choose the RAG index that should include {doc.filename}.</DialogDescription>
+          </DialogHeader>
+          <label className="grid gap-2 text-sm font-medium" htmlFor={`rag-index-${doc.id}`}>
+            Target index
+            <select id={`rag-index-${doc.id}`} value={collection} onChange={(event) => setCollection(event.target.value)} className="h-11 rounded-xl border border-input bg-card px-3 text-base sm:text-sm">
+              {[...new Set(["documents", ...collections])].map((name) => <option key={name} value={name}>{name}</option>)}
+            </select>
+          </label>
+          {indexError && <p role="alert" className="text-sm text-destructive">{indexError}</p>}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setIndexDialogOpen(false)}>Cancel</Button>
+            <Button type="button" onClick={() => void handleIndex()} disabled={isIndexing}>
+              {isIndexing && <Loader2 className="mr-2 size-4 animate-spin" aria-hidden="true" />}
+              Add to index
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

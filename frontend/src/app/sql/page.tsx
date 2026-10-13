@@ -6,6 +6,7 @@ import * as api from "@/lib/api";
 import { QueryEditor } from "@/components/sql/QueryEditor";
 import { ResultsTable } from "@/components/sql/ResultsTable";
 import { SchemaBrowser } from "@/components/sql/SchemaBrowser";
+import { Button } from "@/components/ui/button";
 
 interface QueryResult {
   columns: string[];
@@ -27,6 +28,12 @@ export default function SQLPage() {
   const [error, setError] = useState<string | null>(null);
   const [connections, setConnections] = useState<SQLConnection[]>([]);
   const [selectedDb, setSelectedDb] = useState("default");
+  const [rawSQL, setRawSQL] = useState("");
+  const [queryTab, setQueryTab] = useState<"natural" | "sql">("natural");
+  const starterQueries = [
+    "SELECT * FROM customers LIMIT 10;",
+    "SELECT table_name FROM information_schema.tables;",
+  ];
 
   const loadConnections = useCallback(async () => {
     try {
@@ -81,6 +88,16 @@ export default function SQLPage() {
     }
   };
 
+  const handleSchemaInsert = (text: string) => {
+    setRawSQL((current) => `${current}${current && !current.endsWith(" ") ? " " : ""}${text}`);
+  };
+
+  const handleStarterQuery = (sql: string) => {
+    setRawSQL(sql);
+    setQueryTab("sql");
+    void handleRawSQL(sql);
+  };
+
   return (
     <div className="container mx-auto max-w-6xl px-4 py-6 sm:p-8">
       <div className="mb-6 flex flex-wrap items-center gap-3">
@@ -109,6 +126,10 @@ export default function SQLPage() {
             onNaturalLanguageQuery={handleNLQuery}
             onRawSQLExecute={handleRawSQL}
             isLoading={isLoading}
+            rawSQL={rawSQL}
+            onRawSQLChange={setRawSQL}
+            activeTab={queryTab}
+            onActiveTabChange={setQueryTab}
           />
 
           {error && (
@@ -126,10 +147,23 @@ export default function SQLPage() {
               explanation={result.explanation}
             />
           )}
+          {result === null && !isLoading && !error && (
+            <div className="rounded-2xl border border-dashed bg-card/60 p-5">
+              <h2 className="text-sm font-semibold">Try a sample query</h2>
+              <p className="mt-1 text-xs text-muted-foreground">Choose a starter to fill the editor and run it.</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {starterQueries.map((query) => (
+                  <Button key={query} type="button" variant="outline" size="sm" onClick={() => handleStarterQuery(query)}>
+                    <code className="max-w-full truncate">{query}</code>
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div>
-          <SchemaBrowser database={selectedDb} />
+          <SchemaBrowser database={selectedDb} onInsertText={handleSchemaInsert} />
         </div>
       </div>
     </div>

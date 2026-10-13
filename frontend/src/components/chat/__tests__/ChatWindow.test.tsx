@@ -294,6 +294,7 @@ describe("ChatWindow", () => {
     render(<ChatWindow />);
     await waitFor(() => expect(screen.getByLabelText("Agent profile").querySelector('option[value="stock_research"]')).not.toBeNull());
     fireEvent.change(screen.getByLabelText("Agent profile"), { target: { value: "stock_research" } });
+    fireEvent.click(screen.getByRole("button", { name: "Options" }));
     await waitFor(() => expect(screen.getByLabelText("Agent model")).toHaveValue("qwen2.5:7b"));
     fireEvent.change(screen.getByLabelText("Ticker symbol"), { target: { value: "AAPL" } });
     fireEvent.change(screen.getByPlaceholderText("Type a message... (Shift+Enter for new line)"), {
@@ -322,6 +323,7 @@ describe("ChatWindow", () => {
     render(<ChatWindow />);
     await waitFor(() => expect(screen.getByLabelText("Agent profile").querySelector('option[value="rag"]')).not.toBeNull());
     fireEvent.change(screen.getByLabelText("Agent profile"), { target: { value: "rag" } });
+    fireEvent.click(screen.getByRole("button", { name: "Options" }));
     await waitFor(() => expect(screen.getByLabelText("Agent model")).toHaveValue(selected));
     expect(screen.getByRole("option", { name: `qwen2.5:7b (${label})` })).toBeInTheDocument();
     const input = screen.getByPlaceholderText("Type a message... (Shift+Enter for new line)");
