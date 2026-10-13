@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import httpx
 import structlog
+from langchain_core.exceptions import OutputParserException
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field, ValidationError
 
@@ -43,12 +44,13 @@ async def draft_action_items(source_text: str) -> list[ActionItemSuggestion]:
         raise LLMConnectionError() from exc
     except httpx.TimeoutException as exc:
         raise LLMTimeoutError() from exc
-    except (ValidationError, TypeError) as exc:
-        logger.warning("planner_output_invalid", error=str(exc))
+    except (OutputParserException, ValidationError, TypeError) as exc:
+        logger.warning("planner_output_invalid", error=type(exc).__name__)
         return []
 
-    return [
-        suggestion
-        for suggestion in parsed.suggestions
-        if suggestion.source_quote.strip() in source_text[:24_000]
-    ]
+    suggestions = []
+    for suggestion in parsed.suggestions:
+        quote = suggestion.source_quote.strip()
+        if quote and quote in source_text[:24_000]:
+            suggestions.append(suggestion.model_copy(update={"source_quote": quote}))
+    return suggestions

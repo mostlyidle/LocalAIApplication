@@ -36,6 +36,7 @@ def _configure_github(monkeypatch) -> None:
     )
     monkeypatch.setattr(settings, "github_app_slug", "local-ai-test")
     monkeypatch.setattr(settings, "github_frontend_url", "http://localhost:3000")
+    monkeypatch.setattr(settings, "auth_cookie_secure", False)
     monkeypatch.setattr(
         settings, "github_token_encryption_key", Fernet.generate_key().decode("ascii")
     )
@@ -102,6 +103,10 @@ async def test_oauth_state_is_one_time_and_tokens_are_encrypted(
     assert params["scope"] == ["offline_access"]
     state = params["state"][0]
     assert re.fullmatch(r"[A-Za-z0-9_-]{40,}", state)
+    binding_cookie = start.cookies.get("github_oauth_binding")
+    assert binding_cookie
+    assert "httponly" in start.headers["set-cookie"].lower()
+    assert "samesite=lax" in start.headers["set-cookie"].lower()
     assert (
         await db_session.get(
             GitHubOAuthState,
@@ -110,6 +115,24 @@ async def test_oauth_state_is_one_time_and_tokens_are_encrypted(
         is not None
     )
 
+    client.cookies.clear()
+    missing_binding = await client.get(
+        "/api/v1/github/callback", params={"state": state, "code": "single-use-code"}
+    )
+    assert missing_binding.status_code == 400
+    exchange.assert_not_awaited()
+    assert (
+        await db_session.get(
+            GitHubOAuthState,
+            hashlib.sha256(state.encode()).hexdigest(),
+        )
+    ) is not None
+
+    client.cookies.set(
+        "github_oauth_binding",
+        binding_cookie,
+        path="/api/v1/github/callback",
+    )
     callback = await client.get(
         "/api/v1/github/callback", params={"state": state, "code": "single-use-code"}
     )

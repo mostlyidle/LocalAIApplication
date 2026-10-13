@@ -68,8 +68,14 @@ class ActionItemUpdate(BaseModel):
 
     @model_validator(mode="after")
     def require_change(self) -> ActionItemUpdate:
-        if not self.model_fields_set - {"revision"}:
+        changed_fields = self.model_fields_set - {"revision"}
+        if not changed_fields:
             raise ValueError("At least one action item field must be updated.")
+        if any(
+            field in changed_fields and getattr(self, field) is None
+            for field in ("title", "status", "priority")
+        ):
+            raise ValueError("Title, status, and priority cannot be null.")
         return self
 
 

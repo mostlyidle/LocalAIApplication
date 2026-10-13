@@ -174,7 +174,11 @@ async def create_action_item(
             parser,
             body.source_repository_id,
         )
-        if not body.source_quote or body.source_quote not in source_text[:24_000]:
+        if (
+            not body.source_quote
+            or not body.source_quote.strip()
+            or body.source_quote not in source_text[:24_000]
+        ):
             raise HTTPException(
                 status_code=422,
                 detail="A linked action item requires an exact quote from its source.",
