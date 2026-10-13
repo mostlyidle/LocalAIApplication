@@ -156,6 +156,7 @@ def create_app() -> FastAPI:
         auth,
         chat,
         documents,
+        github,
         meetings,
         memory,
         rag,
@@ -175,6 +176,7 @@ def create_app() -> FastAPI:
     app.include_router(meetings.router, prefix="/api/v1", tags=["Meetings"])
     app.include_router(memory.router, prefix="/api/v1", tags=["Memory"])
     app.include_router(action_items.router, prefix="/api/v1", tags=["Action Items"])
+    app.include_router(github.router, prefix="/api/v1", tags=["GitHub"])
 
     Instrumentator().instrument(app).expose(app, include_in_schema=False)
 
