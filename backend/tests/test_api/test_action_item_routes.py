@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from langchain_core.exceptions import OutputParserException
 from sqlalchemy import func, select
 
 from app.models.action_item_schemas import ActionItemSuggestion
@@ -40,6 +41,14 @@ async def test_action_item_crud_and_revision_check(client, db_session):
     assert created["title"] == "Send notes"
     assert created["revision"] == 1
     assert (await client.get("/api/v1/action-items")).json()["total"] == 1
+
+    for field in ("title", "status", "priority"):
+        invalid_update = await client.patch(
+            f"/api/v1/action-items/{created['id']}",
+            json={"revision": 1, field: None},
+            headers=headers,
+        )
+        assert invalid_update.status_code == 422
 
     updated_response = await client.patch(
         f"/api/v1/action-items/{created['id']}",
@@ -134,6 +143,10 @@ async def test_proposals_are_verbatim_cited_and_never_saved_automatically(
                     source_quote="I will send the update tomorrow.",
                 ),
                 ActionItemSuggestion(title="Invented task", source_quote="This quote is absent."),
+                ActionItemSuggestion(
+                    title="Padded quote", source_quote=" I will send the update tomorrow. "
+                ),
+                ActionItemSuggestion(title="Blank quote", source_quote=" "),
             ]
         }
     )
@@ -147,8 +160,9 @@ async def test_proposals_are_verbatim_cited_and_never_saved_automatically(
     )
     assert response.status_code == 200
     assert response.json()["source_title"] == "Planning chat"
-    assert len(response.json()["suggestions"]) == 1
+    assert len(response.json()["suggestions"]) == 2
     assert response.json()["suggestions"][0]["source_quote"] == "I will send the update tomorrow."
+    assert response.json()["suggestions"][1]["source_quote"] == "I will send the update tomorrow."
     assert await db_session.scalar(select(func.count(ActionItem.id))) == 0
 
     accepted = await client.post(
@@ -175,6 +189,27 @@ async def test_proposals_are_verbatim_cited_and_never_saved_automatically(
         headers={"X-CSRF-Token": "test-csrf-token"},
     )
     assert forged.status_code == 422
+
+    blank_quote = await client.post(
+        "/api/v1/action-items",
+        json={
+            "title": "Uncited task",
+            "source_type": "chat",
+            "source_id": "planner-chat",
+            "source_quote": " ",
+        },
+        headers={"X-CSRF-Token": "test-csrf-token"},
+    )
+    assert blank_quote.status_code == 422
+
+    structured.ainvoke.side_effect = OutputParserException("The model returned invalid structured output.")
+    malformed_output = await client.post(
+        "/api/v1/action-items/proposals",
+        json={"source_type": "chat", "source_id": "planner-chat"},
+        headers={"X-CSRF-Token": "test-csrf-token"},
+    )
+    assert malformed_output.status_code == 200
+    assert malformed_output.json()["suggestions"] == []
 
 
 @pytest.mark.asyncio

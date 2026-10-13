@@ -176,7 +176,23 @@ export async function deleteMemory(id: string, revision: number) {
 
 // --- Action item planner ---
 export async function getActionItems() {
-  return apiFetch("/action-items", undefined, actionItemListSchema);
+  const items: ActionItemRecord[] = [];
+  let offset = 0;
+  let total = 0;
+
+  do {
+    const page = await apiFetch(
+      `/action-items?limit=200&offset=${offset}`,
+      undefined,
+      actionItemListSchema,
+    );
+    items.push(...page.items);
+    total = page.total;
+    offset += page.items.length;
+    if (!page.items.length) break;
+  } while (offset < total);
+
+  return { items, total };
 }
 
 export async function createActionItem(input: {

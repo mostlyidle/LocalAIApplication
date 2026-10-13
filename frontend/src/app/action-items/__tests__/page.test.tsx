@@ -91,6 +91,12 @@ describe("ActionItemsPage", () => {
         priority: "normal",
         due_date: null,
         source_quote: "I will send the update tomorrow.",
+      }, {
+        title: "Prepare the slides",
+        description: null,
+        priority: "normal",
+        due_date: null,
+        source_quote: "We need to prepare slides.",
       }],
     });
     render(<ActionItemsPage />);
@@ -100,7 +106,17 @@ describe("ActionItemsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Suggest next steps" }));
     expect(await screen.findByText(/I will send the update tomorrow\./)).toBeTruthy();
     expect(api.createActionItem).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+    let finishCreate!: (created: typeof item) => void;
+    api.createActionItem.mockReturnValueOnce(new Promise((resolve) => { finishCreate = resolve; }));
+    const acceptButtons = screen.getAllByRole("button", { name: "Accept" });
+    fireEvent.click(acceptButtons[0]);
+    await waitFor(() => {
+      expect(screen.getAllByRole("button", { name: "Accept" }).every((button) => (button as HTMLButtonElement).disabled)).toBe(true);
+      expect(screen.getAllByRole("button", { name: "Ignore" }).every((button) => (button as HTMLButtonElement).disabled)).toBe(true);
+    });
+    fireEvent.click(acceptButtons[0]);
+    expect(api.createActionItem).toHaveBeenCalledTimes(1);
+    finishCreate(item);
     await waitFor(() => expect(api.createActionItem).toHaveBeenCalledWith({
       title: "Send the update",
       description: "Share progress",
@@ -109,5 +125,6 @@ describe("ActionItemsPage", () => {
       source_id: "chat-1",
       source_quote: "I will send the update tomorrow.",
     }));
+    expect(await screen.findByText(/We need to prepare slides\./)).toBeTruthy();
   });
 });

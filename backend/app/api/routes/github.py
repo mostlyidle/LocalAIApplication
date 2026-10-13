@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import hmac
 import secrets
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response
 from fastapi.responses import RedirectResponse
 from sqlalchemy import delete, select
 
@@ -48,6 +49,7 @@ if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
+OAUTH_BINDING_COOKIE = "github_oauth_binding"
 
 
 @router.get("/github/connection", response_model=GitHubConnectionResponse)
@@ -72,6 +74,7 @@ async def github_connection_status(
 
 @router.post("/github/connect", response_model=GitHubAuthorizationResponse)
 async def start_github_authorization(
+    response: Response,
     authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> GitHubAuthorizationResponse:
@@ -81,22 +84,34 @@ async def start_github_authorization(
     encrypt_token("configuration-check")
     raw_state = secrets.token_urlsafe(32)
     state_hash = hashlib.sha256(raw_state.encode("utf-8")).hexdigest()
+    browser_binding = secrets.token_urlsafe(32)
     await db.execute(delete(GitHubOAuthState).where(GitHubOAuthState.expires_at < datetime.now(UTC)))
     db.add(
         GitHubOAuthState(
             state_hash=state_hash,
             owner_id=authenticated.account.id,
             session_id=authenticated.session.id,
+            browser_binding_hash=hashlib.sha256(browser_binding.encode("utf-8")).hexdigest(),
             expires_at=datetime.now(UTC) + timedelta(minutes=10),
         )
     )
     await db.commit()
+    response.set_cookie(
+        OAUTH_BINDING_COOKIE,
+        browser_binding,
+        max_age=600,
+        httponly=True,
+        secure=settings.auth_cookie_secure,
+        samesite="lax",
+        path="/api/v1/github/callback",
+    )
     authorization_url = github_oauth_client.authorization_url(raw_state)
     return GitHubAuthorizationResponse(authorization_url=authorization_url)
 
 
 @router.get("/github/callback")
 async def finish_github_authorization(
+    request: Request,
     code: str | None = None,
     state: str | None = None,
     error: str | None = None,
@@ -109,6 +124,16 @@ async def finish_github_authorization(
     record = await db.get(GitHubOAuthState, state_hash)
     if record is None or record.expires_at.replace(tzinfo=UTC) <= datetime.now(UTC):
         raise HTTPException(status_code=400, detail="GitHub authorization state is invalid or expired.")
+    browser_binding = request.cookies.get(OAUTH_BINDING_COOKIE)
+    if (
+        not browser_binding
+        or not record.browser_binding_hash
+        or not hmac.compare_digest(
+            hashlib.sha256(browser_binding.encode("utf-8")).hexdigest(),
+            record.browser_binding_hash,
+        )
+    ):
+        raise HTTPException(status_code=400, detail="GitHub authorization must return in the same browser.")
     authenticated = await resolve_session_by_id(db, record.session_id)
     if authenticated is None or authenticated.account.id != record.owner_id:
         await db.delete(record)
@@ -137,10 +162,18 @@ async def finish_github_authorization(
         await db.commit()
         result = "connected"
 
-    return RedirectResponse(
+    response = RedirectResponse(
         f"{settings.github_frontend_url.rstrip('/')}/settings?github={result}",
         status_code=303,
     )
+    response.delete_cookie(
+        OAUTH_BINDING_COOKIE,
+        httponly=True,
+        secure=settings.auth_cookie_secure,
+        samesite="lax",
+        path="/api/v1/github/callback",
+    )
+    return response
 
 
 @router.delete("/github/connection", status_code=204)
