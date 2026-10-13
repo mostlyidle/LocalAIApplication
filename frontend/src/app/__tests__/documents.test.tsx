@@ -4,6 +4,7 @@ import { render, screen } from "@testing-library/react";
 // Mock lucide-react
 vi.mock("lucide-react", () => ({
   FileText: (props: Record<string, unknown>) => <span {...props} />,
+  FileUp: (props: Record<string, unknown>) => <span {...props} />,
 }));
 
 // Mock UI components
@@ -67,7 +68,8 @@ describe("DocumentsPage", () => {
 
   it("shows empty state message when no documents", () => {
     render(<DocumentsPage />);
-    expect(screen.getByText("No documents uploaded yet")).toBeInTheDocument();
+    expect(screen.getByText("Your document vault is empty")).toBeInTheDocument();
+    expect(screen.getByText("PDF")).toBeInTheDocument();
   });
 
   it("renders document viewers for each document", () => {

@@ -26,6 +26,10 @@ vi.mock("next-themes", () => ({
   useTheme: () => ({ theme: mockTheme, setTheme: mockSetTheme }),
 }));
 
+vi.mock("@/lib/api", () => ({
+  getHealth: vi.fn().mockResolvedValue({ ollama: { status: "healthy" } }),
+}));
+
 // Mock shadcn components
 vi.mock("@/components/ui/sidebar", () => ({
   SidebarTrigger: () => <button data-testid="sidebar-trigger">Toggle</button>,
@@ -110,6 +114,11 @@ describe("Header", () => {
   it("renders the sidebar trigger", () => {
     render(<Header />);
     expect(screen.getByTestId("sidebar-trigger")).toBeDefined();
+  });
+
+  it("shows Ollama online status when the health check succeeds", async () => {
+    render(<Header />);
+    expect(await screen.findByText("Ollama Online")).toBeInTheDocument();
   });
 
   it("renders Light theme option", () => {
