@@ -92,10 +92,10 @@ export default function SettingsPage() {
   const optionalService = (name: string) => health?.services.find((service) => service.name === name);
 
   return (
-    <div className="container mx-auto max-w-4xl p-6">
-      <div className="mb-6 flex items-center gap-2">
-        <Settings className="h-6 w-6 text-muted-foreground" />
-        <h1 className="text-xl font-bold">Settings</h1>
+    <div className="container mx-auto max-w-4xl px-4 py-6 sm:p-8">
+      <div className="mb-6 flex items-center gap-3">
+        <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-peach-soft text-peach-ink"><Settings className="h-6 w-6" aria-hidden="true" /></span>
+        <div><h1 className="text-2xl font-bold">Settings</h1><p className="mt-1 text-sm text-muted-foreground">Make yourself at home.</p></div>
       </div>
 
       <div className="space-y-6">

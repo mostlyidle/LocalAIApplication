@@ -8,6 +8,7 @@ import { ToolCallDisplay } from "./ToolCallDisplay";
 import { MarkdownContent } from "./MarkdownContent";
 import { BookmarkPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { BrandMark } from "@/components/shared/BrandMark";
 
 interface MessageBubbleProps {
   message: ChatMessage;
@@ -42,19 +43,20 @@ export function MessageBubble({
         isUser ? "justify-end" : "justify-start"
       )}
     >
+      {!isUser && <BrandMark className="hidden h-10 w-10 sm:block" />}
       <div
         className={cn(
-          "max-w-[80%] rounded-lg px-4 py-3",
+          "min-w-0 max-w-[92%] rounded-2xl px-4 py-3 [overflow-wrap:anywhere] sm:max-w-[85%] sm:px-5 sm:py-4",
           isUser
-            ? "bg-primary text-primary-foreground"
-            : "bg-muted"
+            ? "rounded-br-md bg-primary text-primary-foreground"
+            : "rounded-tl-md border bg-card shadow-xs"
         )}
       >
         {!isUser && message.agentType && (
           <Badge
             variant="outline"
             className={cn(
-              "mb-2 text-[10px]",
+              "mb-2 bg-violet-soft text-xs text-violet-ink",
               AGENT_COLORS[message.agentType] ? "border-current" : ""
             )}
           >
@@ -62,18 +64,18 @@ export function MessageBubble({
           </Badge>
         )}
         {isUser ? (
-          <div className="whitespace-pre-wrap text-sm leading-relaxed">
+          <div className="whitespace-pre-wrap text-base leading-relaxed sm:text-sm">
             {message.content}
           </div>
         ) : (
-          <MarkdownContent content={message.content} className="text-sm leading-relaxed" />
+          <MarkdownContent content={message.content} className="text-base leading-relaxed sm:text-sm" />
         )}
         {isUser && onRemember && canRemember && (
           <Button
             type="button"
             variant="ghost"
             size="xs"
-            className="mt-1 h-6 px-1 text-[10px] text-primary-foreground/80 hover:text-primary-foreground"
+            className="mt-2 min-h-9 rounded-lg px-2 text-xs text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground"
             onClick={() => onRemember(message)}
           >
             <BookmarkPlus className="h-3 w-3" /> Remember this
@@ -133,7 +135,7 @@ export function MessageBubble({
             </pre>
           </details>
         )}
-        <div className="mt-1 text-[10px] opacity-50">
+        <div className={cn("mt-2 text-xs", isUser ? "text-primary-foreground" : "text-muted-foreground")}>
           {new Date(message.timestamp).toLocaleTimeString()}
         </div>
       </div>

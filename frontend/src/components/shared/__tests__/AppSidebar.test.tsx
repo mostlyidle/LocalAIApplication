@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 
 // Mock next/link
 vi.mock("next/link", () => ({
@@ -10,6 +10,8 @@ vi.mock("next/link", () => ({
 
 // Mock next/navigation
 const mockPathname = vi.fn().mockReturnValue("/chat");
+const mockSetOpenMobile = vi.fn();
+let mockIsMobile = false;
 vi.mock("next/navigation", () => ({
   usePathname: () => mockPathname(),
 }));
@@ -33,6 +35,8 @@ vi.mock("lucide-react", () => {
 
 // Mock shadcn sidebar components
 vi.mock("@/components/ui/sidebar", () => ({
+  useSidebar: () => ({ isMobile: mockIsMobile, setOpenMobile: mockSetOpenMobile }),
+  SidebarTrigger: () => <button>Toggle Sidebar</button>,
   Sidebar: ({ children, ...props }: { children: React.ReactNode }) => <nav {...props}>{children}</nav>,
   SidebarContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   SidebarGroup: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -57,11 +61,20 @@ import { AppSidebar } from "../AppSidebar";
 describe("AppSidebar", () => {
   beforeEach(() => {
     mockPathname.mockReturnValue("/chat");
+    mockIsMobile = false;
+    mockSetOpenMobile.mockClear();
   });
 
   it("renders the Local AI brand title", () => {
     render(<AppSidebar />);
     expect(screen.getByText("Local AI")).toBeDefined();
+  });
+
+  it("closes the mobile drawer after selecting a page", () => {
+    mockIsMobile = true;
+    render(<AppSidebar />);
+    fireEvent.click(screen.getByRole("link", { name: "Documents" }));
+    expect(mockSetOpenMobile).toHaveBeenCalledWith(false);
   });
 
   it("renders the subtitle", () => {
