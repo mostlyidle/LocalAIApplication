@@ -40,11 +40,12 @@ from app.models.schemas import (
     MeetingErrorEvent,
     MeetingResponse,
     MeetingSourceEnded,
+    MeetingSourceListItem,
     MeetingSourceStatusEvent,
     MeetingStatusEvent,
-    MeetingStreamTicketResponse,
     MeetingStopCommand,
     MeetingStopResponse,
+    MeetingStreamTicketResponse,
     decode_audio_envelope,
 )
 from app.services.auth import (
@@ -57,6 +58,21 @@ from app.services.meetings import (
 logger = structlog.get_logger(__name__)
 router = APIRouter()
 _client_message_adapter = TypeAdapter(MeetingClientMessage)
+
+
+@router.get("/meetings", response_model=list[MeetingSourceListItem])
+async def list_meetings(
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+) -> list[MeetingSourceListItem]:
+    """List meeting metadata belonging to the signed-in account."""
+    rows = await db.scalars(
+        select(Meeting)
+        .where(Meeting.owner_id == authenticated.account.id)
+        .order_by(Meeting.created_at.desc())
+        .limit(100)
+    )
+    return [MeetingSourceListItem.model_validate(row, from_attributes=True) for row in rows.all()]
 
 
 @router.post("/meetings", response_model=MeetingResponse)
