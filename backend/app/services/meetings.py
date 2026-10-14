@@ -169,7 +169,7 @@ class MeetingService:
                 engine,
                 self._session_factory_for(db),
             )
-            self._ensure_answer_worker(meeting_id, session_id)
+            self._ensure_answer_worker(meeting_id, session_id, meeting.owner_id)
             try:
                 await self.processor.start(
                     meeting_id,
@@ -533,6 +533,7 @@ class MeetingService:
         self,
         meeting_id: str,
         session_id: str,
+        owner_id: str,
     ) -> asyncio.Queue[PendingMeetingAnswer]:
         """Create one bounded answer worker for the claimed stream session."""
         worker = self._answer_workers.get(meeting_id)
@@ -547,7 +548,7 @@ class MeetingService:
         self._answer_queues[meeting_id] = queue
         self._answer_sessions[meeting_id] = session_id
         self._answer_workers[meeting_id] = asyncio.create_task(
-            self._run_answer_worker(meeting_id, session_id, queue)
+            self._run_answer_worker(meeting_id, session_id, owner_id, queue)
         )
         return queue
 
@@ -572,6 +573,7 @@ class MeetingService:
         self,
         meeting_id: str,
         session_id: str,
+        owner_id: str,
         queue: asyncio.Queue[PendingMeetingAnswer],
     ) -> None:
         """Process answer work independently from the audio processor worker."""
@@ -589,7 +591,8 @@ class MeetingService:
                         continue
                     try:
                         suggestion = await asyncio.wait_for(
-                            self.answer_service.suggest(request.question), timeout=request_timeout
+                            self.answer_service.suggest(request.question, owner_id=owner_id),
+                            timeout=request_timeout,
                         )
                     except asyncio.TimeoutError:
                         await self._emit(

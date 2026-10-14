@@ -89,6 +89,53 @@ async def test_fake_engine_persists_system_transcript_question_and_answer(db_ses
     await service.stop_meeting(db_session, meeting.id)
 
 
+async def test_meeting_rag_receives_the_meeting_owner(db_session, monkeypatch):
+    class OwnerAwareRetriever:
+        def __init__(self) -> None:
+            self.owners: list[str | None] = []
+
+        async def search(
+            self,
+            query: str,
+            collection: str | None = None,
+            top_k: int | None = None,
+            score_threshold: float | None = None,
+            owner_id: str | None = None,
+        ) -> list[dict[str, Any]]:
+            self.owners.append(owner_id)
+            return []
+
+    monkeypatch.setattr("app.services.meeting_answers.settings.meeting_enable_rag", True)
+    retriever = OwnerAwareRetriever()
+    service = MeetingService(
+        transcription_engine=FakeTranscriptionEngine([TranscriptionChunk("What is next?")]),
+        answer_service=MeetingAnswerService(
+            generator=FakeAnswerGenerator(), retriever=retriever
+        ),
+    )
+    meeting = await service.create_meeting(
+        db_session,
+        owner_id=LEGACY_ACCOUNT_ID,
+        consent_policy_version="v1",
+        consent_attested_at=datetime.now(UTC),
+    )
+    await service.claim_stream(db_session, meeting.id, "session")
+    await service.start_stream(db_session, meeting.id, "session")
+    queue = service.event_queue(meeting.id, "session")
+    await service.accept_audio(
+        db_session,
+        meeting.id,
+        "session",
+        _header(meeting.id, AudioSource.SYSTEM),
+        b"\0" * 16,
+    )
+    await service.source_ended(meeting.id, "session", AudioSource.SYSTEM)
+    await _read_events(queue, 3)
+
+    assert retriever.owners == [LEGACY_ACCOUNT_ID]
+    await service.stop_meeting(db_session, meeting.id)
+
+
 async def test_microphone_transcript_does_not_trigger_question_answer(db_session):
     engine = FakeTranscriptionEngine([TranscriptionChunk("What is the launch date?")])
     answers = FakeAnswerGenerator()
@@ -171,6 +218,7 @@ async def test_optional_rag_failure_degrades_without_blocking_answer(monkeypatch
             collection: str | None = None,
             top_k: int | None = None,
             score_threshold: float | None = None,
+            owner_id: str | None = None,
         ) -> list[dict[str, Any]]:
             raise RuntimeError("Chroma is unavailable")
 

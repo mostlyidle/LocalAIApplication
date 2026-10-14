@@ -201,3 +201,18 @@ class TestSQLConnectionsEndpoint:
         )
         registry = await db_session.get(SqlConnection, "reports")
         assert registry is not None and registry.owner_id == LEGACY_ACCOUNT_ID
+
+    async def test_cannot_register_the_application_database(self, client, tmp_path, monkeypatch):
+        app_db = tmp_path / "application.db"
+        monkeypatch.setattr(
+            "app.api.routes.sql.settings.app_database_url",
+            f"sqlite+aiosqlite:///{app_db}",
+        )
+        with patch("app.services.database.get_sql_engine") as create_engine:
+            response = await client.post(
+                "/api/v1/sql/connections",
+                json={"name": "app-data", "url": f"sqlite:///{app_db}"},
+            )
+
+        assert response.status_code == 422
+        create_engine.assert_not_called()

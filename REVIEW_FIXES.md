@@ -7,7 +7,7 @@
 - Starting branch and commit: `feature/agent-prompt-management` at `fb69f24c9da3d0896acc41bba0fc6da5812b575f`.
 - Starting tree was clean and branch tracked `origin/feature/agent-prompt-management`.
 - User previously authorized verified checkpoint commits and pushes on the feature branch. Do not commit directly to `main`, rewrite history, or change repository administration.
-- Work in vertical red/green slices. The TDD skill requires user confirmation of test seams before adding tests. Proposed seams are pending confirmation in this session.
+- Work in vertical red/green slices. User approved all seven public test seams on 2026-10-14.
 - Read `AGENTS.md`, ponytail skill, TDD skill, and its `tests.md` and `mocking.md`. No `GLOSSARY.md` or ADR files were found.
 - Do not rerun the original project-wide suite until targeted fixes are done; baseline was 803 backend passes / 5 failures, 342 frontend passes, TypeScript passed, and 19 distinct native tests passed after rerunning the socket tests with local-socket permission.
 - Keep this file current with implementation decisions, test results, commits/pushes, and any findings that prove not to reproduce. At the start of a resumed session, check `git status`, current branch, this note, and applicable `AGENTS.md` before proceeding.
@@ -22,18 +22,18 @@
 6. Desktop worker/transport behavior for stop/drain and audio formats.
 7. Make/setup configuration behavior.
 
-These cover caller-visible behavior. They do not prove real Ollama response quality or physical Windows/macOS capture hardware. Await user approval before writing tests.
+These cover caller-visible behavior. They do not prove real Ollama response quality or physical Windows/macOS capture hardware.
 
 ## Findings checklist
 
 ### P1
 
-- [ ] 01. Chat's document agent binds raw path tools; unlike `/tools/execute`, it does not verify ownership or an upload root. Restrict all four document tools to the authenticated user's resolved attachment paths; retain existing parser callers for already-authorized upload flows (`backend/app/tools/document_tools.py`, `backend/app/agents/document_agent.py`).
-- [ ] 02. Chat state omits `database`, so model tool arguments can choose any process-global SQL engine. Force the configured default for chat tool calls; explicit `/sql/query` must keep its authorized selected database (`backend/app/agents/sql_agent.py`).
-- [ ] 03. Account ownership of a connection name does not stop an account registering a SQLite URL to the app's own database and reading other accounts' rows. Reject registrations resolving to the app database while keeping supported external/local target databases (`backend/app/api/routes/sql.py`).
-- [ ] 04. Optional meeting answers call the default/global RAG collection without the meeting owner's access context. Carry the authenticated meeting owner into retrieval and use normal collection access checks; preserve the setting-off behavior (`backend/app/services/meeting_answers.py`, `backend/app/services/meetings.py`).
-- [ ] 05. Hybrid retrieval lazily creates a built-in-only registry and prompt store, separate from the lifespan-configured registry. Use the configured single existing agent type/profile source for custom RAG retrieval and query rewriting (`backend/app/services/hybrid_vector_store.py`, app startup wiring).
-- [ ] 06. If a consumer raises, the processor worker exits with accepted queue items unfinished; `stop()` waits forever at `queue.join()`. A failed session must settle unfinished items and discard unsafe partial buffers before stop/purge completes (`backend/app/services/meeting_processor.py`).
+- [x] 01. Chat's document agent binds raw path tools; unlike `/tools/execute`, it does not verify ownership or an upload root. Restrict all four document tools to the authenticated user's resolved attachment paths; retain existing parser callers for already-authorized upload flows (`backend/app/tools/document_tools.py`, `backend/app/agents/document_agent.py`).
+- [x] 02. Chat state omits `database`, so model tool arguments can choose any process-global SQL engine. Force the configured default for chat tool calls; explicit `/sql/query` must keep its authorized selected database (`backend/app/agents/sql_agent.py`).
+- [x] 03. Account ownership of a connection name does not stop an account registering a SQLite URL to the app's own database and reading other accounts' rows. Reject registrations resolving to the app database while keeping supported external/local target databases (`backend/app/api/routes/sql.py`).
+- [x] 04. Optional meeting answers call the default/global RAG collection without the meeting owner's access context. Carry the authenticated meeting owner into retrieval and use normal collection access checks; preserve the setting-off behavior (`backend/app/services/meeting_answers.py`, `backend/app/services/meetings.py`).
+- [x] 05. Hybrid retrieval lazily creates a built-in-only registry and prompt store, separate from the lifespan-configured registry. Use the configured single existing agent type/profile source for custom RAG retrieval and query rewriting (`backend/app/services/hybrid_vector_store.py`, app startup wiring).
+- [x] 06. If a consumer raises, the processor worker exits with accepted queue items unfinished; `stop()` waits forever at `queue.join()`. A failed session must settle unfinished items and discard unsafe partial buffers before stop/purge completes (`backend/app/services/meeting_processor.py`).
 
 ### P2
 
@@ -80,4 +80,5 @@ These cover caller-visible behavior. They do not prove real Ollama response qual
 
 ## Progress log
 
-- 2026-10-13: Confirmed starting repository, branch, clean tree, and HEAD. Read requested skills and test guidance. No tests or implementation changes have been made yet. Proposed seams are awaiting user confirmation.
+- 2026-10-13: Confirmed starting repository, branch, clean tree, and HEAD. Read requested skills and test guidance; no glossary or ADR files were present. Created and pushed notes-only checkpoint `50c1128`.
+- 2026-10-14: User approved all seven test seams. Implemented all P1 findings in red/green slices. Regressions first failed for unattached document reads, chat SQL database override, registering the app SQLite file under another driver, foreign RAG access, custom RAG profile lookup, and stopping after audio consumer failure. Focused combined verification: 84 tests passed across specialist agents, SQL/chat/meeting routes, meeting services/processors, RAG retrieval, and profile registry. Ruff on touched files reported only pre-existing diagnostics (unused/type-only imports, loop variable, and aliased TimeoutError); it reported no diagnostic on added implementation lines. P1 changes are ready for the first code checkpoint; no commit yet.
