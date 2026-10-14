@@ -123,7 +123,7 @@ export function AuthenticatedShell({ children }: { children: ReactNode }) {
           <div className="flex flex-col items-center text-center">
             <BrandMark className="mb-3 h-24 w-24" />
             <span className="mb-2 rounded-full bg-mint-soft px-3 py-1 text-xs font-semibold text-mint-ink">Your own little AI studio</span>
-            <h1 className="text-2xl font-bold">Sign in to Local AI</h1>
+            <h1 className="text-2xl font-bold">Sign in to Mallow</h1>
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">A friendly space for your ideas, questions, and discoveries.</p>
           </div>
           <label className="block space-y-1.5 text-sm font-medium">

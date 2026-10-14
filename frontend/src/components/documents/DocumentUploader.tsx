@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { Upload, FileUp, X } from "lucide-react";
+import { Upload, LoaderCircle, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
@@ -77,7 +77,7 @@ export function DocumentUploader({ onUpload }: DocumentUploaderProps) {
     >
       <CardContent className="flex flex-col items-center gap-3 py-8">
         {isUploading ? (
-          <FileUp className="h-10 w-10 animate-bounce text-primary" />
+          <LoaderCircle className="h-10 w-10 animate-spin text-primary" />
         ) : (
           <Upload className="h-10 w-10 text-muted-foreground" />
         )}

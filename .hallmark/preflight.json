@@ -1,0 +1,19 @@
+{
+  "date": "2026-10-14",
+  "framework": "Next.js 16 App Router",
+  "font_stack": "Avenir Next, ui-rounded, system-ui; platform monospace",
+  "palette": "Tailwind v4 theme and CSS custom properties in frontend/src/app/tokens.css",
+  "motion": "No JS motion library; tw-animate-css is installed",
+  "spacing": "Tailwind defaults; no named custom scale",
+  "preserved": [
+    "Next.js App Router and existing route ownership",
+    "Offline native font fallback strategy",
+    "Existing light, dark, and system theme selection"
+  ],
+  "introduced": [
+    "Bubble design system",
+    "Workbench app-page family",
+    "Mallow wordmark and otter mascot",
+    "Grouped side navigation and workspace directory dashboard"
+  ]
+}

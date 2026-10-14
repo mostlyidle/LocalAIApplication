@@ -48,7 +48,7 @@ describe("AuthProvider", () => {
       </AuthProvider>,
     );
 
-    await screen.findByText("Sign in to Local AI");
+    await screen.findByText("Sign in to Mallow");
     fireEvent.change(screen.getByLabelText("Username"), { target: { value: "alice" } });
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: "secret" } });
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
