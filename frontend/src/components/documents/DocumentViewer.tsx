@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Document } from "@/types/document";
 import { ExtractionResults } from "./ExtractionResults";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -189,9 +190,12 @@ export function DocumentViewer({ document: doc, onDelete, onAnalyze }: DocumentV
           {containers.length > 0 ? (
             <label className="grid gap-2 text-sm font-medium" htmlFor={`rag-container-${doc.id}`}>
               Target container
-              <select id={`rag-container-${doc.id}`} value={containerName} onChange={(event) => setContainerName(event.target.value)} className="h-11 rounded-xl border border-input bg-card px-3 text-base sm:text-sm">
-                {containers.map((container) => <option key={container.name} value={container.name}>{container.display_name}</option>)}
-              </select>
+              <Select value={containerName} onValueChange={setContainerName}>
+                <SelectTrigger id={`rag-container-${doc.id}`} className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent position="popper" align="start">
+                  {containers.map((container) => <SelectItem key={container.name} value={container.name}>{container.display_name}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </label>
           ) : !indexError ? (
             <p className="text-sm text-muted-foreground">Create a private container before adding documents.</p>

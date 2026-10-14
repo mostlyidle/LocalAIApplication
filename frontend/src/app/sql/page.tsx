@@ -7,6 +7,7 @@ import { QueryEditor } from "@/components/sql/QueryEditor";
 import { ResultsTable } from "@/components/sql/ResultsTable";
 import { SchemaBrowser } from "@/components/sql/SchemaBrowser";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface QueryResult {
   columns: string[];
@@ -104,19 +105,19 @@ export default function SQLPage() {
         <span className="grid size-12 shrink-0 place-items-center rounded-2xl bg-mint-soft text-mint-ink"><Database className="h-6 w-6" aria-hidden="true" /></span>
         <div><h1 className="text-2xl font-bold">SQL Agent</h1><p className="mt-1 text-sm text-muted-foreground">Good questions. Useful data.</p></div>
         {connections.length > 0 && (
-          <select
-            value={selectedDb}
-            onChange={(e) => setSelectedDb(e.target.value)}
-            className="ml-auto min-h-11 max-w-full rounded-xl border border-input bg-card px-3 py-1.5 text-base sm:text-sm"
-            aria-label="Database connection"
-          >
-            <option value="default">default</option>
+          <Select value={selectedDb} onValueChange={setSelectedDb}>
+            <SelectTrigger aria-label="Database connection" className="ml-auto max-w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent position="popper" align="end">
+            <SelectItem value="default">default</SelectItem>
             {connections.map((c) => (
-              <option key={c.name} value={c.name}>
+              <SelectItem key={c.name} value={c.name}>
                 {c.name}
-              </option>
+              </SelectItem>
             ))}
-          </select>
+            </SelectContent>
+          </Select>
         )}
       </div>
 

@@ -1064,12 +1064,16 @@ class TestWebSocketStream:
 
     def _make_test_client(self):
         """Build a Starlette TestClient with stream_agent mocked."""
-        from app.dependencies import get_websocket_session
         from starlette.testclient import TestClient
 
+        from app.agents.registry import AgentRegistry
+        from app.dependencies import get_websocket_session
         from app.main import create_app
+        from app.prompt_store import PromptStore
 
         app = create_app()
+        profile_dir = Path(__file__).resolve().parents[2] / "app" / "prompts"
+        app.state.agent_registry = AgentRegistry(profile_dir, PromptStore(profile_dir))
         app.dependency_overrides[get_websocket_session] = lambda: _authenticated_principal()
         return TestClient(app), app
 

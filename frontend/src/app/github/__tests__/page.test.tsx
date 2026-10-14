@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 const api = vi.hoisted(() => ({
   createActionItem: vi.fn(),
@@ -14,7 +15,7 @@ const api = vi.hoisted(() => ({
 vi.mock("@/lib/api", () => api);
 vi.mock("lucide-react", () => {
   const Icon = (props: Record<string, unknown>) => <span {...props} />;
-  return { ExternalLink: Icon, Github: Icon, Loader2: Icon, RefreshCw: Icon, Sparkles: Icon };
+  return { ExternalLink: Icon, Github: Icon, Loader2: Icon, RefreshCw: Icon, Sparkles: Icon, ChevronDownIcon: Icon, ChevronUpIcon: Icon, CheckIcon: Icon };
 });
 
 import GitHubProjectPage from "../page";
@@ -122,7 +123,8 @@ describe("GitHubProjectPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Review issue draft" }));
     expect(screen.getByRole("button", { name: "Create issue on GitHub" })).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Selected repository"), { target: { value: "84" } });
+    await userEvent.click(screen.getByRole("combobox", { name: "Selected repository" }));
+    await userEvent.click(await screen.findByRole("option", { name: "octocat/other" }));
     expect(screen.queryByRole("button", { name: "Create issue on GitHub" })).not.toBeInTheDocument();
     expect(api.createGitHubIssue).not.toHaveBeenCalled();
   });

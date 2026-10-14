@@ -274,6 +274,7 @@ async def run_agent(
     existing_messages: list | None = None,
     forced_agent: str | None = None,
     owner_id: str | None = None,
+    system_prompts: dict[str, str] | None = None,
 ) -> AgentState:
     """Run the full orchestrator pipeline for a user message.
 
@@ -307,6 +308,8 @@ async def run_agent(
         )
     if forced_agent:
         state["forced_agent"] = forced_agent
+    if system_prompts is not None:
+        state["system_prompts"] = system_prompts
 
     # Inject conversation history if provided
     if existing_messages:
@@ -326,6 +329,7 @@ async def stream_agent(
     existing_messages: list | None = None,
     forced_agent: str | None = None,
     owner_id: str | None = None,
+    system_prompts: dict[str, str] | None = None,
 ):
     """Stream events from the orchestrator graph for real-time UI updates.
 
@@ -359,6 +363,8 @@ async def stream_agent(
         )
     if forced_agent:
         state["forced_agent"] = forced_agent
+    if system_prompts is not None:
+        state["system_prompts"] = system_prompts
 
     if existing_messages:
         state["messages"] = list(existing_messages)

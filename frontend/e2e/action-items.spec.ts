@@ -48,7 +48,8 @@ test("planner creates, edits, completes, and deletes an action item", async ({ p
   });
 
   await page.goto("/action-items");
-  await page.getByLabel("Source", { exact: true }).selectOption("chat-1");
+  await page.getByRole("combobox", { name: "Source", exact: true }).click();
+  await page.getByRole("option", { name: "Planning chat" }).click();
   await page.getByRole("button", { name: "Suggest next steps" }).click();
   await expect(page.getByText("I will send the notes tomorrow.")).toBeVisible();
   await page.getByRole("button", { name: "Accept" }).click();
@@ -64,7 +65,8 @@ test("planner creates, edits, completes, and deletes an action item", async ({ p
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("Send final project notes")).toBeVisible();
 
-  await page.getByLabel("Status for Send final project notes").selectOption("done");
+  await page.getByRole("combobox", { name: "Status for Send final project notes" }).click();
+  await page.getByRole("option", { name: "Done" }).click();
   await page.getByRole("button", { name: "Delete Send final project notes" }).click();
   await expect(page.getByText("Your planner is ready when you are.")).toBeVisible();
 });

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ExternalLink, Github, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import * as api from "@/lib/api";
 import type { ActionItemSuggestion, GitHubIssueProposal, GitHubProjectOverview, GitHubPullDetail, GitHubRepository } from "@/lib/schemas";
@@ -158,9 +159,12 @@ export default function GitHubProjectPage() {
         <CardHeader><CardTitle>Choose a project</CardTitle><CardDescription>The agent can read only repositories you selected in Settings.</CardDescription></CardHeader>
         <CardContent className="flex flex-col gap-3 sm:flex-row">
           {loadingRepositories ? <p className="text-sm text-muted-foreground">Loading selected repositories…</p> : repositories.length ? <>
-            <select aria-label="Selected repository" value={repositoryId} disabled={busy} onChange={(event) => { setRepositoryId(event.target.value); setOverview(null); setProposal(null); setPullDetail(null); setIssueTitle(""); setIssueBody(""); setIssueReviewed(false); setCommentIssueNumber(null); setCommentBody(""); setCommentReviewed(false); }} className="h-10 min-w-0 flex-1 rounded-md border bg-background px-3 text-sm">
-              {repositories.map((repository) => <option key={repository.repository_id} value={repository.repository_id}>{repository.full_name}</option>)}
-            </select>
+            <Select value={repositoryId} disabled={busy} onValueChange={(value) => { setRepositoryId(value); setOverview(null); setProposal(null); setPullDetail(null); setIssueTitle(""); setIssueBody(""); setIssueReviewed(false); setCommentIssueNumber(null); setCommentBody(""); setCommentReviewed(false); }}>
+              <SelectTrigger aria-label="Selected repository" className="min-w-0 flex-1"><SelectValue /></SelectTrigger>
+              <SelectContent position="popper" align="start">
+                {repositories.map((repository) => <SelectItem key={repository.repository_id} value={repository.repository_id}>{repository.full_name}</SelectItem>)}
+              </SelectContent>
+            </Select>
               <Button onClick={() => void loadProject()} disabled={busy || !repositoryId}>{busy ? <Loader2 className="animate-spin" /> : <RefreshCw />} Load project</Button>
           </> : <p className="text-sm text-muted-foreground">No repositories selected. Connect GitHub and choose repositories in <Link className="underline" href="/settings">Settings</Link>.</p>}
         </CardContent>

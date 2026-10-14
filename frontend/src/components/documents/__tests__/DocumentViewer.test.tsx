@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import userEvent from "@testing-library/user-event";
 import { vi, describe, it, expect, beforeEach } from "vitest";
@@ -14,6 +14,9 @@ vi.mock("lucide-react", () => ({
   Database: (props: Record<string, unknown>) => <svg data-testid="database-icon" {...props} />,
   XIcon: (props: Record<string, unknown>) => <svg data-testid="close-icon" {...props} />,
   Loader2: (props: Record<string, unknown>) => <svg data-testid="loader-icon" {...props} />,
+  ChevronDownIcon: (props: Record<string, unknown>) => <svg {...props} />,
+  ChevronUpIcon: (props: Record<string, unknown>) => <svg {...props} />,
+  CheckIcon: (props: Record<string, unknown>) => <svg {...props} />,
 }));
 
 const baseDoc: Document = {
@@ -147,7 +150,11 @@ describe("DocumentViewer", () => {
     );
 
     await user.click(screen.getByRole("button", { name: /Add to Knowledge Base/i }));
-    await screen.findByRole("option", { name: "Research" });
+    const containerSelect = await screen.findByRole("combobox", { name: "Target container" });
+    containerSelect.focus();
+    fireEvent.keyDown(containerSelect, { key: "ArrowDown" });
+    const containerOption = await screen.findByRole("option", { name: /Research/ });
+    fireEvent.keyDown(containerOption, { key: "Enter" });
     await user.click(screen.getByRole("button", { name: /Add to container/i }));
 
     await waitFor(() => {

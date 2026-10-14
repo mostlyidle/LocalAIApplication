@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from langchain_core.messages import AIMessage, HumanMessage
@@ -12,13 +12,12 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from starlette.testclient import TestClient
 
 from app.agents.orchestrator import run_agent, stream_agent
+from app.agents.registry import AgentRegistry
 from app.dependencies import get_websocket_session
 from app.main import create_app
 from app.models.db_models import LEGACY_ACCOUNT_ID, Account, AccountSession, Base
+from app.prompt_store import PromptStore
 from app.services.auth import AuthenticatedSession
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 def test_stream_saves_before_done_and_loads_history(tmp_path: Path) -> None:
@@ -44,6 +43,8 @@ def test_stream_saves_before_done_and_loads_history(tmp_path: Path) -> None:
             patch("app.api.routes.chat.stream_agent", respond),
         ):
             app = create_app()
+            profile_dir = Path(__file__).resolve().parents[2] / "app" / "prompts"
+            app.state.agent_registry = AgentRegistry(profile_dir, PromptStore(profile_dir))
             app.dependency_overrides[get_websocket_session] = lambda: AuthenticatedSession(
                 account=Account(
                     id=LEGACY_ACCOUNT_ID,

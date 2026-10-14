@@ -54,6 +54,7 @@ vi.mock("@/lib/api", () => ({
   updateConversationMemorySettings: (...args: unknown[]) => mockUpdateConversationMemorySettings(...args),
   uploadDocument: (...args: unknown[]) => mockUploadDocument(...args),
   getAgentCatalog: (...args: unknown[]) => mockGetAgentCatalog(...args),
+  getAgentCatalogWithArchived: (...args: unknown[]) => mockGetAgentCatalog(...args),
   getRAGContainers: (...args: unknown[]) => mockGetRAGContainers(...args),
   getRAGCollections: (...args: unknown[]) => mockGetRAGCollections(...args),
   getConversation: (...args: unknown[]) => mockGetConversation(...args),
@@ -238,6 +239,19 @@ describe("ChatWindow", () => {
     expect(window.localStorage.getItem("local-ai-active-conversation:account-alice")).toBeNull();
   });
 
+  it("closes model options when starting a new chat", async () => {
+    const user = userEvent.setup();
+    render(<ChatWindow />);
+    const optionsButton = screen.getByRole("button", { name: "Options" });
+
+    await user.click(optionsButton);
+    expect(optionsButton).toHaveAttribute("aria-expanded", "true");
+    await user.click(screen.getByRole("button", { name: "New chat" }));
+
+    expect(optionsButton).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("Choose an agent profile to configure its model options.")).not.toBeInTheDocument();
+  });
+
   it("renders empty state when no messages", () => {
     render(<ChatWindow />);
 
@@ -278,7 +292,8 @@ describe("ChatWindow", () => {
     render(<ChatWindow />);
 
     await waitFor(() => expect(mockGetAgentCatalog).toHaveBeenCalled());
-    expect(screen.getByLabelText("Agent profile").querySelector('option[value="image_analysis"]')).not.toBeNull();
+    await userEvent.click(screen.getByRole("combobox", { name: "Agent profile" }));
+    expect(screen.getByRole("option", { name: /Image Analysis/ })).toBeInTheDocument();
   });
 
   it("sends profile-specific ticker and inference settings with chat", async () => {
@@ -292,10 +307,10 @@ describe("ChatWindow", () => {
       },
     ] });
     render(<ChatWindow />);
-    await waitFor(() => expect(screen.getByLabelText("Agent profile").querySelector('option[value="stock_research"]')).not.toBeNull());
-    fireEvent.change(screen.getByLabelText("Agent profile"), { target: { value: "stock_research" } });
+    await userEvent.click(screen.getByRole("combobox", { name: "Agent profile" }));
+    await userEvent.click(await screen.findByRole("option", { name: /Stock Research/ }));
     fireEvent.click(screen.getByRole("button", { name: "Options" }));
-    await waitFor(() => expect(screen.getByLabelText("Agent model")).toHaveValue("qwen2.5:7b"));
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Agent model" })).toHaveTextContent("qwen2.5:7b"));
     fireEvent.change(screen.getByLabelText("Ticker symbol"), { target: { value: "AAPL" } });
     fireEvent.change(screen.getByPlaceholderText("Type a message... (Shift+Enter for new line)"), {
       target: { value: "Assess current risks." },
@@ -321,10 +336,11 @@ describe("ChatWindow", () => {
       inference: { allowed_models: ["qwen2.5:7b", "llama3.2:3b"], defaults: { model: "qwen2.5:7b", temperature: 0.2 }, limits: { temperature: { minimum: 0, maximum: 2 } } },
     }] });
     render(<ChatWindow />);
-    await waitFor(() => expect(screen.getByLabelText("Agent profile").querySelector('option[value="rag"]')).not.toBeNull());
-    fireEvent.change(screen.getByLabelText("Agent profile"), { target: { value: "rag" } });
+    await userEvent.click(screen.getByRole("combobox", { name: "Agent profile" }));
+    await userEvent.click(await screen.findByRole("option", { name: /RAG/ }));
     fireEvent.click(screen.getByRole("button", { name: "Options" }));
-    await waitFor(() => expect(screen.getByLabelText("Agent model")).toHaveValue(selected));
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Agent model" })).toHaveTextContent(selected));
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "Agent model" }), { key: "ArrowDown" });
     expect(screen.getByRole("option", { name: `qwen2.5:7b (${label})` })).toBeInTheDocument();
     const input = screen.getByPlaceholderText("Type a message... (Shift+Enter for new line)");
     fireEvent.change(input, { target: { value: "What is supported?" } });

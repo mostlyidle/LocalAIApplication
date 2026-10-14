@@ -148,6 +148,30 @@ export async function getAgentCatalog() {
   return apiFetch("/agents", undefined, agentCatalogSchema);
 }
 
+export async function getAgentCatalogWithArchived() {
+  return apiFetch("/agents?include_archived=true", undefined, agentCatalogSchema);
+}
+
+export async function createAgent(input: {
+  source_agent: string;
+  display_name: string;
+  description: string;
+}) {
+  return apiFetch("/agents", { method: "POST", body: JSON.stringify(input) }, agentCatalogSchema);
+}
+
+export async function updateAgent(name: string, input: {
+  display_name?: string;
+  description?: string;
+  system_prompt?: string | null;
+  archived?: boolean;
+}) {
+  return apiFetch(`/agents/${encodeURIComponent(name)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  }, agentCatalogSchema);
+}
+
 // --- Account memory ---
 export async function getMemories(q?: string) {
   const params = new URLSearchParams({ limit: "100" });

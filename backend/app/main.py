@@ -82,6 +82,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await init_app_db()
     logger.info("database_initialized")
 
+    from sqlalchemy import select
+
+    from app.models.db_models import AgentConfiguration
+    from app.services.database import get_app_session_factory
+
+    async with get_app_session_factory()() as db:
+        configurations = (await db.execute(select(AgentConfiguration))).scalars().all()
+        app.state.agent_registry.apply_configurations(list(configurations))
+
     from app.services.memory_recall_worker import run_recall_worker
 
     app.state.memory_recall_worker_stop = asyncio.Event()
