@@ -708,17 +708,17 @@ export function ChatWindow() {
             Options
           </Button>
         </div>
-        {optionsOpen && <div id="agent-options" className="mx-auto mb-3 flex max-w-3xl flex-wrap items-end gap-3 rounded-xl border bg-muted/40 p-3">
-          {selectedProfile?.inference && (
+        {optionsOpen && <div id="agent-options" className="mx-auto mb-3 grid max-w-3xl gap-3 rounded-xl border bg-muted/40 p-3 sm:grid-cols-2">
+          {selectedProfile?.inference ? (
             <>
-              <label className="text-xs text-muted-foreground" htmlFor="agent-model">Model</label>
+              <label className="flex flex-col gap-1 text-xs text-muted-foreground" htmlFor="agent-model">Model
               <select
                 id="agent-model"
                 aria-label="Agent model"
                 value={selectedModel}
                 onChange={(event) => setSelectedModel(event.target.value)}
                 disabled={isStreaming}
-                className="h-11 max-w-full rounded-xl border border-input bg-card px-3 text-base sm:text-sm sm:max-w-52"
+                className="h-11 w-full max-w-full rounded-xl border border-input bg-card px-3 text-base text-foreground sm:text-sm"
               >
                 {selectedProfile.inference.allowed_models.map((model) => {
                   const available = selectedProfile.model_availability?.[model];
@@ -728,7 +728,8 @@ export function ChatWindow() {
                   return <option key={model} value={model} disabled={available === false}>{model}{label}</option>;
                 })}
               </select>
-              <label className="text-xs text-muted-foreground" htmlFor="agent-temperature">Temperature</label>
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-muted-foreground" htmlFor="agent-temperature">Temperature
               <input
                 id="agent-temperature"
                 aria-label="Agent temperature"
@@ -739,10 +740,11 @@ export function ChatWindow() {
                 value={temperature}
                 onChange={(event) => setTemperature(Number(event.target.value))}
                 disabled={isStreaming}
-                className="h-11 w-20 rounded-xl border border-input bg-card px-3 text-base sm:text-sm"
+                className="h-11 w-full max-w-32 rounded-xl border border-input bg-card px-3 text-base text-foreground sm:text-sm"
               />
+              </label>
             </>
-          )}
+          ) : null}
           {selectedProfile?.target === "rag" && (
             <label className="flex flex-col gap-1 text-xs text-muted-foreground">
               Search index
@@ -786,7 +788,11 @@ export function ChatWindow() {
           {selectedProfile?.target === "image_generation" && (
             <label className="flex min-w-48 flex-1 flex-col gap-1 text-xs text-muted-foreground">ComfyUI workflow<textarea aria-label="ComfyUI workflow" value={workflowText} onChange={(event) => setWorkflowText(event.target.value)} placeholder="Paste exported ComfyUI API workflow JSON" rows={2} className="min-h-11 w-full rounded-xl border border-input bg-card px-3 py-2 text-base sm:text-sm text-foreground" /></label>
           )}
-          {selectedProfile && <p className="w-full text-xs leading-relaxed text-muted-foreground">{selectedProfile.description}</p>}
+          {selectedProfile ? (
+            <p className="text-xs leading-relaxed text-muted-foreground sm:col-span-2">{selectedProfile.description}</p>
+          ) : (
+            <p className="text-sm text-muted-foreground sm:col-span-2">Choose an agent profile to configure its model options.</p>
+          )}
         </div>}
         <form
           onSubmit={handleSubmit}

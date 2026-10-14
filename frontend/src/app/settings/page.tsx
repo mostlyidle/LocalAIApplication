@@ -304,7 +304,7 @@ export default function SettingsPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="managed-agent-prompt">System prompt</Label>
-                  <textarea id="managed-agent-prompt" value={agentPrompt} onChange={(event) => setAgentPrompt(event.target.value)} maxLength={20000} disabled={!selectedAgent?.inference || selectedAgent.archived} className="min-h-64 w-full resize-y rounded-md border border-input bg-background px-3 py-2 font-mono text-sm leading-relaxed disabled:cursor-not-allowed disabled:opacity-60" />
+                  <textarea id="managed-agent-prompt" value={agentPrompt} onChange={(event) => setAgentPrompt(event.target.value)} maxLength={20000} disabled={!selectedAgent?.inference || selectedAgent.archived} className="min-h-52 w-full resize-y rounded-md border border-input bg-background px-3 py-2 font-sans text-sm leading-relaxed disabled:cursor-not-allowed disabled:opacity-60" />
                   <p className="text-xs text-muted-foreground">{selectedAgent?.inference ? <>Application supplied context and safety rules remain enforced. {agentPrompt.length}/20,000 characters.</> : "This built in profile does not use an LLM system prompt."}</p>
                 </div>
               </div>
