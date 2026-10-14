@@ -34,6 +34,7 @@ class Retriever(Protocol):
         collection: str | None = None,
         top_k: int | None = None,
         score_threshold: float | None = None,
+        owner_id: str | None = None,
     ) -> list[dict[str, Any]]:
         """Retrieve local context."""
         ...
@@ -123,7 +124,7 @@ class MeetingAnswerService:
         self.retriever = retriever
         self.provider_timeout_seconds = provider_timeout_seconds
 
-    async def suggest(self, question: str) -> AnswerSuggestion:
+    async def suggest(self, question: str, *, owner_id: str | None = None) -> AnswerSuggestion:
         """Retrieve optional context and generate a private answer."""
         context_parts: list[str] = []
         citations: list[str] = []
@@ -131,7 +132,10 @@ class MeetingAnswerService:
         if settings.meeting_enable_rag and self.retriever is not None:
             try:
                 results = await asyncio.wait_for(
-                    self.retriever.search(question), timeout=self.provider_timeout_seconds
+                    self.retriever.search(question, owner_id=owner_id)
+                    if owner_id is not None
+                    else self.retriever.search(question),
+                    timeout=self.provider_timeout_seconds,
                 )
             except asyncio.TimeoutError:
                 logger.warning("meeting_rag_timeout")

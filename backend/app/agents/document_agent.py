@@ -6,6 +6,7 @@ perform OCR on images, and answer questions about document content.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import structlog
@@ -65,6 +66,7 @@ async def document_agent_node(state: AgentState) -> dict[str, Any]:
         messages.append(HumanMessage(content=user_msg))
 
     tool_calls_record: list[dict[str, Any]] = []
+    allowed_paths = {Path(path).resolve() for path in state.get("attachments", [])}
     max_iterations = 5
 
     for iteration in range(max_iterations):
@@ -83,6 +85,9 @@ async def document_agent_node(state: AgentState) -> dict[str, Any]:
                 tool_result = f"Unknown tool: {tool_name}"
             else:
                 try:
+                    path_key = "image_path" if tool_name == "document_ocr_tool" else "file_path"
+                    if Path(tool_args[path_key]).resolve() not in allowed_paths:
+                        raise ValueError("Document tools can only access attached files.")
                     tool_result = await tool_fn.ainvoke(tool_args)
                 except Exception as exc:
                     tool_result = f"Tool error: {exc}"

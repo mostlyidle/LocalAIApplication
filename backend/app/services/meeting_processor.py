@@ -266,6 +266,8 @@ class MeetingAudioProcessor:
         except Exception as exc:
             session.state = ProcessorState.FAILED
             session.failure_reason = str(exc)[:500]
+            session.buffers.clear()
+            _drain(session.queue)
 
     async def _flush_source(self, session: ProcessorSession, source: AudioSource, final: bool) -> None:
         """Send a source's remaining partial rolling window to the consumer."""

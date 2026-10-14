@@ -91,6 +91,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         configurations = (await db.execute(select(AgentConfiguration))).scalars().all()
         app.state.agent_registry.apply_configurations(list(configurations))
 
+    from app.services.hybrid_vector_store import hybrid_vector_store_service
+
+    hybrid_vector_store_service.configure_profiles(app.state.agent_registry, prompts)
+
     from app.services.memory_recall_worker import run_recall_worker
 
     app.state.memory_recall_worker_stop = asyncio.Event()

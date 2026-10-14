@@ -13,10 +13,14 @@ from __future__ import annotations
 import json
 import time
 import uuid
+from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy.engine import URL, make_url
+from sqlalchemy.exc import ArgumentError
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: TC002 - FastAPI resolves this at runtime
 
 from app.agents.sql_agent import sql_agent_node
@@ -208,6 +212,11 @@ async def register_connection(
     """
     if request.name == "default":
         raise HTTPException(status_code=409, detail="The configured default connection is shared.")
+    if _is_application_database(request.url):
+        raise HTTPException(
+            status_code=422,
+            detail="The application database cannot be registered as a target.",
+        )
     from app.services.database import _sql_engines, get_sql_engine
 
     existing = await db.get(SqlConnection, request.name)
@@ -270,6 +279,39 @@ async def _require_sql_connection(db: AsyncSession, name: str, owner_id: str) ->
         )
     if access not in {"owned", "shared"}:
         raise NotFoundError("SQL connection", name)
+
+
+def _is_application_database(url: str) -> bool:
+    """Reject target URLs that resolve to the database storing account data."""
+    try:
+        target = make_url(url)
+        application = make_url(settings.app_database_url)
+    except ArgumentError:
+        return False
+    if target.get_backend_name() != application.get_backend_name():
+        return False
+    if target.set(drivername=target.get_backend_name()) == application.set(
+        drivername=application.get_backend_name()
+    ):
+        return True
+    if target.get_backend_name() != "sqlite":
+        return False
+
+    def sqlite_file(database_url: URL) -> Path | None:
+        database = database_url.database
+        if (
+            not database
+            or database == ":memory:"
+            or database.startswith("file::memory:")
+            or database_url.query.get("mode") == "memory"
+        ):
+            return None
+        filename = unquote(database.removeprefix("file:"))
+        return Path(filename).expanduser().resolve()
+
+    target_path = sqlite_file(target)
+    application_path = sqlite_file(application)
+    return target_path is not None and target_path == application_path
 
 
 def _parse_query_output(output: str) -> dict[str, Any]:

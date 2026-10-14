@@ -96,3 +96,30 @@ class TestMeetingAudioProcessor:
             await processor.accept(
                 "meeting-1", "session-1", _header("meeting-1", 1, timestamp + 1), payload
             )
+
+    async def test_stop_completes_after_consumer_failure_with_queued_audio(self):
+        processor = MeetingAudioProcessor(max_queue_size=2)
+        consumer_started = asyncio.Event()
+        fail_consumer = asyncio.Event()
+
+        async def fail_after_queueing(header, payload, final):
+            consumer_started.set()
+            await fail_consumer.wait()
+            raise RuntimeError("transcript persistence failed")
+
+        await processor.start(
+            "meeting-1", "session-1", consumer=fail_after_queueing, window_ms=1
+        )
+        timestamp = int(datetime.now(UTC).timestamp() * 1_000_000_000)
+        payload = b"\0" * 16
+        await processor.accept("meeting-1", "session-1", _header("meeting-1", 0, timestamp), payload)
+        await consumer_started.wait()
+        await processor.accept(
+            "meeting-1", "session-1", _header("meeting-1", 1, timestamp + 1), payload
+        )
+        fail_consumer.set()
+
+        try:
+            await asyncio.wait_for(processor.stop("meeting-1", "session-1"), timeout=0.1)
+        finally:
+            await processor.purge("meeting-1", "session-1")
