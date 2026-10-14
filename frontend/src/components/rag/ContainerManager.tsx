@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   createRAGContainer,
   deleteRAGContainer,
@@ -168,19 +169,16 @@ export function ContainerManager({ containers, selectedName, onSelect, onRefresh
         {containers.length > 0 && (
           <div>
             <label htmlFor="rag-container-select" className="mb-1 block text-sm font-medium">Container</label>
-            <select
-              id="rag-container-select"
-              value={active?.name ?? ""}
-              onChange={(event) => onSelect(event.target.value)}
-              className="h-11 w-full rounded-xl border border-input bg-card px-3 text-base sm:text-sm"
-            >
-              {!active && <option value="">Select a container</option>}
-              {containers.map((container) => (
-                <option key={container.name} value={container.name}>
-                  {container.display_name} ({container.file_count} files)
-                </option>
-              ))}
-            </select>
+            <Select value={active?.name ?? ""} onValueChange={onSelect}>
+              <SelectTrigger id="rag-container-select" className="w-full"><SelectValue placeholder="Select a container" /></SelectTrigger>
+              <SelectContent position="popper" align="start">
+                {containers.map((container) => (
+                  <SelectItem key={container.name} value={container.name}>
+                    {container.display_name} ({container.file_count} files)
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         )}
 

@@ -292,7 +292,8 @@ describe("ChatWindow", () => {
     render(<ChatWindow />);
 
     await waitFor(() => expect(mockGetAgentCatalog).toHaveBeenCalled());
-    expect(screen.getByLabelText("Agent profile").querySelector('option[value="image_analysis"]')).not.toBeNull();
+    await userEvent.click(screen.getByRole("combobox", { name: "Agent profile" }));
+    expect(screen.getByRole("option", { name: /Image Analysis/ })).toBeInTheDocument();
   });
 
   it("sends profile-specific ticker and inference settings with chat", async () => {
@@ -306,8 +307,8 @@ describe("ChatWindow", () => {
       },
     ] });
     render(<ChatWindow />);
-    await waitFor(() => expect(screen.getByLabelText("Agent profile").querySelector('option[value="stock_research"]')).not.toBeNull());
-    fireEvent.change(screen.getByLabelText("Agent profile"), { target: { value: "stock_research" } });
+    await userEvent.click(screen.getByRole("combobox", { name: "Agent profile" }));
+    await userEvent.click(await screen.findByRole("option", { name: /Stock Research/ }));
     fireEvent.click(screen.getByRole("button", { name: "Options" }));
     await waitFor(() => expect(screen.getByRole("combobox", { name: "Agent model" })).toHaveTextContent("qwen2.5:7b"));
     fireEvent.change(screen.getByLabelText("Ticker symbol"), { target: { value: "AAPL" } });
@@ -335,8 +336,8 @@ describe("ChatWindow", () => {
       inference: { allowed_models: ["qwen2.5:7b", "llama3.2:3b"], defaults: { model: "qwen2.5:7b", temperature: 0.2 }, limits: { temperature: { minimum: 0, maximum: 2 } } },
     }] });
     render(<ChatWindow />);
-    await waitFor(() => expect(screen.getByLabelText("Agent profile").querySelector('option[value="rag"]')).not.toBeNull());
-    fireEvent.change(screen.getByLabelText("Agent profile"), { target: { value: "rag" } });
+    await userEvent.click(screen.getByRole("combobox", { name: "Agent profile" }));
+    await userEvent.click(await screen.findByRole("option", { name: /RAG/ }));
     fireEvent.click(screen.getByRole("button", { name: "Options" }));
     await waitFor(() => expect(screen.getByRole("combobox", { name: "Agent model" })).toHaveTextContent(selected));
     fireEvent.keyDown(screen.getByRole("combobox", { name: "Agent model" }), { key: "ArrowDown" });

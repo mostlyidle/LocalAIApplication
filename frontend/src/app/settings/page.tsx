@@ -24,6 +24,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useTheme } from "next-themes";
 import * as api from "@/lib/api";
 import type { GitHubConnection } from "@/lib/schemas";
@@ -286,16 +287,19 @@ export default function SettingsPage() {
               <div className="grid gap-4 sm:grid-cols-[minmax(12rem,0.7fr)_minmax(0,1.3fr)]">
                 <div className="space-y-3">
                   <Label htmlFor="managed-agent">Agent</Label>
-                  <select id="managed-agent" value={selectedAgentName} onChange={(event) => {
-                    const agent = agents.find((item) => item.name === event.target.value);
+                  <Select value={selectedAgentName} onValueChange={(value) => {
+                    const agent = agents.find((item) => item.name === value);
                     if (!agent) return;
                     setSelectedAgentName(agent.name);
                     setAgentPrompt(agent.system_prompt);
                     setAgentDisplayName(agent.display_name);
                     setAgentDescription(agent.description);
-                  }} className="h-10 w-full rounded-md border border-input bg-card px-3 text-sm">
-                    {agents.map((agent) => <option key={agent.name} value={agent.name}>{agent.display_name}{agent.archived ? " · archived" : ""}</option>)}
-                  </select>
+                  }}>
+                    <SelectTrigger id="managed-agent" className="w-full"><SelectValue /></SelectTrigger>
+                    <SelectContent position="popper" align="start">
+                      {agents.map((agent) => <SelectItem key={agent.name} value={agent.name}>{agent.display_name}{agent.archived ? " · archived" : ""}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
                   {selectedAgent?.is_custom && <>
                     <div className="space-y-1.5"><Label htmlFor="managed-agent-name">Name</Label><Input id="managed-agent-name" value={agentDisplayName} onChange={(event) => setAgentDisplayName(event.target.value)} maxLength={100} /></div>
                     <div className="space-y-1.5"><Label htmlFor="managed-agent-description">Description</Label><Input id="managed-agent-description" value={agentDescription} onChange={(event) => setAgentDescription(event.target.value)} maxLength={500} /></div>
@@ -317,7 +321,7 @@ export default function SettingsPage() {
                 <div><h3 className="text-sm font-semibold">Create specialist</h3><p className="text-xs text-muted-foreground">Copy one existing agent type, then customize its prompt.</p></div>
                 <div className="grid gap-3 sm:grid-cols-3">
                   <div className="space-y-1.5"><Label htmlFor="new-agent-name">Name</Label><Input id="new-agent-name" value={newAgentName} onChange={(event) => setNewAgentName(event.target.value)} placeholder="Research helper" maxLength={100} /></div>
-                  <div className="space-y-1.5"><Label htmlFor="new-agent-type">Copy from</Label><select id="new-agent-type" value={newAgentSource} onChange={(event) => setNewAgentSource(event.target.value)} className="h-10 w-full rounded-md border border-input bg-card px-3 text-sm">{creatableAgents.map((agent) => <option key={agent.name} value={agent.name}>{agent.display_name}</option>)}</select></div>
+                  <div className="space-y-1.5"><Label htmlFor="new-agent-type">Copy from</Label><Select value={newAgentSource} onValueChange={setNewAgentSource}><SelectTrigger id="new-agent-type" className="w-full"><SelectValue /></SelectTrigger><SelectContent position="popper" align="start">{creatableAgents.map((agent) => <SelectItem key={agent.name} value={agent.name}>{agent.display_name}</SelectItem>)}</SelectContent></Select></div>
                   <div className="space-y-1.5"><Label htmlFor="new-agent-description">Description</Label><Input id="new-agent-description" value={newAgentDescription} onChange={(event) => setNewAgentDescription(event.target.value)} placeholder="What this specialist is for" maxLength={500} /></div>
                 </div>
                 <Button size="sm" variant="outline" onClick={() => void createAgent()} disabled={agentBusy || !newAgentName.trim() || !newAgentDescription.trim() || !newAgentSource}><Plus className="mr-2 h-4 w-4" />Create agent</Button>

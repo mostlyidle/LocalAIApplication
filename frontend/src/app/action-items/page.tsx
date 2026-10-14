@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   createActionItem,
   deleteActionItem,
@@ -201,7 +202,7 @@ export default function ActionItemsPage() {
           <form onSubmit={(event) => void submit(event)} className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2 sm:col-span-2"><Label htmlFor="action-title">Title</Label><Input id="action-title" value={title} maxLength={300} onChange={(event) => setTitle(event.target.value)} required /></div>
             <div className="space-y-2 sm:col-span-2"><Label htmlFor="action-description">Details</Label><textarea id="action-description" value={description} maxLength={4000} onChange={(event) => setDescription(event.target.value)} rows={3} className="w-full rounded-md border bg-background px-3 py-2 text-sm" /></div>
-            <div className="space-y-2"><Label htmlFor="action-priority">Priority</Label><select id="action-priority" value={priority} onChange={(event) => setPriority(event.target.value as ActionItemRecord["priority"])} className="h-10 w-full rounded-md border bg-background px-3 text-sm"><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option></select></div>
+            <div className="space-y-2"><Label htmlFor="action-priority">Priority</Label><Select value={priority} onValueChange={(value) => setPriority(value as ActionItemRecord["priority"])}><SelectTrigger id="action-priority" className="w-full"><SelectValue /></SelectTrigger><SelectContent position="popper" align="start"><SelectItem value="low">Low</SelectItem><SelectItem value="normal">Normal</SelectItem><SelectItem value="high">High</SelectItem></SelectContent></Select></div>
             <div className="space-y-2"><Label htmlFor="action-due-date">Due date</Label><Input id="action-due-date" type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} /></div>
             {error && <p role="alert" className="text-sm text-destructive sm:col-span-2">{error}</p>}
             <div className="flex gap-2 sm:col-span-2">
@@ -218,8 +219,8 @@ export default function ActionItemsPage() {
           <CardDescription>Choose your chat, meeting, or document. Suggestions include a source quote and are never saved until you accept them.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-[1fr_2fr_auto] sm:items-end">
-          <div className="space-y-2"><Label htmlFor="planner-source-type">Source type</Label><select id="planner-source-type" value={sourceType} onChange={(event) => { setSourceType(event.target.value as PlannerSourceType); setSourceId(""); setSuggestions([]); }} className="h-10 w-full rounded-md border bg-background px-3 text-sm"><option value="chat">Chat</option><option value="meeting">Meeting</option><option value="document">Document</option></select></div>
-          <div className="space-y-2"><Label htmlFor="planner-source">Source</Label><select id="planner-source" value={sourceId} onChange={(event) => setSourceId(event.target.value)} className="h-10 w-full rounded-md border bg-background px-3 text-sm"><option value="">Choose a {sourceType}…</option>{availableSources.map((source) => <option key={source.id} value={source.id}>{source.title}</option>)}</select></div>
+          <div className="space-y-2"><Label htmlFor="planner-source-type">Source type</Label><Select value={sourceType} onValueChange={(value) => { setSourceType(value as PlannerSourceType); setSourceId(""); setSuggestions([]); }}><SelectTrigger id="planner-source-type" className="w-full"><SelectValue /></SelectTrigger><SelectContent position="popper" align="start"><SelectItem value="chat">Chat</SelectItem><SelectItem value="meeting">Meeting</SelectItem><SelectItem value="document">Document</SelectItem></SelectContent></Select></div>
+          <div className="space-y-2"><Label htmlFor="planner-source">Source</Label><Select value={sourceId} onValueChange={setSourceId}><SelectTrigger id="planner-source" className="w-full"><SelectValue placeholder={`Choose a ${sourceType}…`} /></SelectTrigger><SelectContent position="popper" align="start">{availableSources.map((source) => <SelectItem key={source.id} value={source.id}>{source.title}</SelectItem>)}</SelectContent></Select></div>
           <Button onClick={() => void runPlanner()} disabled={proposing || !sourceId}>{proposing ? <Loader2 className="animate-spin" /> : <Sparkles />} Suggest next steps</Button>
         </CardContent>
       </Card>
@@ -236,7 +237,7 @@ export default function ActionItemsPage() {
                 </div>
                 <blockquote className="rounded-xl border-l-4 border-primary/50 bg-muted/50 px-4 py-3 text-sm text-muted-foreground">“{suggestion.source_quote}”</blockquote>
                 <div className="flex flex-wrap items-end gap-3">
-                  <div className="space-y-2"><Label htmlFor={`suggestion-priority-${index}`}>Priority</Label><select id={`suggestion-priority-${index}`} value={suggestion.priority} disabled={saving} onChange={(event) => setSuggestions((current) => current.map((value, i) => i === index ? { ...value, priority: event.target.value as ActionItemRecord["priority"] } : value))} className="h-10 rounded-md border bg-background px-3 text-sm"><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option></select></div>
+                  <div className="space-y-2"><Label htmlFor={`suggestion-priority-${index}`}>Priority</Label><Select value={suggestion.priority} disabled={saving} onValueChange={(priority) => setSuggestions((current) => current.map((value, i) => i === index ? { ...value, priority: priority as ActionItemRecord["priority"] } : value))}><SelectTrigger id={`suggestion-priority-${index}`}><SelectValue /></SelectTrigger><SelectContent position="popper" align="start"><SelectItem value="low">Low</SelectItem><SelectItem value="normal">Normal</SelectItem><SelectItem value="high">High</SelectItem></SelectContent></Select></div>
                   <div className="space-y-2"><Label htmlFor={`suggestion-date-${index}`}>Due date</Label><Input id={`suggestion-date-${index}`} type="date" value={suggestion.due_date ?? ""} disabled={saving} onChange={(event) => setSuggestions((current) => current.map((value, i) => i === index ? { ...value, due_date: event.target.value || null } : value))} /></div>
                   <Button onClick={() => void acceptSuggestion(suggestion)} disabled={saving || !suggestion.title.trim()}><Check /> Accept</Button>
                   <Button variant="outline" onClick={() => ignoreSuggestion(index)} disabled={saving}>Ignore</Button>
@@ -256,7 +257,7 @@ export default function ActionItemsPage() {
             <CardContent className="flex flex-col gap-4 py-4 sm:flex-row sm:items-center">
               <div className="min-w-0 flex-1"><p className={`font-semibold ${item.status === "done" ? "text-muted-foreground line-through" : ""}`}>{item.title}</p>{item.description && <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">{item.description}</p>}{item.source_quote && <blockquote className="mt-2 border-l-2 pl-3 text-xs text-muted-foreground">“{item.source_quote}”</blockquote>}<p className="mt-2 text-xs text-muted-foreground">{item.priority} priority{item.due_date ? ` · due ${item.due_date}` : ""}</p></div>
               <div className="flex flex-wrap items-center gap-2">
-                <select aria-label={`Status for ${item.title}`} value={item.status} onChange={(event) => void changeStatus(item, event.target.value as ActionItemRecord["status"])} className="h-10 rounded-md border bg-background px-2 text-sm">{Object.entries(statusLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+                <Select value={item.status} onValueChange={(value) => void changeStatus(item, value as ActionItemRecord["status"])}><SelectTrigger aria-label={`Status for ${item.title}`}><SelectValue /></SelectTrigger><SelectContent position="popper" align="start">{Object.entries(statusLabels).map(([value, label]) => <SelectItem key={value} value={value}>{label}</SelectItem>)}</SelectContent></Select>
                 <Button variant="outline" size="icon" aria-label={`Edit ${item.title}`} onClick={() => edit(item)}><Pencil className="size-4" /></Button>
                 <Button variant="outline" size="icon" aria-label={`Delete ${item.title}`} onClick={() => void remove(item)}><Trash2 className="size-4" /></Button>
               </div>

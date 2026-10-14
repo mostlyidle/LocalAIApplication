@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 const api = vi.hoisted(() => ({
   createActionItem: vi.fn(),
@@ -63,9 +64,8 @@ describe("ActionItemsPage", () => {
     api.getActionItems.mockResolvedValueOnce({ items: [item], total: 1 });
     render(<ActionItemsPage />);
 
-    fireEvent.change(await screen.findByLabelText(`Status for ${item.title}`), {
-      target: { value: "done" },
-    });
+    await userEvent.click(await screen.findByRole("combobox", { name: `Status for ${item.title}` }));
+    await userEvent.click(await screen.findByRole("option", { name: "Done" }));
     await waitFor(() => expect(api.updateActionItem).toHaveBeenCalledWith(item.id, {
       revision: 1,
       status: "done",
@@ -101,8 +101,8 @@ describe("ActionItemsPage", () => {
     });
     render(<ActionItemsPage />);
 
-    await screen.findByRole("option", { name: "A chat" });
-    fireEvent.change(screen.getByLabelText("Source"), { target: { value: "chat-1" } });
+    await userEvent.click(await screen.findByRole("combobox", { name: "Source" }));
+    await userEvent.click(await screen.findByRole("option", { name: "A chat" }));
     fireEvent.click(screen.getByRole("button", { name: "Suggest next steps" }));
     expect(await screen.findByText(/I will send the update tomorrow\./)).toBeTruthy();
     expect(api.createActionItem).not.toHaveBeenCalled();

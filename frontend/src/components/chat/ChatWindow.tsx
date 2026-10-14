@@ -4,7 +4,7 @@ import { useRef, useEffect, useState, type FormEvent, type ChangeEvent, type Rea
 import Link from "next/link";
 import { Send, Plus, Loader2, Paperclip, X, Image as ImageIcon, History, Sparkles, Lightbulb, BookOpen, ListChecks, PenLine, SlidersHorizontal, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
@@ -690,21 +690,19 @@ export function ChatWindow() {
         {profileError && <div role="alert" className="mx-auto mb-2 max-w-3xl rounded-xl bg-destructive/10 p-3 text-sm text-destructive">{profileError}</div>}
         <div className="mx-auto mb-2 flex max-w-3xl flex-wrap items-center gap-2">
           <label className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground" htmlFor="agent-profile"><Sparkles className="size-3.5" aria-hidden="true" /> Agent</label>
-          <select
-            id="agent-profile"
-            aria-label="Agent profile"
-            value={selectedAgent}
-            onChange={(event) => { setSelectedAgent(event.target.value); setProfileError(""); }}
-            disabled={isStreaming}
-            className="h-11 max-w-full rounded-xl border border-input bg-card px-3 text-base sm:text-sm"
-          >
-            <option value="auto">Auto select</option>
-            {agents.filter((agent) => !agent.archived).map((agent) => (
-              <option key={agent.name} value={agent.name}>
-                {AGENT_LABELS[agent.name] ?? (agent.display_name || agent.name.replaceAll("_", " "))}{agent.default_for_target ? " · default" : ""}
-              </option>
-            ))}
-          </select>
+          <Select value={selectedAgent} onValueChange={(value) => { setSelectedAgent(value); setProfileError(""); }} disabled={isStreaming}>
+            <SelectTrigger id="agent-profile" aria-label="Agent profile" className="max-w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent position="popper" align="start">
+              <SelectItem value="auto">Auto select</SelectItem>
+              {agents.filter((agent) => !agent.archived).map((agent) => (
+                <SelectItem key={agent.name} value={agent.name}>
+                  {AGENT_LABELS[agent.name] ?? (agent.display_name || agent.name.replaceAll("_", " "))}{agent.default_for_target ? " · default" : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Button type="button" variant="ghost" size="sm" className="min-h-11 rounded-xl" onClick={() => setOptionsOpen((open) => !open)} aria-expanded={optionsOpen} aria-controls="agent-options">
             <SlidersHorizontal className="size-3.5" aria-hidden="true" />
             Options
@@ -754,29 +752,29 @@ export function ChatWindow() {
           {selectedProfile?.target === "rag" && (
             <label className="flex flex-col gap-1 text-xs text-muted-foreground">
               Search index
-              <select
-                aria-label="Search index"
-                value={collection}
-                onChange={(event) => setCollection(event.target.value)}
-                disabled={isStreaming}
-                className="h-11 max-w-64 rounded-xl border border-input bg-card px-3 text-base text-foreground sm:text-sm"
-              >
-                <option value="">Select an index</option>
-                {ragContainers.length > 0 && (
-                  <optgroup label="Private containers">
-                    {ragContainers.map((container) => (
-                      <option key={container.name} value={container.name}>{container.display_name}</option>
-                    ))}
-                  </optgroup>
-                )}
-                {ragCollections.some((item) => !ragContainers.some((container) => container.name === item.name)) && (
-                  <optgroup label="Existing collections">
-                    {ragCollections.filter((item) => !ragContainers.some((container) => container.name === item.name)).map((item) => (
-                      <option key={item.name} value={item.name}>{item.name}</option>
-                    ))}
-                  </optgroup>
-                )}
-              </select>
+              <Select value={collection} onValueChange={setCollection} disabled={isStreaming}>
+                <SelectTrigger aria-label="Search index" className="w-full max-w-64">
+                  <SelectValue placeholder="Select an index" />
+                </SelectTrigger>
+                <SelectContent position="popper" align="start">
+                  {ragContainers.length > 0 && (
+                    <SelectGroup>
+                      <SelectLabel>Private containers</SelectLabel>
+                      {ragContainers.map((container) => (
+                        <SelectItem key={container.name} value={container.name}>{container.display_name}</SelectItem>
+                      ))}
+                    </SelectGroup>
+                  )}
+                  {ragCollections.some((item) => !ragContainers.some((container) => container.name === item.name)) && (
+                    <SelectGroup>
+                      <SelectLabel>Existing collections</SelectLabel>
+                      {ragCollections.filter((item) => !ragContainers.some((container) => container.name === item.name)).map((item) => (
+                        <SelectItem key={item.name} value={item.name}>{item.name}</SelectItem>
+                      ))}
+                    </SelectGroup>
+                  )}
+                </SelectContent>
+              </Select>
             </label>
           )}
           {selectedProfile?.target === "stock_research" && (
@@ -893,11 +891,14 @@ export function ChatWindow() {
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="space-y-1 text-sm" htmlFor="remember-kind">
                   Type
-                  <select id="remember-kind" value={memoryDraft.kind} onChange={(event) => setMemoryDraft({ ...memoryDraft, kind: event.target.value as MemoryRecord["kind"] })} className="h-9 w-full rounded-md border bg-background px-3">
-                    <option value="fact">Fact</option>
-                    <option value="preference">Preference</option>
-                    <option value="project_decision">Project decision</option>
-                  </select>
+                  <Select value={memoryDraft.kind} onValueChange={(value) => setMemoryDraft({ ...memoryDraft, kind: value as MemoryRecord["kind"] })}>
+                    <SelectTrigger id="remember-kind" className="w-full"><SelectValue /></SelectTrigger>
+                    <SelectContent position="popper" align="start">
+                      <SelectItem value="fact">Fact</SelectItem>
+                      <SelectItem value="preference">Preference</SelectItem>
+                      <SelectItem value="project_decision">Project decision</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </label>
                 <label className="space-y-1 text-sm" htmlFor="remember-project">
                   Project (optional)

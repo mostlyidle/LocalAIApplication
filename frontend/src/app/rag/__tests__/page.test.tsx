@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
+import { render, screen, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { vi, describe, it, expect, beforeEach } from "vitest";
 import RAGPage from "../page";
@@ -11,6 +11,9 @@ vi.mock("lucide-react", () => ({
   Loader2: (props: Record<string, unknown>) => <svg data-testid="loader-icon" {...props} />,
   FileText: (props: Record<string, unknown>) => <svg data-testid="file-icon" {...props} />,
   Upload: (props: Record<string, unknown>) => <svg data-testid="upload-icon" {...props} />,
+  ChevronDownIcon: (props: Record<string, unknown>) => <svg {...props} />,
+  ChevronUpIcon: (props: Record<string, unknown>) => <svg {...props} />,
+  CheckIcon: (props: Record<string, unknown>) => <svg {...props} />,
 }));
 
 // Mock the API module
@@ -38,6 +41,11 @@ const mockSearchRAG = api.searchRAG as ReturnType<typeof vi.fn>;
 const mockDeleteCollection = api.deleteRAGCollection as ReturnType<typeof vi.fn>;
 const mockGetDocuments = api.getDocuments as ReturnType<typeof vi.fn>;
 const mockIngestRAG = api.ingestRAG as ReturnType<typeof vi.fn>;
+
+async function selectOption(label: string, option: string) {
+  await userEvent.click(await screen.findByRole("combobox", { name: label }));
+  await userEvent.click(await screen.findByRole("option", { name: option }));
+}
 
 describe("RAG Page", () => {
   beforeEach(() => {
@@ -77,12 +85,12 @@ describe("RAG Page", () => {
       render(<RAGPage />);
     });
 
-    await waitFor(() => {
-      expect(within(screen.getByLabelText("Search index")).getByRole("option", { name: "documents" })).toBeInTheDocument();
-      expect(screen.getByText("10 documents")).toBeInTheDocument();
-      expect(within(screen.getByLabelText("Search index")).getByRole("option", { name: "reports" })).toBeInTheDocument();
-      expect(screen.getByText("3 documents")).toBeInTheDocument();
-    });
+    await userEvent.click(await screen.findByRole("combobox", { name: "Search index" }));
+    expect(screen.getByRole("option", { name: "documents" })).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+    expect(screen.getByRole("option", { name: "reports", hidden: true })).toBeInTheDocument();
+    expect(screen.getByText("10 documents")).toBeInTheDocument();
+    expect(screen.getByText("3 documents")).toBeInTheDocument();
   });
 
   it("shows empty state when no collections", async () => {
@@ -112,8 +120,9 @@ describe("RAG Page", () => {
     expect(screen.queryByText(/No collections yet/i)).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await userEvent.click(await screen.findByRole("combobox", { name: "Search index" }));
     await waitFor(() => {
-      expect(within(screen.getByLabelText("Search index")).getByRole("option", { name: "reports" })).toBeInTheDocument();
+      expect(screen.getByRole("option", { name: "reports" })).toBeInTheDocument();
     });
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
@@ -148,6 +157,7 @@ describe("RAG Page", () => {
     });
 
     const input = screen.getByPlaceholderText(/Search your knowledge base/i);
+    await selectOption("Search index", "documents");
     await userEvent.type(input, "Python features");
 
     const searchBtn = screen.getByRole("button", { name: /Search/i });
@@ -177,9 +187,8 @@ describe("RAG Page", () => {
     await act(async () => {
       render(<RAGPage />);
     });
-    fireEvent.change(screen.getByLabelText("Retrieval profile"), {
-      target: { value: "rag_v2" },
-    });
+    await selectOption("Search index", "documents");
+    await selectOption("Retrieval profile", "Hybrid + query rewrites");
     await userEvent.type(screen.getByPlaceholderText(/Search your knowledge base/i), "revenue");
     await userEvent.click(screen.getByRole("button", { name: /Search/i }));
 
@@ -197,6 +206,7 @@ describe("RAG Page", () => {
     });
 
     const input = screen.getByPlaceholderText(/Search your knowledge base/i);
+    await selectOption("Search index", "documents");
     await userEvent.type(input, "test query");
 
     await userEvent.click(screen.getByRole("button", { name: /Search/i }));
@@ -214,6 +224,7 @@ describe("RAG Page", () => {
     });
 
     const input = screen.getByPlaceholderText(/Search your knowledge base/i);
+    await selectOption("Search index", "documents");
     await userEvent.type(input, "obscure query");
 
     await userEvent.click(screen.getByRole("button", { name: /Search/i }));
@@ -230,9 +241,9 @@ describe("RAG Page", () => {
       render(<RAGPage />);
     });
 
-    await waitFor(() => {
-      expect(within(screen.getByLabelText("Search index")).getByRole("option", { name: "documents" })).toBeInTheDocument();
-    });
+    await userEvent.click(await screen.findByRole("combobox", { name: "Search index" }));
+    expect(screen.getByRole("option", { name: "documents" })).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
 
     // Find the delete button for the first collection
     const trashIcons = screen.getAllByTestId("trash-icon");
@@ -252,9 +263,9 @@ describe("RAG Page", () => {
       render(<RAGPage />);
     });
 
-    await waitFor(() => {
-      expect(within(screen.getByLabelText("Search index")).getByRole("option", { name: "documents" })).toBeInTheDocument();
-    });
+    await userEvent.click(await screen.findByRole("combobox", { name: "Search index" }));
+    expect(screen.getByRole("option", { name: "documents" })).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
 
     const trashIcons = screen.getAllByTestId("trash-icon");
     await userEvent.click(trashIcons[0].closest("button")!);
