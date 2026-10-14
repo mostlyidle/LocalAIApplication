@@ -229,6 +229,33 @@ describe("ChatWindow", () => {
     expect(window.localStorage.getItem("local-ai-active-conversation:account-alice")).toBe("conversation-1");
   });
 
+  it("loads older conversations a page at a time", async () => {
+    const page = Array.from({ length: 50 }, (_, index) => ({
+      id: `conversation-${index}`,
+      title: `Conversation ${index}`,
+      created_at: "2026-10-12T10:00:00Z",
+      last_message_at: "2026-10-12T10:01:00Z",
+      message_count: 1,
+    }));
+    mockGetConversations
+      .mockResolvedValueOnce({ conversations: page })
+      .mockResolvedValueOnce({ conversations: [{
+        id: "conversation-older",
+        title: "Older conversation",
+        created_at: "2026-10-11T10:00:00Z",
+        last_message_at: "2026-10-11T10:01:00Z",
+        message_count: 1,
+      }] });
+
+    render(<ChatWindow />);
+    await userEvent.click(screen.getByRole("button", { name: "History" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Load older conversations" }));
+
+    expect(mockGetConversations).toHaveBeenNthCalledWith(1, 50, 0, "");
+    expect(mockGetConversations).toHaveBeenNthCalledWith(2, 50, 50, "");
+    expect(await screen.findByRole("button", { name: /Older conversation/ })).toBeInTheDocument();
+  });
+
   it("clears the active conversation pointer for a new chat", async () => {
     window.localStorage.setItem("local-ai-active-conversation:account-alice", "conversation-1");
     render(<ChatWindow />);
@@ -491,6 +518,23 @@ describe("ChatWindow", () => {
     await waitFor(() => {
       expect(screen.getByText("Ready")).toBeInTheDocument();
     });
+  });
+
+  it("does not submit a chat while an attachment upload is pending", () => {
+    mockUploadDocument.mockReturnValue(new Promise(() => {}));
+    render(<ChatWindow />);
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(fileInput, {
+      target: { files: [new File(["data"], "pending.pdf", { type: "application/pdf" })] },
+    });
+    const textarea = screen.getByRole("textbox", { name: "Your message" });
+    fireEvent.change(textarea, { target: { value: "Use this file" } });
+    fireEvent.keyDown(textarea, { key: "Enter", shiftKey: false });
+
+    expect(mockSendMessage).not.toHaveBeenCalled();
+    expect(screen.getByText("Uploading...")).toBeInTheDocument();
+    expect(textarea).toHaveValue("Use this file");
   });
 
   it("shows error when upload fails", async () => {

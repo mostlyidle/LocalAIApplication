@@ -16,6 +16,7 @@ import * as api from "@/lib/api";
 
 interface AnalysisData {
   text: string;
+  answer?: string | null;
   tables: { page?: number | null; headers: string[]; rows: string[][] }[];
   metadata: Record<string, unknown>;
   page_count?: number | null;
@@ -174,6 +175,7 @@ export function DocumentViewer({ document: doc, onDelete, onAnalyze }: DocumentV
         {analysis && (
           <ExtractionResults
             text={analysis.text}
+            answer={analysis.answer}
             tables={analysis.tables}
             metadata={analysis.metadata}
             pageCount={analysis.page_count}

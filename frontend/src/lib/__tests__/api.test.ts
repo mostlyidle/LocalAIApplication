@@ -175,6 +175,17 @@ describe("API Client", () => {
       expect(result.conversations).toHaveLength(1);
     });
 
+    it("getConversations includes the page and search query", async () => {
+      const spy = mockFetchSuccess([]);
+      globalThis.fetch = spy;
+
+      await getConversations(50, 50, "  project  ");
+
+      expect(spy.mock.calls[0][0]).toContain("limit=50");
+      expect(spy.mock.calls[0][0]).toContain("offset=50");
+      expect(spy.mock.calls[0][0]).toContain("q=project");
+    });
+
     it("getConversation fetches single conversation", async () => {
       globalThis.fetch = mockFetchSuccess({
         id: "1",

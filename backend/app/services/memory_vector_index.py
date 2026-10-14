@@ -150,7 +150,6 @@ class MemoryVectorIndex:
                     Conversation.owner_id == owner_id,
                     Conversation.exclude_from_memory.is_(False),
                     Account.is_enabled.is_(True),
-                    Account.memory_enabled.is_(True),
                     Account.past_chat_recall_enabled.is_(True),
                     Account.memory_epoch == memory_epoch,
                 )

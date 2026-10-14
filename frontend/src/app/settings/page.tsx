@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Settings,
   Activity,
@@ -67,6 +67,8 @@ export default function SettingsPage() {
   const [newAgentName, setNewAgentName] = useState("");
   const [newAgentDescription, setNewAgentDescription] = useState("");
   const [newAgentSource, setNewAgentSource] = useState("");
+  const selectedAgentNameRef = useRef(selectedAgentName);
+  selectedAgentNameRef.current = selectedAgentName;
 
   const selectedAgent = agents.find((agent) => agent.name === selectedAgentName);
   const creatableAgents = agents.filter((agent) => agent.inference && !agent.archived);
@@ -74,7 +76,7 @@ export default function SettingsPage() {
   const refreshAgents = useCallback(async (selectedName?: string) => {
     const catalog = await api.getAgentCatalogWithArchived();
     setAgents(catalog.agents);
-    const nextName = selectedName ?? selectedAgentName;
+    const nextName = selectedName ?? selectedAgentNameRef.current;
     const nextAgent = catalog.agents.find((agent) => agent.name === nextName) ?? catalog.agents[0];
     if (nextAgent) {
       setSelectedAgentName(nextAgent.name);
@@ -84,7 +86,7 @@ export default function SettingsPage() {
     }
     const nextSource = catalog.agents.find((agent) => agent.inference && !agent.archived);
     if (nextSource) setNewAgentSource((current) => current || nextSource.name);
-  }, [selectedAgentName]);
+  }, []);
 
   useEffect(() => {
     async function loadHealth() {

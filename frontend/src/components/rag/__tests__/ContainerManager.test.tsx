@@ -112,4 +112,26 @@ describe("ContainerManager", () => {
     await user.click(screen.getByRole("button", { name: "Remove project/notes.txt from container" }));
     await waitFor(() => expect(mocks.deleteFile).toHaveBeenCalledWith(container.name, file.id));
   });
+
+  it("ignores file responses from a previously selected container", async () => {
+    const other = { ...container, name: "container_other", display_name: "Other" };
+    let resolveFirst!: (files: (typeof file)[]) => void;
+    mocks.getFiles.mockImplementation((name: string) => name === container.name
+      ? new Promise((resolve) => { resolveFirst = resolve; })
+      : Promise.resolve([{ ...file, id: "current-file", relative_path: "current.txt" }]));
+    const props = {
+      containers: [container, other],
+      onSelect: vi.fn(),
+      onRefresh: vi.fn().mockResolvedValue(undefined),
+    };
+    const { rerender } = render(<ContainerManager {...props} selectedName={container.name} />);
+    await waitFor(() => expect(mocks.getFiles).toHaveBeenCalledWith(container.name));
+
+    rerender(<ContainerManager {...props} selectedName={other.name} />);
+    expect(await screen.findByText("current.txt")).toBeInTheDocument();
+    resolveFirst([file]);
+
+    await waitFor(() => expect(screen.queryByText("project/notes.txt")).not.toBeInTheDocument());
+    expect(screen.getByText("current.txt")).toBeInTheDocument();
+  });
 });

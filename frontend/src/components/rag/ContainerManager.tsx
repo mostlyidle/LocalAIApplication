@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Database, Loader2, RotateCcw, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,27 +34,36 @@ export function ContainerManager({ containers, selectedName, onSelect, onRefresh
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const filesRequestId = useRef(0);
   const active = containers.find((container) => container.name === selectedName);
   const isWorking = Boolean(active && active.queued_file_count + active.processing_file_count > 0);
 
   const refreshFiles = useCallback(async () => {
+    const requestId = ++filesRequestId.current;
     if (!selectedName) {
       setFiles([]);
+      setIsLoadingFiles(false);
       return;
     }
     setIsLoadingFiles(true);
     try {
-      setFiles(await getRAGContainerFiles(selectedName));
-      setError("");
+      const nextFiles = await getRAGContainerFiles(selectedName);
+      if (requestId === filesRequestId.current) {
+        setFiles(nextFiles);
+        setError("");
+      }
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Could not load container files.");
+      if (requestId === filesRequestId.current) {
+        setError(loadError instanceof Error ? loadError.message : "Could not load container files.");
+      }
     } finally {
-      setIsLoadingFiles(false);
+      if (requestId === filesRequestId.current) setIsLoadingFiles(false);
     }
   }, [selectedName]);
 
   useEffect(() => {
     void refreshFiles();
+    return () => { filesRequestId.current += 1; };
   }, [refreshFiles]);
 
   useEffect(() => {

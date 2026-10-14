@@ -9,6 +9,7 @@ import asyncio
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
@@ -148,6 +149,74 @@ class TestSendMessage:
         assert len(messages) == 1
         assert json.loads(messages[0].execution_metadata)["artifacts"]["prompt_id"] == "job-1"
 
+    async def test_renamed_document_profile_keeps_uploaded_asset_context(
+        self, client: AsyncClient, app, db_session: AsyncSession, tmp_path: Path
+    ):
+        from app.models.profile_schemas import AgentResult, ExecutionMetadata
+
+        registry = app.state.agent_registry
+        base = registry.get("document_analytics")
+        custom = base.model_copy(
+            update={"name": "renamed_document_helper", "default_for_target": False}
+        )
+        registry.apply_configurations(
+            [
+                SimpleNamespace(
+                    name=custom.name,
+                    display_name="Renamed Document Helper",
+                    target=custom.target,
+                    description=custom.description,
+                    system_prompt=registry.system_prompt(base.name),
+                    base_agent=base.name,
+                    manifest_json=custom.model_dump_json(),
+                    is_custom=True,
+                    archived=False,
+                )
+            ]
+        )
+        path = tmp_path / "report.txt"
+        path.write_text("Quarterly report", encoding="utf-8")
+        uploaded = Document(
+            id="renamed-profile-upload",
+            owner_id=LEGACY_ACCOUNT_ID,
+            filename="report.txt",
+            format="text",
+            size_bytes=16,
+            storage_path=str(path),
+        )
+        db_session.add(uploaded)
+        await db_session.commit()
+
+        runner = AsyncMock()
+        runner.run.return_value = AgentResult(
+            agent=custom.name,
+            answer="Report summary",
+            metadata=ExecutionMetadata(
+                request_id="doc-request",
+                target="document",
+                agent_name=custom.name,
+            ),
+        )
+        app.state.task_runner = runner
+        with patch(
+            "app.agents.orchestrator.run_agent",
+            new_callable=AsyncMock,
+            return_value=_make_agent_result("Graph path"),
+        ) as graph:
+            response = await client.post(
+                "/api/v1/chat",
+                json={
+                    "content": "Summarize this report",
+                    "agent_name": custom.name,
+                    "attachments": [uploaded.id],
+                },
+            )
+
+        assert response.status_code == 200
+        assert response.json()["content"] == "Report summary"
+        assert runner.run.await_args.kwargs["document"].id == uploaded.id
+        graph.assert_not_awaited()
+
     async def test_chat_attachments_resolve_only_uploaded_ids(
         self, db_session: AsyncSession, tmp_path
     ):
@@ -181,7 +250,13 @@ class TestSendMessage:
     ):
         """Providing conversation_id reuses the conversation."""
         # Create a conversation first
-        conv = Conversation(owner_id=LEGACY_ACCOUNT_ID, id="test-conv-123", title="Test")
+        old_activity = datetime(2000, 1, 1, tzinfo=UTC)
+        conv = Conversation(
+            owner_id=LEGACY_ACCOUNT_ID,
+            id="test-conv-123",
+            title="Test",
+            updated_at=old_activity,
+        )
         db_session.add(conv)
         await db_session.commit()
 
@@ -195,6 +270,8 @@ class TestSendMessage:
         assert resp.status_code == 200
         data = resp.json()
         assert data["conversation_id"] == "test-conv-123"
+        await db_session.refresh(conv)
+        assert conv.updated_at.replace(tzinfo=UTC) > old_activity
 
     async def test_persists_tool_calls(self, client: AsyncClient):
         """Tool calls in the result are persisted and returned."""
@@ -519,6 +596,28 @@ class TestListConversationsDirect:
         assert result[0].id == "list-conv-1"
         assert result[0].title == "Listed Chat"
         assert result[0].message_count == 1
+        assert "messages" not in conv.__dict__
+
+    async def test_list_conversations_paginates_newest_first(
+        self, client: AsyncClient, db_session: AsyncSession
+    ):
+        db_session.add_all(
+            [
+                Conversation(
+                    owner_id=LEGACY_ACCOUNT_ID,
+                    id=f"page-{index}",
+                    title=f"Page {index}",
+                    updated_at=datetime(2020, 1, index + 1, tzinfo=UTC),
+                )
+                for index in range(3)
+            ]
+        )
+        await db_session.commit()
+
+        response = await client.get("/api/v1/chat/conversations?limit=1&offset=1")
+
+        assert response.status_code == 200
+        assert [conversation["id"] for conversation in response.json()] == ["page-1"]
 
     async def test_list_conversations_without_messages(self, db_session: AsyncSession):
         """A conversation with no messages uses created_at as last_message_at."""
@@ -578,6 +677,9 @@ class TestGetConversation:
         assert data["id"] == "detail-conv"
         assert data["title"] == "Detail Test"
         assert len(data["messages"]) >= 1
+        assert data["created_at"].endswith("+00:00")
+        assert data["updated_at"].endswith("+00:00")
+        assert data["messages"][0]["created_at"].endswith("+00:00")
 
     async def test_returns_404_for_unknown_conversation(self, client: AsyncClient):
         """Unknown conversation_id returns 404."""

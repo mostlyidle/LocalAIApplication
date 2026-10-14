@@ -75,6 +75,9 @@ async def natural_language_query(
         conversation_id=f"sql-{uuid.uuid4()}",
     )
     state["database"] = body.database
+    registry = request.app.state.agent_registry
+    profile = registry.default_for("sql")
+    state["system_prompts"] = {"sql": registry.system_prompt(profile.name)}
     result = await sql_agent_node(state)
 
     # Extract response and tool calls

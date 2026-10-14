@@ -176,4 +176,20 @@ describe("SchemaBrowser", () => {
     // No table buttons should exist
     expect(screen.queryAllByRole("button")).toHaveLength(0);
   });
+
+  it("ignores schema responses from a previously selected database", async () => {
+    let resolveFirst!: (schema: typeof sampleSchema) => void;
+    mockGetSQLSchema.mockImplementation((database: string) => database === "first"
+      ? new Promise((resolve) => { resolveFirst = resolve; })
+      : Promise.resolve({ tables: [{ name: "current_db", columns: [] }] }));
+    const { rerender } = render(<SchemaBrowser database="first" />);
+    await waitFor(() => expect(mockGetSQLSchema).toHaveBeenCalledWith("first"));
+
+    rerender(<SchemaBrowser database="second" />);
+    expect(await screen.findByText("current_db")).toBeInTheDocument();
+    resolveFirst({ tables: [{ name: "stale_db", columns: [] }] });
+
+    await waitFor(() => expect(screen.queryByText("stale_db")).not.toBeInTheDocument());
+    expect(screen.getByText("current_db")).toBeInTheDocument();
+  });
 });
