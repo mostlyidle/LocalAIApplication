@@ -90,6 +90,30 @@ async def test_rag_omits_oversized_memory_before_document_evidence() -> None:
     assert any("Personal memory was omitted" in item for item in context.limitations)
 
 
+async def test_rag_context_budget_includes_saved_system_prompt() -> None:
+    registry, prompts = profiles()
+    request = TaskRequest(
+        prompt="When?", agent_name="rag", inference={"context_window": 1024, "max_output_tokens": 64}
+    )
+    profile = registry.get("rag")
+    execution = AgentExecution(profile, registry.resolve_inference(profile, request))
+    search = SimpleNamespace(passages=[{"content": "Friday."}], retrieval={})
+
+    with (
+        patch(
+            "app.services.hybrid_vector_store.hybrid_vector_store_service.search_with_provenance",
+            AsyncMock(return_value=search),
+        ),
+        pytest.raises(HTTPException, match="context budget"),
+    ):
+        await prepare_rag_context(
+            request,
+            execution,
+            prompts,
+            system_prompt="Saved instruction " * 200,
+        )
+
+
 async def test_rag_context_rejects_another_accounts_collection(
     db_session: AsyncSession, async_engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:

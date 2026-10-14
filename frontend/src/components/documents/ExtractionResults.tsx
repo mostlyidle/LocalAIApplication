@@ -22,6 +22,7 @@ interface ExtractedTable {
 
 interface ExtractionResultsProps {
   text: string;
+  answer?: string | null;
   tables: ExtractedTable[];
   metadata: Record<string, unknown>;
   pageCount?: number | null;
@@ -30,6 +31,7 @@ interface ExtractionResultsProps {
 
 export function ExtractionResults({
   text,
+  answer,
   tables,
   metadata,
   pageCount,
@@ -37,6 +39,16 @@ export function ExtractionResults({
 }: ExtractionResultsProps) {
   return (
     <div className="space-y-4">
+      {answer && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Answer</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="whitespace-pre-wrap text-sm leading-relaxed">{answer}</p>
+          </CardContent>
+        </Card>
+      )}
       {/* Summary badges */}
       <div className="flex flex-wrap gap-2">
         {pageCount != null && (

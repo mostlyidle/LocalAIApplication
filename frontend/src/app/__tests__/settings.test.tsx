@@ -215,6 +215,30 @@ describe("SettingsPage", () => {
     });
   });
 
+  it("does not let a profile refresh overwrite an edited prompt", async () => {
+    const agent = {
+      name: "chat",
+      display_name: "Chat",
+      target: "chat",
+      description: "General chat",
+      default_for_target: true,
+      system_prompt: "Original prompt",
+      inference: {
+        allowed_models: ["llama3.1:8b"],
+        defaults: { model: "llama3.1:8b", temperature: 0.1 },
+        limits: { temperature: { minimum: 0, maximum: 2 } },
+      },
+    };
+    mockGetAgentCatalogWithArchived.mockResolvedValue({ agents: [agent] });
+    render(<SettingsPage />);
+    const textarea = await screen.findByDisplayValue("Original prompt");
+    await waitFor(() => expect(mockGetAgentCatalogWithArchived).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(textarea, { target: { value: "Unsaved draft" } });
+
+    expect(textarea).toHaveValue("Unsaved draft");
+  });
+
   it("renders database connection form", () => {
     render(<SettingsPage />);
     expect(screen.getByText("Database Connections")).toBeInTheDocument();

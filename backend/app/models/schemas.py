@@ -111,6 +111,17 @@ class ExtractedTable(BaseModel):
     rows: list[list[str]]
 
 
+class DocumentAnalyzeRequest(BaseModel):
+    """Optional question to answer using the uploaded document's extracted text."""
+
+    prompt: str | None = Field(default=None, min_length=1, max_length=4_000)
+
+    @field_validator("prompt")
+    @classmethod
+    def blank_prompt_is_omitted(cls, value: str | None) -> str | None:
+        return value.strip() or None if value is not None else None
+
+
 class DocumentAnalysisResult(BaseModel):
     """Full analysis result for a document."""
 
@@ -123,6 +134,7 @@ class DocumentAnalysisResult(BaseModel):
     page_count: int | None = None
     word_count: int = 0
     status: DocumentStatus = DocumentStatus.COMPLETED
+    answer: str | None = None
 
 
 class DocumentListItem(BaseModel):

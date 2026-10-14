@@ -99,6 +99,24 @@ describe("DocumentViewer", () => {
     });
   });
 
+  it("displays the answer to a document question separately from extracted text", async () => {
+    onAnalyze.mockResolvedValueOnce({
+      text: "Revenue was 42 million.",
+      answer: "42 million.",
+      tables: [],
+      metadata: {},
+      word_count: 4,
+    });
+    render(
+      <DocumentViewer document={baseDoc} onDelete={onDelete} onAnalyze={onAnalyze} />
+    );
+    await userEvent.type(screen.getByPlaceholderText(/Ask about this document/i), "What was revenue?");
+    await userEvent.click(screen.getByRole("button", { name: /Analyze/i }));
+
+    expect(await screen.findByText("42 million.")).toBeInTheDocument();
+    expect(screen.getByText("Revenue was 42 million.")).toBeInTheDocument();
+  });
+
   it("sends custom prompt to onAnalyze", async () => {
     render(
       <DocumentViewer document={baseDoc} onDelete={onDelete} onAnalyze={onAnalyze} />

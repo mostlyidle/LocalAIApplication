@@ -110,6 +110,28 @@ class TestSQLExecuteEndpoint:
         data = resp.json()
         assert data["result"]["row_count"] == 2
 
+
+class TestSQLQueryEndpoint:
+    async def test_uses_saved_sql_system_prompt(self, client: AsyncClient, app):
+        profile = app.state.agent_registry.default_for("sql")
+        saved_prompt = "Only query the data needed to answer."
+        app.state.agent_registry._prompts.set_system_override(
+            profile.name, profile.target, saved_prompt
+        )
+        with (
+            patch("app.api.routes.sql._require_sql_connection", AsyncMock()),
+            patch(
+                "app.api.routes.sql.sql_agent_node",
+                AsyncMock(return_value={"messages": [], "tool_calls": []}),
+            ) as invoke,
+        ):
+            response = await client.post(
+                "/api/v1/sql/query", json={"question": "Count the rows"}
+            )
+
+        assert response.status_code == 200
+        assert invoke.call_args.args[0]["system_prompts"]["sql"] == saved_prompt
+
     async def test_execute_unsafe_query_returns_422(self, client: AsyncClient):
         """Attempting to execute an unsafe query should return 422."""
         from app.api.middleware.error_handler import UnsafeQueryError

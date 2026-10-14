@@ -132,8 +132,10 @@ export async function sendMessage(message: string, conversationId?: string) {
   }, chatResponseSchema);
 }
 
-export async function getConversations() {
-  return apiFetch("/chat/conversations", undefined, conversationsListSchema);
+export async function getConversations(limit = 50, offset = 0, query = "") {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (query.trim()) params.set("q", query.trim());
+  return apiFetch(`/chat/conversations?${params}`, undefined, conversationsListSchema);
 }
 
 export async function getConversation(id: string) {

@@ -173,24 +173,36 @@ async def execute_query(
     engine = get_sql_engine(name=database)
     sql = validate_query(sql, dialect=engine.dialect.name)
     start = time.perf_counter()
+    sqlite_connection = None
 
     try:
-        async with (
-            asyncio.timeout(settings.sql_query_timeout_seconds),
-            AsyncSession(engine, expire_on_commit=False) as session,
-        ):
+        async with AsyncSession(engine, expire_on_commit=False) as session:
             if engine.dialect.name == "sqlite":
                 mode = "OFF" if settings.sql_allow_writes else "ON"
                 await session.execute(text(f"PRAGMA query_only={mode}"))
+                connection = await session.connection()
+                raw_connection = await connection.get_raw_connection()
+                sqlite_connection = raw_connection.driver_connection
             elif not settings.sql_allow_writes and engine.dialect.name == "postgresql":
                 await session.execute(text("SET TRANSACTION READ ONLY"))
-            result = await session.execute(text(sql))
-            columns = list(result.keys()) if result.returns_rows else []
-            rows = (
-                [list(row) for row in result.fetchmany(settings.sql_max_rows)]
-                if result.returns_rows
-                else []
-            )
+            try:
+                async with asyncio.timeout(settings.sql_query_timeout_seconds):
+                    result = await session.execute(text(sql))
+                    columns = list(result.keys()) if result.returns_rows else []
+                    rows = (
+                        [list(row) for row in result.fetchmany(settings.sql_max_rows)]
+                        if result.returns_rows
+                        else []
+                    )
+                    if settings.sql_allow_writes:
+                        await session.commit()
+            except TimeoutError:
+                if sqlite_connection is not None:
+                    try:
+                        await asyncio.shield(sqlite_connection.interrupt())
+                    except Exception:
+                        logger.warning("sqlite_query_interrupt_failed", database=database)
+                raise
             duration_ms = (time.perf_counter() - start) * 1000
 
             logger.info(

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import io
+from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -125,3 +127,83 @@ class TestDocumentGetAndDelete:
         # Verify deleted
         get_resp2 = await client.get(f"/api/v1/documents/{doc_id}")
         assert get_resp2.status_code == 404
+
+    async def test_delete_cleans_legacy_ingest_vectors_for_owned_collections(
+        self, client: AsyncClient, app, db_session
+    ):
+        from app.dependencies import get_vector_store
+        from app.models.db_models import Account, Document, LEGACY_ACCOUNT_ID, RagCollection
+
+        path = Path("/tmp/legacy-ingest-delete.txt")
+        path.write_text("legacy indexed content", encoding="utf-8")
+        db_session.add_all(
+            [
+                Document(
+                    id="legacy-ingest-document",
+                    owner_id=LEGACY_ACCOUNT_ID,
+                    filename=path.name,
+                    format="text",
+                    size_bytes=22,
+                    storage_path=str(path),
+                ),
+                RagCollection(name="legacy-ingest-index", owner_id=LEGACY_ACCOUNT_ID),
+                Account(
+                    id="00000000-0000-4000-8000-000000000099",
+                    username="other-account",
+                    display_name="Other Account",
+                    password_hash="!test!",
+                ),
+                RagCollection(
+                    name="foreign-index", owner_id="00000000-0000-4000-8000-000000000099"
+                ),
+            ]
+        )
+        await db_session.commit()
+        vector_store = SimpleNamespace(delete_asset=AsyncMock(return_value=True))
+        app.dependency_overrides[get_vector_store] = lambda: vector_store
+
+        response = await client.delete("/api/v1/documents/legacy-ingest-document")
+
+        assert response.status_code == 200
+        vector_store.delete_asset.assert_awaited_once_with(
+            "legacy-ingest-index", "legacy-ingest-document"
+        )
+
+
+class TestDocumentAnalyze:
+    async def test_user_question_is_answered_alongside_extraction(
+        self, client: AsyncClient, app, db_session, tmp_path
+    ):
+        from app.dependencies import get_document_parser
+        from app.models.db_models import Document, LEGACY_ACCOUNT_ID
+        from app.services.document_parser import ParsedDocument
+
+        path = tmp_path / "report.txt"
+        path.write_text("Revenue was 42 million.", encoding="utf-8")
+        db_session.add(
+            Document(
+                id="questioned-document",
+                owner_id=LEGACY_ACCOUNT_ID,
+                filename=path.name,
+                format="text",
+                size_bytes=24,
+                storage_path=str(path),
+            )
+        )
+        await db_session.commit()
+        parser = SimpleNamespace(parse=AsyncMock(return_value=ParsedDocument("Revenue was 42 million.")))
+        app.dependency_overrides[get_document_parser] = lambda: parser
+        runner = SimpleNamespace(run=AsyncMock(return_value=SimpleNamespace(answer="42 million.")))
+        app.state.task_runner = runner
+
+        response = await client.post(
+            "/api/v1/documents/questioned-document/analyze",
+            json={"prompt": "What was the revenue?"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["text"] == "Revenue was 42 million."
+        assert response.json()["answer"] == "42 million."
+        task_request = runner.run.call_args.args[0]
+        assert task_request.prompt == "What was the revenue?"
+        assert task_request.context == "Revenue was 42 million."

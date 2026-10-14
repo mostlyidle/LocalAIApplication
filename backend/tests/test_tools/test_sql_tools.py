@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -268,6 +269,12 @@ class TestExecuteQuery:
         session = AsyncMock()
         session.__aenter__.return_value = session
         session.execute.side_effect = slow_execute
+        driver_connection = SimpleNamespace(interrupt=AsyncMock())
+        raw_connection = SimpleNamespace(driver_connection=driver_connection)
+        async_connection = SimpleNamespace(
+            get_raw_connection=AsyncMock(return_value=raw_connection)
+        )
+        session.connection = AsyncMock(return_value=async_connection)
         with (
             patch("app.tools.sql_tools.get_sql_engine", return_value=sql_engine),
             patch("app.tools.sql_tools.AsyncSession", return_value=session),
@@ -275,6 +282,7 @@ class TestExecuteQuery:
             pytest.raises(SQLExecutionError, match="timed out"),
         ):
             await execute_query("SELECT 1")
+        driver_connection.interrupt.assert_awaited_once()
 
     @pytest.mark.parametrize(
         "sql",
@@ -302,6 +310,18 @@ class TestExecuteQuery:
             pytest.raises(UnsafeQueryError),
         ):
             await execute_query("DELETE FROM users")
+
+    async def test_write_mode_commits_successful_statements(self, sql_engine):
+        with (
+            patch("app.tools.sql_tools.get_sql_engine", return_value=sql_engine),
+            patch("app.tools.sql_tools.settings.sql_allow_writes", True),
+        ):
+            await execute_query(
+                "INSERT INTO users (name, email, age) VALUES ('Eve', 'eve@test.com', 22)"
+            )
+            result = await execute_query("SELECT name FROM users WHERE email = 'eve@test.com'")
+
+        assert result["rows"] == [["Eve"]]
 
     async def test_select_all(self, sql_engine):
         with patch("app.tools.sql_tools.get_sql_engine", return_value=sql_engine):
