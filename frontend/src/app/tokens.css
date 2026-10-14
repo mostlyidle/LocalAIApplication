@@ -1,0 +1,103 @@
+/* Hallmark · pre-emit critique: P4 H5 E4 S5 R4 V4 */
+/* Hallmark · genre: playful · macrostructure: Workbench · tone: soft, curious · anchor hue: lavender */
+:root {
+  --color-paper: oklch(97% 0.014 295);
+  --color-paper-2: oklch(94% 0.018 295);
+  --color-paper-3: oklch(91% 0.022 295);
+  --color-ink: oklch(23% 0.020 285);
+  --color-ink-2: oklch(36% 0.022 285);
+  --color-rule: oklch(82% 0.018 295);
+  --color-rule-2: oklch(74% 0.020 295);
+  --color-muted: oklch(48% 0.025 285);
+  --color-neutral: oklch(42% 0.020 285);
+  --color-accent: oklch(73% 0.14 292);
+  --color-accent-ink: oklch(23% 0.020 285);
+  --color-accent-2: oklch(76% 0.11 195);
+  --color-accent-3: oklch(80% 0.11 55);
+  --color-focus: oklch(35% 0.13 292);
+  --color-success: oklch(43% 0.10 150);
+  --color-warning: oklch(47% 0.12 65);
+  --color-error: oklch(48% 0.17 20);
+
+  --font-display: ui-rounded, "Avenir Next", system-ui, sans-serif;
+  --font-body: "Avenir Next", ui-rounded, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --display-weight: 600;
+  --tracking-display: -0.025em;
+
+  --space-3xs: 0.25rem;
+  --space-2xs: 0.5rem;
+  --space-xs: 0.75rem;
+  --space-sm: 1rem;
+  --space-md: 1.5rem;
+  --space-lg: 2rem;
+  --space-xl: 3rem;
+  --space-2xl: 4rem;
+  --space-3xl: 6rem;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-md: 1rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.5rem;
+  --text-2xl: 2rem;
+  --text-display: clamp(2rem, 3vw + 1rem, 3rem);
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-micro: 120ms;
+  --dur-short: 220ms;
+  --dur-long: 420ms;
+
+  --rule-hair: 1px;
+  --rule-fine: 2px;
+  --radius-card: 1rem;
+  --radius-pill: 999px;
+  --radius-input: 0.75rem;
+  --shadow-card: 0 1px 2px oklch(23% 0.020 285 / 0.07);
+
+  /* Supporting fills keep the legacy semantic class names in one place. */
+  --violet-soft: oklch(93% 0.028 292);
+  --violet-ink: oklch(39% 0.12 292);
+  --peach-soft: oklch(95% 0.035 55);
+  --peach-ink: oklch(42% 0.10 45);
+  --mint-soft: oklch(94% 0.030 155);
+  --mint-ink: oklch(37% 0.09 150);
+  --sky-soft: oklch(94% 0.025 205);
+  --sky-ink: oklch(36% 0.08 220);
+  --rose-soft: oklch(94% 0.030 355);
+  --rose-ink: oklch(39% 0.11 350);
+}
+
+.dark {
+  --color-paper: oklch(19% 0.020 285);
+  --color-paper-2: oklch(23% 0.023 285);
+  --color-paper-3: oklch(28% 0.027 285);
+  --color-ink: oklch(95% 0.010 295);
+  --color-ink-2: oklch(83% 0.015 295);
+  --color-rule: oklch(37% 0.020 285);
+  --color-rule-2: oklch(44% 0.022 285);
+  --color-muted: oklch(72% 0.018 295);
+  --color-neutral: oklch(78% 0.014 295);
+  --color-accent: oklch(80% 0.12 292);
+  --color-accent-ink: oklch(23% 0.020 285);
+  --color-accent-2: oklch(78% 0.11 195);
+  --color-accent-3: oklch(82% 0.10 55);
+  --color-focus: oklch(85% 0.09 292);
+  --color-success: oklch(78% 0.11 150);
+  --color-warning: oklch(80% 0.12 75);
+  --color-error: oklch(76% 0.13 20);
+
+  --shadow-card: 0 1px 2px oklch(7% 0.012 285 / 0.24);
+  --violet-soft: oklch(31% 0.045 292);
+  --violet-ink: oklch(84% 0.07 292);
+  --peach-soft: oklch(31% 0.040 55);
+  --peach-ink: oklch(85% 0.07 55);
+  --mint-soft: oklch(29% 0.035 155);
+  --mint-ink: oklch(82% 0.07 150);
+  --sky-soft: oklch(29% 0.035 205);
+  --sky-ink: oklch(83% 0.06 210);
+  --rose-soft: oklch(31% 0.040 355);
+  --rose-ink: oklch(84% 0.07 350);
+}

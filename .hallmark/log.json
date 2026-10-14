@@ -1,0 +1,11 @@
+[
+  {
+    "date": "2026-10-14",
+    "scope": "app",
+    "macrostructure": "Workbench",
+    "theme": "Bubble (custom)",
+    "theme_axes": "light / rounded-sans / cool-violet",
+    "enrichment": "none",
+    "brief": "Mallow local AI workspace redesign with a friendly otter identity"
+  }
+]
