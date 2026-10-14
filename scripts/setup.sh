@@ -48,19 +48,15 @@ fi
 
 # ── Data directories ───────────────────────────────────────────────────
 info "Creating data directories..."
-mkdir -p data/uploads data/chroma
+mkdir -p data/uploads data/chroma data/fastembed
 
 # ── Backend setup ──────────────────────────────────────────────────────
 info "Installing backend dependencies..."
-cd backend
-uv sync
-cd ..
+uv sync --project "$PROJECT_DIR/backend"
 
 # ── Frontend setup ─────────────────────────────────────────────────────
 info "Installing frontend dependencies..."
-cd frontend
-pnpm install
-cd ..
+pnpm --dir "$PROJECT_DIR/frontend" install
 
 # ── Ollama models ──────────────────────────────────────────────────────
 info "Checking Ollama status..."
@@ -84,9 +80,7 @@ done
 
 # ── Database migrations ────────────────────────────────────────────────
 info "Running database migrations..."
-cd backend
-uv run alembic upgrade head 2>/dev/null || warn "Alembic migrations skipped (may not be initialized yet)."
-cd ..
+uv run --project "$PROJECT_DIR/backend" alembic -c "$PROJECT_DIR/backend/alembic.ini" upgrade head
 
 # ── Done ───────────────────────────────────────────────────────────────
 echo ""

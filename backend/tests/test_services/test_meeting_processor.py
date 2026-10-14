@@ -102,7 +102,7 @@ class TestMeetingAudioProcessor:
         consumer_started = asyncio.Event()
         fail_consumer = asyncio.Event()
 
-        async def fail_after_queueing(header, payload, final):
+        async def fail_after_queueing(header, payload, offset_ms, final):
             consumer_started.set()
             await fail_consumer.wait()
             raise RuntimeError("transcript persistence failed")

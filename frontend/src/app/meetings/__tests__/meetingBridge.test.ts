@@ -80,6 +80,8 @@ describe("meeting bridge contracts", () => {
 
   it("keeps transport errors and rejects malformed processor payloads", () => {
     expect(adapters.transportStatus({ phase: "failed", error: "final-event drain timed out" })).toEqual({ phase: "failed", message: "final-event drain timed out" });
+    expect(adapters.transportStatus({ type: "error", message: "audio frame was rejected" })).toEqual({ phase: "unknown", message: "audio frame was rejected" });
+    expect(adapters.transportStatus({ type: "degraded", message: "transcription unavailable" })).toEqual({ phase: "unknown", message: "transcription unavailable" });
     expect(adapters.transcript({ segment_id: "s1", source: "system", text: "hello", start_ms: 10, end_ms: 20 })).not.toBeNull();
     expect(adapters.transcript({ segment_id: "s1", source: "system", text: "hello", start_ms: 10 })).toBeNull();
   });

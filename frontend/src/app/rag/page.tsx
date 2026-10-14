@@ -132,6 +132,10 @@ export default function RAGPage() {
     try {
       await api.deleteRAGCollection(name);
       setCollections((prev) => prev.filter((c) => c.name !== name));
+      if (selectedCollection === name) {
+        setSelectedCollection("");
+        setResults([]);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Delete failed");
     }
@@ -416,12 +420,13 @@ export default function RAGPage() {
                       <div>
                         <div className="text-xs font-medium">{col.name}</div>
                         <div className="text-[10px] text-muted-foreground">
-                          {col.count} document{col.count !== 1 ? "s" : ""}
+                          {col.count} chunk{col.count !== 1 ? "s" : ""}
                         </div>
                       </div>
                       <Button
                         variant="ghost"
                         size="icon"
+                        aria-label={`Delete ${col.name} collection`}
                         className="h-6 w-6 text-muted-foreground hover:text-destructive"
                         onClick={() => handleDeleteCollection(col.name)}
                       >

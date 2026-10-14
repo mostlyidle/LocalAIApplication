@@ -118,6 +118,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     try:
         tools = await mcp_client.discover_tools()
+        # Keep the discovered LangChain wrappers available to authenticated routes and agents.
+        app.state.mcp_tools = tools
         if tools:
             logger.info("mcp_tools_available", count=len(tools))
     except Exception as exc:
@@ -166,6 +168,7 @@ def create_app() -> FastAPI:
         version="0.1.0",
         lifespan=lifespan,
     )
+    app.state.mcp_tools = []
 
     # Middleware (order matters: outermost → innermost)
     setup_cors(app)

@@ -169,12 +169,13 @@ export default function SettingsPage() {
     setAgentBusy(true);
     setAgentMessage("");
     try {
+      const displayName = newAgentName.trim();
       const result = await api.createAgent({
         source_agent: newAgentSource,
-        display_name: newAgentName,
+        display_name: displayName,
         description: newAgentDescription,
       });
-      const created = result.agents.find((agent) => agent.is_custom && agent.display_name === newAgentName);
+      const created = result.agents.find((agent) => agent.is_custom && agent.display_name === displayName);
       setAgents(result.agents);
       if (created) {
         setSelectedAgentName(created.name);
@@ -489,7 +490,7 @@ export default function SettingsPage() {
                 <Input
                   value={connUrl}
                   onChange={(e) => setConnUrl(e.target.value)}
-                  placeholder="sqlite:///path/to/db.sqlite"
+                  placeholder="sqlite+aiosqlite:///path/to/db.sqlite"
                   className="text-sm"
                 />
               </div>

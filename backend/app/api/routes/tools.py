@@ -72,6 +72,12 @@ _TOOL_LOOKUP = {tool.name: tool for tool in all_tools}
 _PATH_BASED_TOOL_NAMES = {tool.name for tool in document_tools + filesystem_tools}
 
 
+def _runtime_tools(request: Request) -> list[Any]:
+    """Return built-in tools plus uniquely named tools discovered at startup."""
+    external_tools = getattr(request.app.state, "mcp_tools", [])
+    return [*all_tools, *(tool for tool in external_tools if tool.name not in _TOOL_LOOKUP)]
+
+
 # ---------------------------------------------------------------------------
 # GET /tools — list all tools
 # ---------------------------------------------------------------------------
@@ -79,11 +85,12 @@ _PATH_BASED_TOOL_NAMES = {tool.name for tool in document_tools + filesystem_tool
 
 @router.get("/tools", response_model=list[ToolInfo])
 async def list_tools(
+    request: Request,
     _authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
 ) -> list[ToolInfo]:
     """List all available tools with their metadata and parameter schemas."""
     result = []
-    for tool in all_tools:
+    for tool in _runtime_tools(request):
         # Extract parameter schema from the tool's args_schema
         params: dict[str, Any] = {}
         if hasattr(tool, "args_schema") and tool.args_schema is not None:
@@ -125,6 +132,10 @@ async def execute_tool(
     from app.api.middleware.error_handler import InputValidationError, NotFoundError
 
     tool = _TOOL_LOOKUP.get(body.tool_name)
+    if tool is None:
+        tool = next(
+            (item for item in _runtime_tools(request) if item.name == body.tool_name), None
+        )
     if tool is None:
         raise NotFoundError("Tool", body.tool_name)
 

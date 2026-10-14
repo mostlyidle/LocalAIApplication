@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
+from pydantic import BaseModel
 
 
 class TestListTools:
@@ -55,6 +56,28 @@ class TestListTools:
             # JSON schema should have 'properties' or 'type'
             params = tool["parameters"]
             assert isinstance(params, dict)
+
+    async def test_lists_and_executes_discovered_mcp_tool(self, client: AsyncClient, app):
+        class WeatherArguments(BaseModel):
+            city: str
+
+        external_tool = MagicMock()
+        external_tool.name = "weather_get_forecast"
+        external_tool.description = "Get a local weather forecast"
+        external_tool.args_schema = WeatherArguments
+        external_tool.ainvoke = AsyncMock(return_value="Sunny")
+        app.state.mcp_tools = [external_tool]
+
+        listed = await client.get("/api/v1/tools")
+        assert any(tool["name"] == "weather_get_forecast" for tool in listed.json())
+
+        executed = await client.post(
+            "/api/v1/tools/execute",
+            json={"tool_name": "weather_get_forecast", "arguments": {"city": "Toronto"}},
+        )
+        assert executed.status_code == 200
+        assert executed.json()["output"] == "Sunny"
+        external_tool.ainvoke.assert_awaited_once_with({"city": "Toronto"})
 
 
 class TestExecuteTool:
