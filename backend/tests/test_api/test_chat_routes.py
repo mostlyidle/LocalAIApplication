@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
 
 import pytest
 from httpx import AsyncClient
@@ -1306,6 +1307,31 @@ class TestWebSocketStream:
                 r2 = ws.receive_json()
                 assert r2["content"] == "reply 2"
                 ws.receive_json()  # done
+
+    def test_websocket_chat_enforces_the_configured_inference_quota(self):
+        async def mock_stream(**kwargs):
+            yield {"type": "done", "metadata": {}}
+
+        client, app = self._make_test_client()
+        principal = _authenticated_principal()
+        principal.account.id = str(uuid4())
+        from app.dependencies import get_websocket_session
+
+        app.dependency_overrides[get_websocket_session] = lambda: principal
+        with (
+            patch("app.api.routes.chat.stream_agent", side_effect=mock_stream) as stream,
+            patch("app.api.middleware.rate_limiting.settings.rate_limit_llm", "1/minute"),
+            self._patches(),
+        ):
+            with client.websocket_connect("/api/v1/chat/stream") as ws:
+                ws.send_json({"type": "message", "content": "first"})
+                assert ws.receive_json()["type"] == "done"
+                ws.send_json({"type": "message", "content": "second"})
+                rejected = ws.receive_json()
+
+        assert rejected["type"] == "error"
+        assert "rate limit" in rejected["content"].lower()
+        stream.assert_called_once()
 
     def test_tool_call_events_forwarded(self):
         """Tool call and tool result events from stream_agent are forwarded."""

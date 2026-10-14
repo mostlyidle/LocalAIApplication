@@ -42,13 +42,18 @@ async def fetch_url(url: str, timeout: float = REQUEST_TIMEOUT) -> dict[str, Any
             follow_redirects=True,
             headers={"User-Agent": "LocalAI-WebAgent/1.0"},
         ) as client:
-            resp = await client.get(url)
-            content = resp.text[:MAX_CONTENT_LENGTH]
+            async with client.stream("GET", url) as resp:
+                content = bytearray()
+                async for chunk in resp.aiter_bytes(chunk_size=64 * 1024):
+                    remaining = MAX_CONTENT_LENGTH - len(content)
+                    content.extend(chunk[:remaining])
+                    if len(chunk) > remaining:
+                        break
             return {
                 "url": str(resp.url),
                 "status_code": resp.status_code,
                 "content_type": resp.headers.get("content-type", ""),
-                "text": content,
+                "text": content.decode(resp.encoding or "utf-8", errors="replace"),
                 "headers": dict(resp.headers),
             }
     except httpx.TimeoutException:

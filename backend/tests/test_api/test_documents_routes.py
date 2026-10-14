@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import AsyncClient
@@ -47,6 +48,22 @@ class TestDocumentUpload:
         assert resp.status_code == 415
         data = resp.json()
         assert data["error"]["code"] == "UNSUPPORTED_FORMAT"
+
+    async def test_rejects_oversized_upload_before_reading_file(self, client: AsyncClient):
+        content = b"x" * (4 * 1024 * 1024 + 1)
+        files = {"file": ("large.txt", io.BytesIO(content), "text/plain")}
+        with (
+            patch("app.api.routes.documents.settings.max_upload_size_mb", 4),
+            patch(
+                "starlette.datastructures.UploadFile.read",
+                new_callable=AsyncMock,
+                return_value=content,
+            ) as read,
+        ):
+            response = await client.post("/api/v1/documents/upload", files=files)
+
+        assert response.status_code == 413
+        read.assert_not_awaited()
 
 
 class TestDocumentList:

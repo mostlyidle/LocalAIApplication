@@ -12,6 +12,11 @@ from typing import Any
 
 from langchain_core.tools import tool
 
+_MAX_EXPRESSION_LENGTH = 1_000
+_MAX_AST_NODES = 200
+_MAX_EXPONENT = 1_000
+_MAX_INTEGER_BITS = 16_384
+
 # Safe operators for math evaluation
 _SAFE_OPS: dict[str, Any] = {
     # Arithmetic
@@ -62,11 +67,15 @@ def _safe_eval(expression: str) -> float | int:
 
     # Normalize
     expr = expression.strip()
+    if len(expr) > _MAX_EXPRESSION_LENGTH:
+        raise ValueError(f"Expression exceeds {_MAX_EXPRESSION_LENGTH} characters.")
 
     try:
         tree = ast.parse(expr, mode="eval")
     except SyntaxError as exc:
         raise ValueError(f"Invalid expression: {exc}") from exc
+    if sum(1 for _ in ast.walk(tree)) > _MAX_AST_NODES:
+        raise ValueError(f"Expression exceeds {_MAX_AST_NODES} syntax nodes.")
 
     def _eval_node(node: ast.AST) -> float | int:
         # Numbers
@@ -104,7 +113,12 @@ def _safe_eval(expression: str) -> float | int:
             op_func = op_map.get(type(node.op))
             if op_func is None:
                 raise ValueError(f"Unsupported operator: {type(node.op).__name__}")
-            return op_func(left, right)
+            if isinstance(node.op, ast.Pow) and abs(right) > _MAX_EXPONENT:
+                raise ValueError(f"Exponent exceeds the limit of {_MAX_EXPONENT}.")
+            result = op_func(left, right)
+            if isinstance(result, int) and result.bit_length() > _MAX_INTEGER_BITS:
+                raise ValueError(f"Integer result exceeds {_MAX_INTEGER_BITS} bits.")
+            return result
 
         # Function calls (sqrt(x), log(x), etc.)
         if isinstance(node, ast.Call):
@@ -114,6 +128,8 @@ def _safe_eval(expression: str) -> float | int:
             if func_name not in _SAFE_OPS or not callable(_SAFE_OPS[func_name]):
                 raise ValueError(f"Unknown function: {func_name}")
             args = [_eval_node(arg) for arg in node.args]
+            if func_name == "pow" and len(args) == 2 and abs(args[1]) > _MAX_EXPONENT:
+                raise ValueError(f"Exponent exceeds the limit of {_MAX_EXPONENT}.")
             return _SAFE_OPS[func_name](*args)
 
         # Expression wrapper

@@ -154,6 +154,10 @@ class TestCalculatorTool:
         result = calculator_tool.invoke({"expression": "1 / 0"})
         assert result.startswith("Error:")
 
+    def test_rejects_excessive_exponents(self):
+        result = calculator_tool.invoke({"expression": "2**10000"})
+        assert result.startswith("Error:")
+
 
 # =============================================================================
 # unit_converter_tool

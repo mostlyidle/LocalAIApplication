@@ -26,7 +26,7 @@ from sqlalchemy.orm import selectinload
 
 from app.agents.orchestrator import run_agent, stream_agent
 from app.api.middleware.error_handler import AppError
-from app.api.middleware.rate_limiting import limiter
+from app.api.middleware.rate_limiting import allow_websocket_inference, limiter
 from app.config import settings
 from app.dependencies import (
     WEBSOCKET_SESSION_RECHECK_SECONDS,
@@ -371,6 +371,12 @@ async def chat_stream(
                             }
                         )
                     continue
+
+            if not allow_websocket_inference(owner_id):
+                await websocket.send_json(
+                    {"type": "error", "content": "Rate limit exceeded. Try again shortly."}
+                )
+                continue
 
             # Accumulators for persistence after streaming completes
             token_chunks: list[str] = []
