@@ -48,6 +48,7 @@ export default function RAGPage() {
   const [isLoadingCollections, setIsLoadingCollections] = useState(true);
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(true);
   const [collectionsError, setCollectionsError] = useState("");
+  const [containersError, setContainersError] = useState("");
   const [documentsError, setDocumentsError] = useState("");
   const [ingestingIds, setIngestingIds] = useState<Set<string>>(new Set());
   const [ingestCollection, setIngestCollection] = useState("documents");
@@ -71,10 +72,11 @@ export default function RAGPage() {
     try {
       const data = await api.getRAGContainers();
       setContainers(data);
+      setContainersError("");
       setSelectedContainer((current) => current || data[0]?.name || "");
       setSelectedCollection((current) => current || data[0]?.name || "");
     } catch (err) {
-      console.error("Failed to load containers:", err);
+      setContainersError(err instanceof Error ? err.message : "Could not load containers.");
     }
   }, []);
 
@@ -167,6 +169,14 @@ export default function RAGPage() {
           onSelect={selectContainer}
           onRefresh={refreshRag}
         />
+        {containersError && (
+          <div role="alert" className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+            <p>Could not load RAG containers: {containersError}</p>
+            <Button type="button" size="sm" variant="outline" onClick={() => void loadContainers()}>
+              Retry
+            </Button>
+          </div>
+        )}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">

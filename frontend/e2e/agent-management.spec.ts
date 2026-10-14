@@ -95,7 +95,21 @@ test("agent prompts and reusable specialists can be managed from settings", asyn
   await page.getByRole("button", { name: "Restore agent" }).click();
   await expect(page.getByRole("status")).toHaveText("Agent restored.");
 
+  let selectedAgent: string | undefined;
+  await page.routeWebSocket("**/api/v1/chat/stream", (socket) => {
+    socket.onMessage((message) => {
+      const event = JSON.parse(String(message)) as { agent_name?: string };
+      selectedAgent = event.agent_name;
+      socket.send(JSON.stringify({ type: "token", content: "Saved specialist response." }));
+      socket.send(JSON.stringify({ type: "done", metadata: { agent_used: selectedAgent } }));
+    });
+  });
+
   await page.goto("/chat");
   await page.getByRole("combobox", { name: "Agent profile" }).click();
-  await expect(page.getByRole("option", { name: "Project Researcher Plus" })).toBeVisible();
+  await page.getByRole("option", { name: "Project Researcher Plus" }).click();
+  await page.getByLabel("Your message").fill("What should I focus on?");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(page.getByText("Saved specialist response.")).toBeVisible();
+  await expect.poll(() => selectedAgent).toBe("project_researcher");
 });
