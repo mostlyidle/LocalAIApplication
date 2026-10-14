@@ -82,6 +82,7 @@ class MeetingAudioProcessor:
             raise ValueError("max_queue_size must be positive")
         self._max_queue_size = max_queue_size
         self._sessions: dict[str, ProcessorSession] = {}
+        self._consumed_samples: dict[str, dict[AudioSource, int]] = {}
         self._lock = asyncio.Lock()
 
     async def start(
@@ -108,6 +109,7 @@ class MeetingAudioProcessor:
                 queue=asyncio.Queue(maxsize=self._max_queue_size),
                 consumer=consumer,
                 window_ms=max(1, window_ms),
+                consumed_samples=dict(self._consumed_samples.get(meeting_id, {})),
             )
             session.worker = asyncio.create_task(self._run_session(session))
             self._sessions[meeting_id] = session
@@ -198,7 +200,15 @@ class MeetingAudioProcessor:
             return
         async with session.lock:
             await session.queue.join()
-            await self._flush_all(session)
+            try:
+                await self._flush_all(session)
+            except Exception as exc:
+                session.state = ProcessorState.FAILED
+                session.failure_reason = str(exc)[:500]
+                session.buffers.clear()
+                _drain(session.queue)
+                await self._cancel_worker(session)
+                return
             if session.state == ProcessorState.ACTIVE:
                 session.state = ProcessorState.STOPPED
             _drain(session.queue)
@@ -223,16 +233,18 @@ class MeetingAudioProcessor:
         async with session.lock:
             session.state = ProcessorState.FAILED
             session.failure_reason = reason[:500]
+            session.buffers.clear()
             _drain(session.queue)
             await self._cancel_worker(session)
 
     async def purge(self, meeting_id: str, session_id: str | None = None) -> None:
-        """Remove all session metadata and queued PCM for a meeting."""
+        """Remove session metadata and queued PCM while retaining reconnect offsets."""
         session = self._sessions.get(meeting_id)
         if session is None or (session_id is not None and session.session_id != session_id):
             return
         async with session.lock:
             _drain(session.queue)
+            session.buffers.clear()
             await self._cancel_worker(session)
             if self._sessions.get(meeting_id) is session:
                 del self._sessions[meeting_id]
@@ -301,6 +313,11 @@ class MeetingAudioProcessor:
         if session.consumer is not None:
             await session.consumer(header, payload, offset_ms, final)
         session.consumed_samples[source] = consumed + samples
+        self._consumed_samples.setdefault(session.meeting_id, {})[source] = consumed + samples
+
+    async def reset_timeline(self, meeting_id: str) -> None:
+        """Forget the in-memory audio timeline after a meeting is terminal."""
+        self._consumed_samples.pop(meeting_id, None)
 
     async def _cancel_worker(self, session: ProcessorSession) -> None:
         """Cancel and await the worker without retaining PCM buffers."""

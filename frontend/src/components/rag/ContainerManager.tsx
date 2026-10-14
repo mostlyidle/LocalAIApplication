@@ -35,6 +35,8 @@ export function ContainerManager({ containers, selectedName, onSelect, onRefresh
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const filesRequestId = useRef(0);
+  const selectedNameRef = useRef(selectedName);
+  selectedNameRef.current = selectedName;
   const active = containers.find((container) => container.name === selectedName);
   const isWorking = Boolean(active && active.queued_file_count + active.processing_file_count > 0);
 
@@ -97,15 +99,19 @@ export function ContainerManager({ containers, selectedName, onSelect, onRefresh
 
   const handleLoad = async () => {
     if (!active || isLoading) return;
+    const operationName = active.name;
     setError("");
     setNotice("");
     setIsLoading(true);
     try {
       const result = await loadRAGContainer(active.name);
+      if (selectedNameRef.current !== operationName) return;
       await Promise.all([refreshFiles(), onRefresh()]);
       setNotice(result.queued ? `Queued ${result.queued} file${result.queued === 1 ? "" : "s"} for indexing.` : "No staged files to load.");
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Could not start indexing.");
+      if (selectedNameRef.current === operationName) {
+        setError(loadError instanceof Error ? loadError.message : "Could not start indexing.");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -113,23 +119,31 @@ export function ContainerManager({ containers, selectedName, onSelect, onRefresh
 
   const handleRetry = async (file: RAGContainerFile) => {
     if (!active) return;
+    const operationName = active.name;
     setError("");
     try {
       await retryRAGContainerFile(active.name, file.id);
+      if (selectedNameRef.current !== operationName) return;
       await Promise.all([refreshFiles(), onRefresh()]);
     } catch (retryError) {
-      setError(retryError instanceof Error ? retryError.message : "Could not retry file.");
+      if (selectedNameRef.current === operationName) {
+        setError(retryError instanceof Error ? retryError.message : "Could not retry file.");
+      }
     }
   };
 
   const handleRemoveFile = async (file: RAGContainerFile) => {
     if (!active) return;
+    const operationName = active.name;
     setError("");
     try {
       await deleteRAGContainerFile(active.name, file.id);
+      if (selectedNameRef.current !== operationName) return;
       await Promise.all([refreshFiles(), onRefresh()]);
     } catch (removeError) {
-      setError(removeError instanceof Error ? removeError.message : "Could not remove file.");
+      if (selectedNameRef.current === operationName) {
+        setError(removeError instanceof Error ? removeError.message : "Could not remove file.");
+      }
     }
   };
 

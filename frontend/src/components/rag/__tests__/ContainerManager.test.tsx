@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ContainerManager } from "../ContainerManager";
@@ -133,5 +133,36 @@ describe("ContainerManager", () => {
 
     await waitFor(() => expect(screen.queryByText("project/notes.txt")).not.toBeInTheDocument());
     expect(screen.getByText("current.txt")).toBeInTheDocument();
+  });
+
+  it("does not refresh a previous container after selection changes", async () => {
+    const other = { ...container, name: "container_other", display_name: "Other" };
+    let resolveLoad!: (result: { queued: number }) => void;
+    mocks.load.mockImplementation(
+      () => new Promise((resolve) => { resolveLoad = resolve; }),
+    );
+    mocks.getFiles.mockImplementation((name: string) =>
+      Promise.resolve([{ ...file, id: name, relative_path: `${name}.txt` }]),
+    );
+    const props = {
+      containers: [container, other],
+      onSelect: vi.fn(),
+      onRefresh: vi.fn().mockResolvedValue(undefined),
+    };
+    const { rerender } = render(
+      <ContainerManager {...props} selectedName={container.name} />,
+    );
+    await screen.findByText("container_research.txt");
+    await userEvent.setup().click(screen.getByRole("button", { name: "Load 1 staged file" }));
+
+    rerender(<ContainerManager {...props} selectedName={other.name} />);
+    await screen.findByText("container_other.txt");
+    await act(async () => {
+      resolveLoad({ queued: 1 });
+    });
+
+    expect(screen.queryByText("container_research.txt")).not.toBeInTheDocument();
+    expect(screen.getByText("container_other.txt")).toBeInTheDocument();
+    expect(props.onRefresh).not.toHaveBeenCalled();
   });
 });

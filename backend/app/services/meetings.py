@@ -284,6 +284,7 @@ class MeetingService:
             await closing.wait()
             await db.refresh(meeting)
             if meeting.status in {MeetingStatus.STOPPED.value, MeetingStatus.FAILED.value}:
+                await self.processor.reset_timeline(meeting_id)
                 return meeting
         if meeting.status not in {MeetingStatus.STOPPED.value, MeetingStatus.FAILED.value}:
             meeting.status = MeetingStatus.STOPPED.value
@@ -297,6 +298,7 @@ class MeetingService:
         finally:
             if session_id is not None:
                 await self._close_answer_worker(meeting_id, session_id, drain=True)
+            await self.processor.reset_timeline(meeting_id)
             self._event_queues.pop(meeting_id, None)
             if closing is not None:
                 async with self._session_lock:
@@ -323,6 +325,7 @@ class MeetingService:
                 self._sessions.pop(meeting_id, None)
                 self._event_queues.pop(meeting_id, None)
                 await self._close_answer_worker(meeting_id, active_session, drain=False)
+        await self.processor.reset_timeline(meeting_id)
         if meeting.status == MeetingStatus.STOPPED.value:
             return meeting
         if meeting.status != MeetingStatus.FAILED.value:
