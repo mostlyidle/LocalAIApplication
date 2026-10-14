@@ -64,6 +64,7 @@ vi.mock("next-themes", () => ({
 const mockGetHealth = vi.fn();
 const mockGetTools = vi.fn();
 const mockGetAgentCatalogWithArchived = vi.fn();
+const mockCreateAgent = vi.fn();
 const mockAddSQLConnection = vi.fn();
 const mockGetGitHubConnection = vi.fn();
 const mockStartGitHubConnection = vi.fn();
@@ -74,6 +75,7 @@ vi.mock("@/lib/api", () => ({
   getHealth: (...args: unknown[]) => mockGetHealth(...args),
   getTools: (...args: unknown[]) => mockGetTools(...args),
   getAgentCatalogWithArchived: (...args: unknown[]) => mockGetAgentCatalogWithArchived(...args),
+  createAgent: (...args: unknown[]) => mockCreateAgent(...args),
   addSQLConnection: (...args: unknown[]) => mockAddSQLConnection(...args),
   getGitHubConnection: (...args: unknown[]) => mockGetGitHubConnection(...args),
   startGitHubConnection: (...args: unknown[]) => mockStartGitHubConnection(...args),
@@ -104,6 +106,7 @@ describe("SettingsPage", () => {
       ],
     });
     mockGetAgentCatalogWithArchived.mockResolvedValue({ agents: [] });
+    mockCreateAgent.mockResolvedValue({ agents: [] });
     mockGetGitHubConnection.mockResolvedValue({
       configured: false, connected: false, login: null, expires_at: null, install_url: null,
     });
@@ -243,6 +246,46 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
     expect(screen.getByText("Database Connections")).toBeInTheDocument();
     expect(screen.getByText("Add Connection")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("sqlite+aiosqlite:///path/to/db.sqlite")).toBeInTheDocument();
+  });
+
+  it("trims the name sent for a new specialist and selects the created profile", async () => {
+    const baseAgent = {
+      name: "chat",
+      display_name: "Chat",
+      target: "chat",
+      description: "General chat",
+      default_for_target: true,
+      system_prompt: "Base prompt",
+      inference: {
+        allowed_models: ["llama3.1:8b"],
+        defaults: { model: "llama3.1:8b", temperature: 0.1 },
+        limits: { temperature: { minimum: 0, maximum: 2 } },
+      },
+    };
+    const customAgent = {
+      ...baseAgent,
+      name: "research-helper",
+      display_name: "Research helper",
+      description: "Research notes",
+      system_prompt: "Custom prompt",
+      is_custom: true,
+      default_for_target: false,
+    };
+    mockGetAgentCatalogWithArchived.mockResolvedValue({ agents: [baseAgent] });
+    mockCreateAgent.mockResolvedValue({ agents: [baseAgent, customAgent] });
+    render(<SettingsPage />);
+
+    fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "  Research helper  " } });
+    fireEvent.change(screen.getByLabelText("Description"), { target: { value: "Research notes" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create agent" }));
+
+    await waitFor(() => expect(mockCreateAgent).toHaveBeenCalledWith({
+      source_agent: "chat",
+      display_name: "Research helper",
+      description: "Research notes",
+    }));
+    expect(await screen.findByDisplayValue("Custom prompt")).toBeInTheDocument();
   });
 
   it("disables Add Connection button when inputs empty", () => {

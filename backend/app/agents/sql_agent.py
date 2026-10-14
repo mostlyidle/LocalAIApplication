@@ -69,7 +69,8 @@ async def sql_agent_node(state: AgentState) -> dict[str, Any]:
     system_prompt = f"{system_prompt}\n\n{schema_context}"
 
     llm = llm_service.get_chat_model(temperature=0.0)
-    llm_with_tools = llm.bind_tools(sql_tools)
+    available_tools = sql_tools + state.get("external_tools", [])
+    llm_with_tools = llm.bind_tools(available_tools)
 
     messages = [SystemMessage(content=system_prompt)]
     memory_message = memory_context_message(state)
@@ -103,7 +104,7 @@ async def sql_agent_node(state: AgentState) -> dict[str, Any]:
                 tool_args["database"] = selected_database
 
             # Find the matching tool
-            tool_fn = next((t for t in sql_tools if t.name == tool_name), None)
+            tool_fn = next((t for t in available_tools if t.name == tool_name), None)
             if tool_fn is None:
                 tool_result = f"Unknown tool: {tool_name}"
             else:

@@ -111,7 +111,7 @@ export default function SQLPage() {
             </SelectTrigger>
             <SelectContent position="popper" align="end">
             <SelectItem value="default">default</SelectItem>
-            {connections.map((c) => (
+            {connections.filter((connection) => connection.name !== "default").map((c) => (
               <SelectItem key={c.name} value={c.name}>
                 {c.name}
               </SelectItem>

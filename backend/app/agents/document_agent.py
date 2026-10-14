@@ -48,7 +48,9 @@ async def document_agent_node(state: AgentState) -> dict[str, Any]:
     logger.info("document_agent_invoked", conversation_id=state.get("conversation_id"))
 
     llm = llm_service.get_chat_model(temperature=0.1)
-    llm_with_tools = llm.bind_tools(document_tools)
+    external_tools = state.get("external_tools", [])
+    available_tools = document_tools + external_tools
+    llm_with_tools = llm.bind_tools(available_tools)
 
     system_prompt = state.get("system_prompts", {}).get("document", DOCUMENT_SYSTEM_PROMPT)
     messages = [SystemMessage(content=system_prompt)]
@@ -80,14 +82,15 @@ async def document_agent_node(state: AgentState) -> dict[str, Any]:
             tool_name = tc["name"]
             tool_args = tc["args"]
 
-            tool_fn = next((t for t in document_tools if t.name == tool_name), None)
+            tool_fn = next((t for t in available_tools if t.name == tool_name), None)
             if tool_fn is None:
                 tool_result = f"Unknown tool: {tool_name}"
             else:
                 try:
-                    path_key = "image_path" if tool_name == "document_ocr_tool" else "file_path"
-                    if Path(tool_args[path_key]).resolve() not in allowed_paths:
-                        raise ValueError("Document tools can only access attached files.")
+                    if tool_name in {item.name for item in document_tools}:
+                        path_key = "image_path" if tool_name == "document_ocr_tool" else "file_path"
+                        if Path(tool_args[path_key]).resolve() not in allowed_paths:
+                            raise ValueError("Document tools can only access attached files.")
                     tool_result = await tool_fn.ainvoke(tool_args)
                 except Exception as exc:
                     tool_result = f"Tool error: {exc}"

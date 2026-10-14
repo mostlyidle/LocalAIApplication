@@ -114,6 +114,8 @@ def test_auto_rag_stream_persists_terminal_citation_metadata(
         patch("app.api.routes.chat._persist_ws_messages", persist),
     ):
         app = create_app()
+        directory = Path(__file__).resolve().parents[2] / "app" / "prompts"
+        app.state.agent_registry = AgentRegistry(directory, PromptStore(directory))
         from app.dependencies import get_websocket_session, websocket_session_is_active
 
         app.dependency_overrides[get_websocket_session] = lambda: authenticated_test_session

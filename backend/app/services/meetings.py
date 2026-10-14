@@ -447,7 +447,9 @@ class MeetingService:
     ) -> WindowConsumer:
         """Build the asynchronous transcription/persistence callback."""
 
-        async def consume(header: AudioEnvelopeHeader, payload: bytes, final: bool) -> None:
+        async def consume(
+            header: AudioEnvelopeHeader, payload: bytes, offset_ms: int, final: bool
+        ) -> None:
             try:
                 chunks = await engine.transcribe(
                     payload,
@@ -480,8 +482,8 @@ class MeetingService:
                         source=header.source.value,
                         speaker=header.source.value,
                         text=text,
-                        start_ms=chunk.start_ms,
-                        end_ms=chunk.end_ms,
+                        start_ms=offset_ms + chunk.start_ms,
+                        end_ms=offset_ms + chunk.end_ms,
                     )
                     inference_db.add(segment)
                     await inference_db.flush()
@@ -504,8 +506,8 @@ class MeetingService:
                         segment_id=segment.id,
                         source=header.source,
                         text=text,
-                        start_ms=chunk.start_ms,
-                        end_ms=chunk.end_ms,
+                        start_ms=offset_ms + chunk.start_ms,
+                        end_ms=offset_ms + chunk.end_ms,
                     ),
                 )
 

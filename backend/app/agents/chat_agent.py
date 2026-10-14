@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 import structlog
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 
 from app.agents.memory_context import memory_context_message
 from app.agents.state import AgentState
@@ -40,6 +40,9 @@ async def chat_agent_node(state: AgentState) -> dict[str, Any]:
     logger.info("chat_agent_invoked", conversation_id=state.get("conversation_id"))
 
     llm = llm_service.get_chat_model()
+    external_tools = state.get("external_tools", [])
+    if external_tools:
+        llm = llm.bind_tools(external_tools)
 
     system_prompt = state.get("system_prompts", {}).get("chat", CHAT_SYSTEM_PROMPT)
     messages = [SystemMessage(content=system_prompt)]
@@ -52,11 +55,34 @@ async def chat_agent_node(state: AgentState) -> dict[str, Any]:
     if not any(isinstance(m, HumanMessage) for m in state["messages"]):
         messages.append(HumanMessage(content=state["user_input"]))
 
-    response = await llm.ainvoke(messages)
+    tool_calls_record: list[dict[str, Any]] = []
+    for _ in range(5):
+        response = await llm.ainvoke(messages)
+        messages.append(response)
+        if not response.tool_calls:
+            break
+        for call in response.tool_calls:
+            tool = next((item for item in external_tools if item.name == call["name"]), None)
+            if tool is None:
+                output = f"Unknown tool: {call['name']}"
+            else:
+                try:
+                    output = await tool.ainvoke(call["args"])
+                except Exception as exc:
+                    output = f"Tool error: {exc}"
+            tool_calls_record.append(
+                {
+                    "tool_name": call["name"],
+                    "tool_input": call["args"],
+                    "tool_output": str(output)[:2000],
+                }
+            )
+            messages.append(ToolMessage(content=str(output), tool_call_id=call["id"]))
 
     return {
         "messages": [response],
         "current_agent": "chat",
+        "tool_calls": state.get("tool_calls", []) + tool_calls_record,
         "metadata": {
             **state.get("metadata", {}),
             "agent_used": "chat",

@@ -46,7 +46,7 @@ class SourceEndedCommand:
     source: AudioSource
 
 
-WindowConsumer = Callable[[AudioEnvelopeHeader, bytes, bool], Awaitable[None]]
+WindowConsumer = Callable[[AudioEnvelopeHeader, bytes, int, bool], Awaitable[None]]
 
 
 @dataclass
@@ -68,6 +68,7 @@ class ProcessorSession:
     consumer: WindowConsumer | None = field(default=None, repr=False)
     window_ms: int = 2_000
     buffers: dict[AudioSource, bytearray] = field(default_factory=dict, repr=False)
+    consumed_samples: dict[AudioSource, int] = field(default_factory=dict, repr=False)
     worker: asyncio.Task[None] | None = field(default=None, repr=False)
 
 
@@ -293,8 +294,13 @@ class MeetingAudioProcessor:
         final: bool,
     ) -> None:
         """Invoke the optional inference consumer outside the ACK path."""
+        source = header.source
+        samples = len(payload) // (header.channels * 2)
+        consumed = session.consumed_samples.get(source, 0)
+        offset_ms = consumed * 1_000 // header.sample_rate_hz
         if session.consumer is not None:
-            await session.consumer(header, payload, final)
+            await session.consumer(header, payload, offset_ms, final)
+        session.consumed_samples[source] = consumed + samples
 
     async def _cancel_worker(self, session: ProcessorSession) -> None:
         """Cancel and await the worker without retaining PCM buffers."""

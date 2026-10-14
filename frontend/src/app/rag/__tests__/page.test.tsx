@@ -89,8 +89,8 @@ describe("RAG Page", () => {
     expect(screen.getByRole("option", { name: "documents" })).toBeInTheDocument();
     await userEvent.keyboard("{Escape}");
     expect(screen.getByRole("option", { name: "reports", hidden: true })).toBeInTheDocument();
-    expect(screen.getByText("10 documents")).toBeInTheDocument();
-    expect(screen.getByText("3 documents")).toBeInTheDocument();
+    expect(screen.getByText("10 chunks")).toBeInTheDocument();
+    expect(screen.getByText("3 chunks")).toBeInTheDocument();
   });
 
   it("shows empty state when no collections", async () => {
@@ -260,6 +260,7 @@ describe("RAG Page", () => {
     await userEvent.click(await screen.findByRole("combobox", { name: "Search index" }));
     expect(screen.getByRole("option", { name: "documents" })).toBeInTheDocument();
     await userEvent.keyboard("{Escape}");
+    await userEvent.type(screen.getByPlaceholderText(/Search your knowledge base/i), "search");
 
     // Find the delete button for the first collection
     const trashIcons = screen.getAllByTestId("trash-icon");
@@ -268,8 +269,9 @@ describe("RAG Page", () => {
 
     await waitFor(() => {
       expect(mockDeleteCollection).toHaveBeenCalledWith("documents");
-      expect(screen.queryByText("10 documents")).not.toBeInTheDocument();
+      expect(screen.queryByText("10 chunks")).not.toBeInTheDocument();
     });
+    expect(screen.getByRole("button", { name: /Search/i })).toBeDisabled();
   });
 
   it("shows error when delete fails", async () => {

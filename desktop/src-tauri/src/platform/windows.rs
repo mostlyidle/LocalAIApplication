@@ -31,6 +31,7 @@ use crate::{
         PermissionState, PermissionStatus, SourceStatus,
     },
     pcm::PcmRing,
+    transport::validate_audio_format,
 };
 
 enum ActiveCapture {
@@ -131,6 +132,9 @@ impl NativeCapture for WindowsCapture {
         let supported = device
             .default_input_config()
             .map_err(|error| CaptureError::Device(error.to_string()))?;
+        validate_audio_format(supported.sample_rate().0, supported.channels()).map_err(
+            |error| CaptureError::Device(format!("Microphone format is unsupported: {error}")),
+        )?;
         queue.lock().set_format(
             supported.sample_rate().0,
             supported.channels(),
@@ -442,11 +446,9 @@ unsafe fn parse_wave_format(
     let rate = u32::from_le_bytes([base[4], base[5], base[6], base[7]]);
     let bits = u16::from_le_bytes([base[14], base[15]]);
     let extra = u16::from_le_bytes([base[16], base[17]]) as usize;
-    if channels == 0 || rate == 0 {
-        return Err(CaptureError::Native(
-            "WASAPI returned an invalid audio format".into(),
-        ));
-    }
+    validate_audio_format(rate, channels).map_err(|error| {
+        CaptureError::Device(format!("WASAPI loopback format is unsupported: {error}"))
+    })?;
     let encoding = match tag {
         WAVE_FORMAT_PCM if bits == 8 => "u8le",
         WAVE_FORMAT_PCM if bits == 16 => "s16le",

@@ -134,6 +134,21 @@ describe("SQLPage", () => {
     });
   });
 
+  it("renders the default database selector option only once", async () => {
+    mockGetSQLConnections.mockResolvedValue({
+      connections: [
+        { name: "default", url: "sqlite+aiosqlite:///demo.db" },
+        { name: "warehouse", url: "sqlite+aiosqlite:///warehouse.db" },
+      ],
+    });
+    render(<SQLPage />);
+
+    await userEvent.click(await screen.findByRole("combobox", { name: "Database connection" }));
+
+    expect(screen.getAllByRole("option", { name: "default" })).toHaveLength(1);
+    expect(screen.getByRole("option", { name: "warehouse" })).toBeInTheDocument();
+  });
+
   it("does not show database selector when no connections", async () => {
     mockGetSQLConnections.mockResolvedValue({ connections: [] });
     render(<SQLPage />);

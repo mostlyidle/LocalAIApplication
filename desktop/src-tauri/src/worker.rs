@@ -44,6 +44,7 @@ const BACKPRESSURE_BASE_BACKOFF_MS: u64 = 25;
 const BACKPRESSURE_MAX_BACKOFF_MS: u64 = 500;
 const RECONNECT_STABILITY_WINDOW: Duration = Duration::from_secs(1);
 const STOP_DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
+const STOP_AUDIO_DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 const CONNECT_TIMEOUT: Duration = Duration::from_millis(250);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_millis(500);
 const SOCKET_READ_TIMEOUT: Duration = Duration::from_millis(25);
@@ -327,10 +328,11 @@ fn run_worker(
 ) {
     let mut attempts = 0;
     let mut sequence = HashMap::<CaptureSource, u64>::new();
+    let mut stop_requested = false;
+    let mut stop_deadline = None;
     loop {
-        if command_pending(&receiver) {
-            finish(&app, &capture, &status, false, None);
-            return;
+        if !stop_requested && command_pending(&receiver) {
+            begin_stop(&app, &capture, &mut stop_requested, &mut stop_deadline);
         }
         set_phase(&app, &status, TransportPhase::Connecting, attempts, None);
         match connect_socket(&request) {
@@ -344,13 +346,22 @@ fn run_worker(
                     &queues,
                     &receiver,
                     &mut sequence,
+                    &capture,
+                    &mut stop_requested,
+                    &mut stop_deadline,
                 ) {
-                    SessionResult::Stop => {
+                    SessionResult::Stop(stop_warning) => {
                         let _ = socket.send(control(ControlMessage::Stop));
-                        let drain_error = (!drain_after_stop(&mut socket, &app)).then(|| {
+                        let server_drain_error = (!drain_after_stop(&mut socket, &app)).then(|| {
                             "backend stopped status was not received before timeout".into()
                         });
-                        finish(&app, &capture, &status, false, drain_error);
+                        finish(
+                            &app,
+                            &capture,
+                            &status,
+                            false,
+                            stop_warning.or(server_drain_error),
+                        );
                         return;
                     }
                     SessionResult::Reconnect(error) => {
@@ -379,14 +390,15 @@ fn run_worker(
             }
         }
         set_phase(&app, &status, TransportPhase::Connecting, attempts, None);
-        if receiver
-            .recv_timeout(Duration::from_millis(
+        if !stop_requested {
+            match receiver.recv_timeout(Duration::from_millis(
                 (100 * 2_u64.pow(attempts.min(4))).min(2_000),
-            ))
-            .is_ok()
-        {
-            finish(&app, &capture, &status, false, None);
-            return;
+            )) {
+                Ok(_) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    begin_stop(&app, &capture, &mut stop_requested, &mut stop_deadline);
+                }
+                Err(mpsc::RecvTimeoutError::Timeout) => {}
+            }
         }
     }
 }
@@ -476,7 +488,7 @@ fn set_socket_timeouts(
 }
 
 enum SessionResult {
-    Stop,
+    Stop(Option<String>),
     Reconnect(String),
     Terminal(String),
 }
@@ -505,6 +517,9 @@ fn run_session(
     queues: &HashMap<CaptureSource, Arc<Mutex<crate::pcm::PcmRing>>>,
     receiver: &Receiver<WorkerCommand>,
     sequence: &mut HashMap<CaptureSource, u64>,
+    capture: &Arc<Mutex<CaptureManager>>,
+    stop_requested: &mut bool,
+    stop_deadline: &mut Option<Instant>,
 ) -> SessionResult {
     if let Err(error) = socket.send(control(ControlMessage::Start)) {
         return SessionResult::Reconnect(error.to_string());
@@ -514,10 +529,13 @@ fn run_session(
     let mut sent_order = VecDeque::<(CaptureSource, u64)>::new();
     let mut ended = HashSet::new();
     loop {
-        match receiver.try_recv() {
-            Ok(WorkerCommand::Stop | WorkerCommand::Shutdown) => return SessionResult::Stop,
-            Err(mpsc::TryRecvError::Disconnected) => return SessionResult::Stop,
-            Err(mpsc::TryRecvError::Empty) => {}
+        if !*stop_requested && command_pending(receiver) {
+            begin_stop(&app, capture, stop_requested, stop_deadline);
+        }
+        if stop_deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+            return SessionResult::Stop(Some(
+                "Some captured audio could not be delivered before the stop timeout.".into(),
+            ));
         }
         for (&source, queue) in queues {
             let (error, active) = {
@@ -582,6 +600,12 @@ fn run_session(
                 },
             );
             sequence.insert(source, seq + 1);
+        }
+        if *stop_requested
+            && ended.len() == queues.len()
+            && pending.values().all(BTreeMap::is_empty)
+        {
+            return SessionResult::Stop(None);
         }
         match socket.read() {
             Ok(Message::Text(text)) => match serde_json::from_str::<BackendEvent>(&text) {
@@ -916,6 +940,17 @@ fn command_pending(receiver: &Receiver<WorkerCommand>) -> bool {
     )
 }
 
+fn begin_stop(
+    app: &AppHandle,
+    capture: &Arc<Mutex<CaptureManager>>,
+    stop_requested: &mut bool,
+    stop_deadline: &mut Option<Instant>,
+) {
+    capture.lock().shutdown(app);
+    *stop_requested = true;
+    *stop_deadline = Some(Instant::now() + STOP_AUDIO_DRAIN_TIMEOUT);
+}
+
 fn set_phase(
     app: &AppHandle,
     status: &Arc<Mutex<TransportStatus>>,
@@ -1156,6 +1191,12 @@ mod tests {
         assert_eq!(payload["type"], "processor");
         assert_eq!(payload["meetingId"], "meeting-1");
         assert_eq!(payload["retryAfterMs"], 50);
+    }
+
+    #[test]
+    fn stop_audio_timeout_is_bounded_by_the_transport_drain_budget() {
+        assert_eq!(STOP_AUDIO_DRAIN_TIMEOUT, Duration::from_secs(2));
+        assert!(STOP_AUDIO_DRAIN_TIMEOUT < Duration::from_secs(5));
     }
 
     #[test]

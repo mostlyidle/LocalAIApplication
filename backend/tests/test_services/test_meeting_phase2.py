@@ -250,8 +250,8 @@ async def test_concurrent_consumers_allocate_persisted_sequences_atomically(db_s
     consumer = service._make_consumer(meeting.id, service.transcription_engine, factory)
 
     await asyncio.gather(
-        consumer(_header(meeting.id, AudioSource.MICROPHONE, 0), b"\0" * 16, True),
-        consumer(_header(meeting.id, AudioSource.MICROPHONE, 1), b"\0" * 16, True),
+        consumer(_header(meeting.id, AudioSource.MICROPHONE, 0), b"\0" * 16, 0, True),
+        consumer(_header(meeting.id, AudioSource.MICROPHONE, 1), b"\0" * 16, 0, True),
     )
 
     segments = list(

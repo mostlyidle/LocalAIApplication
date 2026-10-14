@@ -163,6 +163,47 @@ class TestMeetingService:
         assert meeting.id not in service.processor._sessions
         await service.disconnect_stream(meeting.id, "session-1")
 
+    async def test_transcript_timestamps_continue_across_pcm_windows(self, db_session, monkeypatch):
+        monkeypatch.setattr("app.services.meetings.settings.meeting_pcm_window_ms", 1)
+        service = MeetingService(
+            transcription_engine=FakeTranscriptionEngine(
+                [TranscriptionChunk("windowed speech", start_ms=100, end_ms=200)]
+            )
+        )
+        meeting = await service.create_meeting(
+            db_session,
+            owner_id=LEGACY_ACCOUNT_ID,
+            consent_policy_version="v1",
+            consent_attested_at=datetime.now(UTC),
+        )
+        await service.claim_stream(db_session, meeting.id, "session-1")
+        await service.start_stream(db_session, meeting.id, "session-1")
+        base_timestamp = int(datetime.now(UTC).timestamp() * 1_000_000_000)
+
+        for sequence in range(2):
+            header = _header(meeting.id, sequence)
+            header = header.model_copy(update={"timestamp_ns": base_timestamp + sequence})
+            await service.accept_audio(db_session, meeting.id, "session-1", header, b"\0" * 16)
+
+        await asyncio.wait_for(
+            _wait_for_transcription_calls(service.transcription_engine, 2), timeout=1
+        )
+        await service.stop_meeting(db_session, meeting.id)
+
+        segments = list(
+            (
+                await db_session.scalars(
+                    select(TranscriptSegment)
+                    .where(TranscriptSegment.meeting_id == meeting.id)
+                    .order_by(TranscriptSegment.sequence)
+                )
+            ).all()
+        )
+        assert [(segment.start_ms, segment.end_ms) for segment in segments] == [
+            (100, 200),
+            (101, 201),
+        ]
+
     async def test_slow_answer_provider_does_not_block_transcription(self, db_session, monkeypatch):
         started = asyncio.Event()
 
