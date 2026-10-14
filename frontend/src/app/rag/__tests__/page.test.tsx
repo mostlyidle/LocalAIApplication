@@ -97,17 +97,25 @@ describe("RAG Page", () => {
     });
   });
 
-  it("handles collection loading error gracefully", async () => {
-    mockGetCollections.mockRejectedValue(new Error("Network error"));
+  it("shows a retryable collection loading error instead of an empty state", async () => {
+    mockGetCollections
+      .mockRejectedValueOnce(new Error("Network error"))
+      .mockResolvedValueOnce({ collections: [{ name: "reports", count: 2 }] });
 
     await act(async () => {
       render(<RAGPage />);
     });
 
-    // Should not crash; just show no collections
     await waitFor(() => {
-      expect(screen.getByText(/No collections yet/i)).toBeInTheDocument();
+      expect(screen.getByRole("alert")).toHaveTextContent("Could not load collections: Network error");
     });
+    expect(screen.queryByText(/No collections yet/i)).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => {
+      expect(within(screen.getByLabelText("Search index")).getByRole("option", { name: "reports" })).toBeInTheDocument();
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("search button is disabled when input is empty", async () => {
@@ -371,16 +379,24 @@ describe("RAG Page", () => {
     });
   });
 
-  it("handles document loading error gracefully", async () => {
-    mockGetDocuments.mockRejectedValue(new Error("Network error"));
+  it("shows a retryable document loading error instead of an empty state", async () => {
+    mockGetDocuments
+      .mockRejectedValueOnce(new Error("Network error"))
+      .mockResolvedValueOnce({ documents: [] });
 
     await act(async () => {
       render(<RAGPage />);
     });
 
-    // Should not crash; the ingest section should show no documents
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent("Could not load documents: Network error");
+    });
+    expect(screen.queryByText(/No documents uploaded yet/i)).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
     await waitFor(() => {
       expect(screen.getByText(/No documents uploaded yet/i)).toBeInTheDocument();
     });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });
