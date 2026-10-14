@@ -123,3 +123,68 @@ class TestMeetingAudioProcessor:
             await asyncio.wait_for(processor.stop("meeting-1", "session-1"), timeout=0.1)
         finally:
             await processor.purge("meeting-1", "session-1")
+
+    async def test_stop_discards_partial_buffers_when_final_flush_fails(self) -> None:
+        processor = MeetingAudioProcessor()
+
+        async def fail_on_final_flush(
+            header: AudioEnvelopeHeader, payload: bytes, offset_ms: int, final: bool
+        ) -> None:
+            raise RuntimeError("final transcript persistence failed")
+
+        session = await processor.start(
+            "meeting-final", "session-final", consumer=fail_on_final_flush, window_ms=2
+        )
+        timestamp = int(datetime.now(UTC).timestamp() * 1_000_000_000)
+        await processor.accept(
+            "meeting-final",
+            "session-final",
+            _header("meeting-final", 0, timestamp),
+            b"\0" * 16,
+        )
+
+        await asyncio.wait_for(processor.stop("meeting-final", "session-final"), timeout=0.1)
+
+        assert session.state.value == "failed"
+        assert session.buffers == {}
+        assert session.worker is None
+
+    async def test_reconnect_continues_offsets_until_timeline_is_reset(self) -> None:
+        processor = MeetingAudioProcessor()
+        offsets: list[int] = []
+
+        async def collect_offsets(
+            header: AudioEnvelopeHeader, payload: bytes, offset_ms: int, final: bool
+        ) -> None:
+            offsets.append(offset_ms)
+
+        payload = b"\0" * 16
+        await processor.start(
+            "meeting-reconnect", "session-first", consumer=collect_offsets, window_ms=1
+        )
+        first_timestamp = int(datetime.now(UTC).timestamp() * 1_000_000_000)
+        for sequence in range(2):
+            await processor.accept(
+                "meeting-reconnect",
+                "session-first",
+                _header("meeting-reconnect", sequence, first_timestamp + sequence),
+                payload,
+            )
+        await processor.stop("meeting-reconnect", "session-first")
+        await processor.purge("meeting-reconnect", "session-first")
+
+        await processor.start(
+            "meeting-reconnect", "session-second", consumer=collect_offsets, window_ms=1
+        )
+        await processor.accept(
+            "meeting-reconnect",
+            "session-second",
+            _header("meeting-reconnect", 0, first_timestamp + 2),
+            payload,
+        )
+        await processor.stop("meeting-reconnect", "session-second")
+
+        assert offsets == [0, 1, 2]
+
+        await processor.purge("meeting-reconnect", "session-second")
+        await processor.reset_timeline("meeting-reconnect")

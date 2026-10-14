@@ -4,20 +4,20 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
+import time
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.api.middleware.error_handler import UnsafeQueryError
+from app.api.middleware.error_handler import SQLExecutionError, UnsafeQueryError
 from app.tools.sql_tools import (
     execute_query,
     format_schema_for_prompt,
     introspect_schema,
     validate_query,
 )
-
 
 # =============================================================================
 # validate_query — synchronous, pure function
@@ -261,8 +261,6 @@ class TestExecuteQuery:
     """Tests for executing SQL against the test database."""
 
     async def test_execution_timeout(self, sql_engine) -> None:
-        from app.api.middleware.error_handler import SQLExecutionError
-
         async def slow_execute(*args: Any, **kwargs: Any) -> None:
             await asyncio.sleep(1)
 
@@ -283,6 +281,22 @@ class TestExecuteQuery:
         ):
             await execute_query("SELECT 1")
         driver_connection.interrupt.assert_awaited_once()
+
+    async def test_sqlite_timeout_interrupts_a_running_driver_query(self, sql_engine) -> None:
+        query = (
+            "WITH RECURSIVE cnt(x) AS (VALUES(0) "
+            "UNION ALL SELECT x + 1 FROM cnt WHERE x < 10000000) "
+            "SELECT SUM(x) FROM cnt"
+        )
+        started = time.perf_counter()
+        with (
+            patch("app.tools.sql_tools.get_sql_engine", return_value=sql_engine),
+            patch("app.tools.sql_tools.settings.sql_query_timeout_seconds", 0.01),
+            pytest.raises(SQLExecutionError, match="timed out"),
+        ):
+            await execute_query(query)
+
+        assert time.perf_counter() - started < 1
 
     @pytest.mark.parametrize(
         "sql",
@@ -342,8 +356,7 @@ class TestExecuteQuery:
         assert "Charlie" in names
 
     async def test_bad_query_raises(self, sql_engine):
-        from app.api.middleware.error_handler import SQLExecutionError
-
-        with patch("app.tools.sql_tools.get_sql_engine", return_value=sql_engine):
-            with pytest.raises(SQLExecutionError):
-                await execute_query("SELECT * FROM nonexistent_table;")
+        with patch("app.tools.sql_tools.get_sql_engine", return_value=sql_engine), pytest.raises(
+            SQLExecutionError
+        ):
+            await execute_query("SELECT * FROM nonexistent_table;")
