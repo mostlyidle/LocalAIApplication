@@ -40,9 +40,13 @@ export const chatResponseSchema = z.object({
 export const agentCatalogSchema = z.object({
   agents: z.array(z.object({
     name: z.string(),
+    display_name: z.string().optional().default(""),
     target: z.string(),
     description: z.string(),
     default_for_target: z.boolean(),
+    system_prompt: z.string().optional().default(""),
+    is_custom: z.boolean().optional().default(false),
+    archived: z.boolean().optional().default(false),
     model_availability: z.record(z.string(), z.boolean().nullable()).optional(),
     inference: z.object({
       allowed_models: z.array(z.string()),
@@ -50,6 +54,7 @@ export const agentCatalogSchema = z.object({
     }).passthrough().nullable(),
   }).passthrough()),
 });
+export type AgentProfile = z.infer<typeof agentCatalogSchema>["agents"][number];
 
 export const conversationSummarySchema = z.object({
   id: z.string(),

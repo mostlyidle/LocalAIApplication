@@ -33,6 +33,9 @@ export interface ChatTaskOptions {
 
 export interface AgentCapability {
   name: string;
+  display_name?: string;
+  is_custom?: boolean;
+  archived?: boolean;
   target: string;
   description: string;
   default_for_target: boolean;

@@ -41,7 +41,8 @@ async def chat_agent_node(state: AgentState) -> dict[str, Any]:
 
     llm = llm_service.get_chat_model()
 
-    messages = [SystemMessage(content=CHAT_SYSTEM_PROMPT)]
+    system_prompt = state.get("system_prompts", {}).get("chat", CHAT_SYSTEM_PROMPT)
+    messages = [SystemMessage(content=system_prompt)]
     memory_message = memory_context_message(state)
     if memory_message is not None:
         messages.append(memory_message)
@@ -70,7 +71,8 @@ async def chat_agent_stream(state: AgentState):
     """
     llm = llm_service.get_chat_model()
 
-    messages = [SystemMessage(content=CHAT_SYSTEM_PROMPT)]
+    system_prompt = state.get("system_prompts", {}).get("chat", CHAT_SYSTEM_PROMPT)
+    messages = [SystemMessage(content=system_prompt)]
     memory_message = memory_context_message(state)
     if memory_message is not None:
         messages.append(memory_message)

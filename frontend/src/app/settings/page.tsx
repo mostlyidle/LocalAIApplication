@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Settings,
   Activity,
@@ -13,6 +13,11 @@ import {
   Loader2,
   Wrench,
   Github,
+  Bot,
+  Save,
+  RotateCcw,
+  Archive,
+  Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,6 +28,7 @@ import { useTheme } from "next-themes";
 import * as api from "@/lib/api";
 import type { GitHubConnection } from "@/lib/schemas";
 import type { GitHubRepository } from "@/lib/schemas";
+import type { AgentProfile } from "@/lib/schemas";
 
 interface HealthData {
   status: string;
@@ -50,6 +56,34 @@ export default function SettingsPage() {
   const [githubBusy, setGithubBusy] = useState(false);
   const [githubMessage, setGithubMessage] = useState("");
   const [githubRepositories, setGithubRepositories] = useState<GitHubRepository[]>([]);
+  const [agents, setAgents] = useState<AgentProfile[]>([]);
+  const [selectedAgentName, setSelectedAgentName] = useState("");
+  const [agentPrompt, setAgentPrompt] = useState("");
+  const [agentDisplayName, setAgentDisplayName] = useState("");
+  const [agentDescription, setAgentDescription] = useState("");
+  const [agentBusy, setAgentBusy] = useState(false);
+  const [agentMessage, setAgentMessage] = useState("");
+  const [newAgentName, setNewAgentName] = useState("");
+  const [newAgentDescription, setNewAgentDescription] = useState("");
+  const [newAgentSource, setNewAgentSource] = useState("");
+
+  const selectedAgent = agents.find((agent) => agent.name === selectedAgentName);
+  const creatableAgents = agents.filter((agent) => agent.inference && !agent.archived);
+
+  const refreshAgents = useCallback(async (selectedName?: string) => {
+    const catalog = await api.getAgentCatalogWithArchived();
+    setAgents(catalog.agents);
+    const nextName = selectedName ?? selectedAgentName;
+    const nextAgent = catalog.agents.find((agent) => agent.name === nextName) ?? catalog.agents[0];
+    if (nextAgent) {
+      setSelectedAgentName(nextAgent.name);
+      setAgentPrompt(nextAgent.system_prompt);
+      setAgentDisplayName(nextAgent.display_name);
+      setAgentDescription(nextAgent.description);
+    }
+    const nextSource = catalog.agents.find((agent) => agent.inference && !agent.archived);
+    if (nextSource) setNewAgentSource((current) => current || nextSource.name);
+  }, [selectedAgentName]);
 
   useEffect(() => {
     async function loadHealth() {
@@ -76,6 +110,9 @@ export default function SettingsPage() {
 
     loadHealth();
     loadTools();
+    void refreshAgents().catch((cause: unknown) => {
+      setAgentMessage(cause instanceof Error ? cause.message : "Could not load agents.");
+    });
     api.getGitHubConnection().then(async (connection) => {
       setGithubConnection(connection);
       if (connection.connected) {
@@ -88,7 +125,84 @@ export default function SettingsPage() {
     }).catch((cause: unknown) => {
       setGithubMessage(cause instanceof Error ? cause.message : "Could not load GitHub connection.");
     });
-  }, []);
+  }, [refreshAgents]);
+
+  const saveAgent = async () => {
+    if (!selectedAgent) return;
+    setAgentBusy(true);
+    setAgentMessage("");
+    try {
+      const input = selectedAgent.is_custom
+        ? { display_name: agentDisplayName, description: agentDescription, system_prompt: agentPrompt }
+        : { system_prompt: agentPrompt };
+      const result = await api.updateAgent(selectedAgent.name, input);
+      setAgents(result.agents);
+      setAgentMessage("Agent saved. Changes apply to the next request.");
+    } catch (cause) {
+      setAgentMessage(cause instanceof Error ? cause.message : "Could not save agent.");
+    } finally {
+      setAgentBusy(false);
+    }
+  };
+
+  const resetAgentPrompt = async () => {
+    if (!selectedAgent) return;
+    setAgentBusy(true);
+    setAgentMessage("");
+    try {
+      const result = await api.updateAgent(selectedAgent.name, { system_prompt: null });
+      setAgents(result.agents);
+      const updated = result.agents.find((agent) => agent.name === selectedAgent.name);
+      if (updated) setAgentPrompt(updated.system_prompt);
+      setAgentMessage("Prompt reset to its default.");
+    } catch (cause) {
+      setAgentMessage(cause instanceof Error ? cause.message : "Could not reset prompt.");
+    } finally {
+      setAgentBusy(false);
+    }
+  };
+
+  const createAgent = async () => {
+    setAgentBusy(true);
+    setAgentMessage("");
+    try {
+      const result = await api.createAgent({
+        source_agent: newAgentSource,
+        display_name: newAgentName,
+        description: newAgentDescription,
+      });
+      const created = result.agents.find((agent) => agent.is_custom && agent.display_name === newAgentName);
+      setAgents(result.agents);
+      if (created) {
+        setSelectedAgentName(created.name);
+        setAgentPrompt(created.system_prompt);
+        setAgentDisplayName(created.display_name);
+        setAgentDescription(created.description);
+      }
+      setNewAgentName("");
+      setNewAgentDescription("");
+      setAgentMessage("Agent created.");
+    } catch (cause) {
+      setAgentMessage(cause instanceof Error ? cause.message : "Could not create agent.");
+    } finally {
+      setAgentBusy(false);
+    }
+  };
+
+  const toggleAgentArchive = async () => {
+    if (!selectedAgent?.is_custom) return;
+    setAgentBusy(true);
+    setAgentMessage("");
+    try {
+      const result = await api.updateAgent(selectedAgent.name, { archived: !selectedAgent.archived });
+      setAgents(result.agents);
+      setAgentMessage(selectedAgent.archived ? "Agent restored." : "Agent archived.");
+    } catch (cause) {
+      setAgentMessage(cause instanceof Error ? cause.message : "Could not update agent.");
+    } finally {
+      setAgentBusy(false);
+    }
+  };
 
   const connectGitHub = async () => {
     setGithubBusy(true);
@@ -161,6 +275,58 @@ export default function SettingsPage() {
       </div>
 
       <div className="space-y-6">
+        {/* Agents */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-2"><Bot className="h-5 w-5" /><CardTitle className="text-base">Agents</CardTitle></div>
+            <CardDescription>Edit system prompts or create a reusable specialist from an existing agent type. Changes are shared across this installation.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            {agents.length === 0 ? <p className="text-sm text-muted-foreground">Loading agents…</p> : <>
+              <div className="grid gap-4 sm:grid-cols-[minmax(12rem,0.7fr)_minmax(0,1.3fr)]">
+                <div className="space-y-3">
+                  <Label htmlFor="managed-agent">Agent</Label>
+                  <select id="managed-agent" value={selectedAgentName} onChange={(event) => {
+                    const agent = agents.find((item) => item.name === event.target.value);
+                    if (!agent) return;
+                    setSelectedAgentName(agent.name);
+                    setAgentPrompt(agent.system_prompt);
+                    setAgentDisplayName(agent.display_name);
+                    setAgentDescription(agent.description);
+                  }} className="h-10 w-full rounded-md border border-input bg-card px-3 text-sm">
+                    {agents.map((agent) => <option key={agent.name} value={agent.name}>{agent.display_name}{agent.archived ? " · archived" : ""}</option>)}
+                  </select>
+                  {selectedAgent?.is_custom && <>
+                    <div className="space-y-1.5"><Label htmlFor="managed-agent-name">Name</Label><Input id="managed-agent-name" value={agentDisplayName} onChange={(event) => setAgentDisplayName(event.target.value)} maxLength={100} /></div>
+                    <div className="space-y-1.5"><Label htmlFor="managed-agent-description">Description</Label><Input id="managed-agent-description" value={agentDescription} onChange={(event) => setAgentDescription(event.target.value)} maxLength={500} /></div>
+                  </>}
+                  {selectedAgent && <p className="text-xs text-muted-foreground">Type: {selectedAgent.target.replaceAll("_", " ")}{selectedAgent.is_custom ? " · custom specialist" : " · built in"}</p>}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="managed-agent-prompt">System prompt</Label>
+                  <textarea id="managed-agent-prompt" value={agentPrompt} onChange={(event) => setAgentPrompt(event.target.value)} maxLength={20000} disabled={!selectedAgent?.inference || selectedAgent.archived} className="min-h-64 w-full resize-y rounded-md border border-input bg-background px-3 py-2 font-mono text-sm leading-relaxed disabled:cursor-not-allowed disabled:opacity-60" />
+                  <p className="text-xs text-muted-foreground">{selectedAgent?.inference ? <>Application supplied context and safety rules remain enforced. {agentPrompt.length}/20,000 characters.</> : "This built in profile does not use an LLM system prompt."}</p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" onClick={() => void saveAgent()} disabled={agentBusy || !selectedAgent?.inference || selectedAgent.archived}><Save className="mr-2 h-4 w-4" />Save prompt</Button>
+                {!selectedAgent?.is_custom && selectedAgent?.inference && <Button size="sm" variant="outline" onClick={() => void resetAgentPrompt()} disabled={agentBusy}><RotateCcw className="mr-2 h-4 w-4" />Reset to default</Button>}
+                {selectedAgent?.is_custom && <Button size="sm" variant="outline" onClick={() => void toggleAgentArchive()} disabled={agentBusy}>{selectedAgent.archived ? <><Plus className="mr-2 h-4 w-4" />Restore agent</> : <><Archive className="mr-2 h-4 w-4" />Archive agent</>}</Button>}
+              </div>
+              <div className="space-y-3 border-t pt-4">
+                <div><h3 className="text-sm font-semibold">Create specialist</h3><p className="text-xs text-muted-foreground">Copy one existing agent type, then customize its prompt.</p></div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="space-y-1.5"><Label htmlFor="new-agent-name">Name</Label><Input id="new-agent-name" value={newAgentName} onChange={(event) => setNewAgentName(event.target.value)} placeholder="Research helper" maxLength={100} /></div>
+                  <div className="space-y-1.5"><Label htmlFor="new-agent-type">Copy from</Label><select id="new-agent-type" value={newAgentSource} onChange={(event) => setNewAgentSource(event.target.value)} className="h-10 w-full rounded-md border border-input bg-card px-3 text-sm">{creatableAgents.map((agent) => <option key={agent.name} value={agent.name}>{agent.display_name}</option>)}</select></div>
+                  <div className="space-y-1.5"><Label htmlFor="new-agent-description">Description</Label><Input id="new-agent-description" value={newAgentDescription} onChange={(event) => setNewAgentDescription(event.target.value)} placeholder="What this specialist is for" maxLength={500} /></div>
+                </div>
+                <Button size="sm" variant="outline" onClick={() => void createAgent()} disabled={agentBusy || !newAgentName.trim() || !newAgentDescription.trim() || !newAgentSource}><Plus className="mr-2 h-4 w-4" />Create agent</Button>
+              </div>
+              {agentMessage && <p role="status" className="text-sm text-muted-foreground">{agentMessage}</p>}
+            </>}
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <div className="flex items-center gap-2"><Github className="h-5 w-5" /><CardTitle className="text-base">GitHub Project Agent</CardTitle></div>

@@ -51,7 +51,8 @@ async def web_agent_node(state: AgentState) -> dict[str, Any]:
     llm = llm_service.get_chat_model(temperature=0.2)
     llm_with_tools = llm.bind_tools(web_tools)
 
-    messages = [SystemMessage(content=WEB_SYSTEM_PROMPT)]
+    system_prompt = state.get("system_prompts", {}).get("web", WEB_SYSTEM_PROMPT)
+    messages = [SystemMessage(content=system_prompt)]
     memory_message = memory_context_message(state)
     if memory_message is not None:
         messages.append(memory_message)
