@@ -865,7 +865,7 @@ export function ChatWindow() {
                 ? "Describe what to do with the attached file(s)..."
                 : "Type a message... (Shift+Enter for new line)"
             }
-            className="min-h-14 max-h-32 resize-none rounded-xl border-0 bg-transparent px-2 text-base shadow-none focus-visible:ring-2 focus-visible:ring-ring sm:px-3"
+            className="min-h-14 max-h-32 resize-none rounded-xl border-0 bg-transparent px-2 text-base shadow-none focus-visible:ring-0 sm:px-3"
             rows={2}
             disabled={isStreaming || restoringConversation}
           />
