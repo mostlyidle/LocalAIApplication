@@ -48,6 +48,20 @@ def test_rag_v2_prompt_and_retrieval_profile_load(registry: AgentRegistry) -> No
     assert "What risks?" in prompt
 
 
+def test_render_messages_uses_saved_system_prompt_override() -> None:
+    prompt_dir = Path(__file__).resolve().parents[2] / "app" / "prompts"
+    prompt_store = PromptStore(prompt_dir)
+    prompt_store.set_system_override("rag", "rag", "  Answer in one sentence.  ")
+
+    system, user = prompt_store.render_messages(
+        "rag", "rag", {"prompt": "Question?", "history": "", "passages": "Evidence."}
+    )
+
+    assert system == "Answer in one sentence."
+    assert "Question: Question?" in user
+    assert "Evidence." in user
+
+
 def test_profile_model_and_override_limits_are_enforced(registry: AgentRegistry) -> None:
     profile = registry.get("rag")
     assert profile is not None
