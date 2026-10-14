@@ -231,6 +231,7 @@ export function ChatWindow() {
 
   const startNewConversation = () => {
     clearMessages();
+    setOptionsOpen(false);
     setExcludeFromMemory(false);
     setRecallSettingError("");
     setConversationError("");
