@@ -32,7 +32,7 @@ from app.services.meeting_answers import (
     DeterministicQuestionDetector,
     MeetingAnswerService,
 )
-from app.services.meeting_processor import MeetingAudioProcessor, WindowConsumer
+from app.services.meeting_processor import MeetingAudioProcessor, ProcessorState, WindowConsumer
 from app.services.transcription import (
     ASR_READINESS_TIMEOUT_SECONDS,
     TranscriptionEngine,
@@ -293,8 +293,20 @@ class MeetingService:
             await db.refresh(meeting)
         try:
             if session_id is not None:
-                await self.processor.stop(meeting_id, session_id)
+                processor_session = await self.processor.stop(meeting_id, session_id)
                 await self.processor.purge(meeting_id, session_id)
+                if (
+                    processor_session is not None
+                    and processor_session.state == ProcessorState.FAILED
+                ):
+                    meeting.status = MeetingStatus.FAILED.value
+                    meeting.failed_at = datetime.now(UTC)
+                    meeting.failure_reason = (
+                        processor_session.failure_reason
+                        or "Audio processing failed while stopping."
+                    )[:500]
+                    await db.commit()
+                    await db.refresh(meeting)
         finally:
             if session_id is not None:
                 await self._close_answer_worker(meeting_id, session_id, drain=True)
@@ -389,6 +401,7 @@ class MeetingService:
             await self.processor.purge(meeting_id, session_id)
         finally:
             await self._close_answer_worker(meeting_id, session_id, drain=False)
+            await self.processor.reset_timeline(meeting_id)
             self._event_queues.pop(meeting_id, None)
         await db.execute(delete(DetectedQuestion).where(DetectedQuestion.meeting_id == meeting_id))
         await db.execute(

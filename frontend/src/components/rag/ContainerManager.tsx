@@ -40,26 +40,29 @@ export function ContainerManager({ containers, selectedName, onSelect, onRefresh
   const active = containers.find((container) => container.name === selectedName);
   const isWorking = Boolean(active && active.queued_file_count + active.processing_file_count > 0);
 
-  const refreshFiles = useCallback(async () => {
+  const refreshFiles = useCallback(async (expectedName = selectedName) => {
+    if (expectedName !== selectedNameRef.current) return;
     const requestId = ++filesRequestId.current;
-    if (!selectedName) {
+    if (!expectedName) {
       setFiles([]);
       setIsLoadingFiles(false);
       return;
     }
     setIsLoadingFiles(true);
     try {
-      const nextFiles = await getRAGContainerFiles(selectedName);
-      if (requestId === filesRequestId.current) {
+      const nextFiles = await getRAGContainerFiles(expectedName);
+      if (requestId === filesRequestId.current && selectedNameRef.current === expectedName) {
         setFiles(nextFiles);
         setError("");
       }
     } catch (loadError) {
-      if (requestId === filesRequestId.current) {
+      if (requestId === filesRequestId.current && selectedNameRef.current === expectedName) {
         setError(loadError instanceof Error ? loadError.message : "Could not load container files.");
       }
     } finally {
-      if (requestId === filesRequestId.current) setIsLoadingFiles(false);
+      if (requestId === filesRequestId.current && selectedNameRef.current === expectedName) {
+        setIsLoadingFiles(false);
+      }
     }
   }, [selectedName]);
 
@@ -234,7 +237,11 @@ export function ContainerManager({ containers, selectedName, onSelect, onRefresh
             )}
 
             <ContainerUploader containerName={active.name} onUploaded={async () => {
-              await Promise.all([refreshFiles(), onRefresh()]);
+              const operationName = active.name;
+              if (selectedNameRef.current !== operationName) return;
+              await refreshFiles(operationName);
+              if (selectedNameRef.current !== operationName) return;
+              await onRefresh();
               setNotice("Files staged. Load index when ready.");
             }} />
 

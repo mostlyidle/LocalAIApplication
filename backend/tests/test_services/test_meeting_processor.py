@@ -188,3 +188,36 @@ class TestMeetingAudioProcessor:
 
         await processor.purge("meeting-reconnect", "session-second")
         await processor.reset_timeline("meeting-reconnect")
+
+    async def test_reconnect_offsets_use_elapsed_time_when_sample_rate_changes(self) -> None:
+        processor = MeetingAudioProcessor()
+        offsets: list[int] = []
+
+        async def collect_offsets(
+            header: AudioEnvelopeHeader, payload: bytes, offset_ms: int, final: bool
+        ) -> None:
+            offsets.append(offset_ms)
+
+        for session_id, sample_rate_hz in (("session-first", 8_000), ("session-second", 16_000)):
+            await processor.start(
+                "meeting-rate-change", session_id, consumer=collect_offsets, window_ms=1_000
+            )
+            header = _header("meeting-rate-change", 0, sample_rate_hz)
+            header = header.model_copy(
+                update={
+                    "sample_rate_hz": sample_rate_hz,
+                    "frame_count": sample_rate_hz,
+                    "duration_ms": 1_000,
+                }
+            )
+            await processor.accept(
+                "meeting-rate-change",
+                session_id,
+                header,
+                b"\0" * sample_rate_hz * 2,
+            )
+            await processor.stop("meeting-rate-change", session_id)
+            await processor.purge("meeting-rate-change", session_id)
+
+        assert offsets == [0, 1_000]
+        await processor.reset_timeline("meeting-rate-change")
