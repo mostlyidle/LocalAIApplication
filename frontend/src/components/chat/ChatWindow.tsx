@@ -4,6 +4,7 @@ import { useRef, useEffect, useState, type FormEvent, type ChangeEvent, type Rea
 import Link from "next/link";
 import { Send, Plus, Loader2, Paperclip, X, Image as ImageIcon, History, Sparkles, Lightbulb, BookOpen, ListChecks, PenLine, SlidersHorizontal, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
@@ -713,22 +714,26 @@ export function ChatWindow() {
           {selectedProfile?.inference ? (
             <>
               <label className="flex flex-col gap-1 text-xs text-muted-foreground" htmlFor="agent-model">Model
-              <select
-                id="agent-model"
-                aria-label="Agent model"
-                value={selectedModel}
-                onChange={(event) => setSelectedModel(event.target.value)}
-                disabled={isStreaming}
-                className="h-11 w-full max-w-full rounded-xl border border-input bg-card px-3 text-base text-foreground sm:text-sm"
-              >
+              <Select value={selectedModel} onValueChange={setSelectedModel} disabled={isStreaming}>
+                <SelectTrigger
+                  id="agent-model"
+                  aria-label="Agent model"
+                  className="h-11 w-full min-w-0 rounded-xl border-input bg-card px-3 text-base text-foreground shadow-none sm:text-sm"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent position="popper" align="start" className="max-h-64 rounded-xl bg-popover p-1">
                 {selectedProfile.inference.allowed_models.map((model) => {
                   const available = selectedProfile.model_availability?.[model];
                   const label = available === true ? " (installed)"
                     : available === false ? " (not installed)"
                     : available === null ? " (availability unknown)" : "";
-                  return <option key={model} value={model} disabled={available === false}>{model}{label}</option>;
+                  return <SelectItem key={model} value={model} disabled={available === false} className="min-h-10 rounded-lg py-2">
+                    {model}{label}
+                  </SelectItem>;
                 })}
-              </select>
+                </SelectContent>
+              </Select>
               </label>
               <label className="flex flex-col gap-1 text-xs text-muted-foreground" htmlFor="agent-temperature">Temperature
               <input
