@@ -16,6 +16,7 @@ interface MessageBubbleProps {
   canRemember?: boolean;
   onOpenConversation?: (conversationId: string) => void;
   canOpenSources?: boolean;
+  agentDisplayNames?: Record<string, string>;
 }
 
 export function MessageBubble({
@@ -24,6 +25,7 @@ export function MessageBubble({
   canRemember = true,
   onOpenConversation,
   canOpenSources = true,
+  agentDisplayNames,
 }: MessageBubbleProps) {
   const isUser = message.role === "user";
   const memorySources = Array.isArray(message.execution?.artifacts?.memory_sources)
@@ -60,7 +62,7 @@ export function MessageBubble({
               AGENT_COLORS[message.agentType] ? "border-current" : ""
             )}
           >
-            {AGENT_LABELS[message.agentType] ?? message.agentType}
+            {agentDisplayNames?.[message.agentType] ?? AGENT_LABELS[message.agentType] ?? message.agentType}
           </Badge>
         )}
         {isUser ? (

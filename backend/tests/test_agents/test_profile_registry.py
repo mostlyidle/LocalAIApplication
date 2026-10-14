@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -83,3 +84,35 @@ def test_missing_or_malformed_prompt_configuration_fails(tmp_path: Path) -> None
 
     with pytest.raises(ValueError, match="Invalid agent manifest"):
         AgentRegistry(tmp_path, PromptStore(tmp_path))
+
+
+def test_custom_profile_uses_saved_prompt_and_source_user_template(registry: AgentRegistry) -> None:
+    source = registry.get("chat")
+    assert source is not None
+    custom = source.model_copy(
+        update={
+            "name": "concise_helper",
+            "description": "A concise assistant",
+            "default_for_target": False,
+        }
+    )
+    config = SimpleNamespace(
+        name="concise_helper",
+        display_name="Concise Helper",
+        target="chat",
+        description=custom.description,
+        system_prompt="Use short sentences.",
+        base_agent="chat",
+        manifest_json=custom.model_dump_json(),
+        is_custom=True,
+        archived=False,
+    )
+
+    registry.apply_configurations([config])
+
+    assert registry.get("concise_helper") == custom
+    assert registry.system_prompt("concise_helper") == "Use short sentences."
+    custom_capability = next(
+        agent for agent in registry.capabilities().agents if agent.name == "concise_helper"
+    )
+    assert custom_capability.display_name == "Concise Helper"

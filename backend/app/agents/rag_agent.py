@@ -46,6 +46,7 @@ async def rag_agent_node(state: AgentState) -> dict[str, Any]:
     )
     if context.citations:
         system, user = prompts.render_messages(profile.name, "rag", context.prompt_values)
+        system = state.get("system_prompts", {}).get("rag", system)
         messages = [SystemMessage(content=system)]
         if context.memory_context:
             messages.append(

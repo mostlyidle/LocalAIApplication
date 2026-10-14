@@ -65,7 +65,8 @@ async def sql_agent_node(state: AgentState) -> dict[str, Any]:
         logger.warning("schema_introspection_failed", error=str(exc))
         schema_context = "Database schema not available. Use sql_schema_tool to inspect."
 
-    system_prompt = SQL_SYSTEM_PROMPT_TEMPLATE.format(schema_context=schema_context)
+    system_prompt = state.get("system_prompts", {}).get("sql", SQL_SYSTEM_PROMPT_TEMPLATE)
+    system_prompt = f"{system_prompt}\n\n{schema_context}"
 
     llm = llm_service.get_chat_model(temperature=0.0)
     llm_with_tools = llm.bind_tools(sql_tools)

@@ -54,6 +54,7 @@ vi.mock("@/lib/api", () => ({
   updateConversationMemorySettings: (...args: unknown[]) => mockUpdateConversationMemorySettings(...args),
   uploadDocument: (...args: unknown[]) => mockUploadDocument(...args),
   getAgentCatalog: (...args: unknown[]) => mockGetAgentCatalog(...args),
+  getAgentCatalogWithArchived: (...args: unknown[]) => mockGetAgentCatalog(...args),
   getRAGContainers: (...args: unknown[]) => mockGetRAGContainers(...args),
   getRAGCollections: (...args: unknown[]) => mockGetRAGCollections(...args),
   getConversation: (...args: unknown[]) => mockGetConversation(...args),

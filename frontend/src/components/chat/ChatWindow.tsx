@@ -14,7 +14,7 @@ import {
   createMemory,
   getRAGCollections,
   getRAGContainers,
-  getAgentCatalog,
+  getAgentCatalogWithArchived,
   getConversation,
   getConversations,
   getDocuments,
@@ -115,7 +115,11 @@ export function ChatWindow() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const selectedProfile = agents.find((agent) => agent.name === selectedAgent);
+  const selectedProfile = agents.find((agent) => agent.name === selectedAgent && !agent.archived);
+  const agentDisplayNames = Object.fromEntries(agents.map((agent) => [
+    agent.name,
+    agent.display_name || AGENT_LABELS[agent.name] || agent.name.replaceAll("_", " "),
+  ]));
   const filteredConversations = conversations.filter((conversation) =>
     (conversation.title || "Untitled conversation").toLowerCase().includes(historyQuery.trim().toLowerCase()),
   );
@@ -294,7 +298,7 @@ export function ChatWindow() {
   };
 
   useEffect(() => {
-    getAgentCatalog()
+    getAgentCatalogWithArchived()
       .then((catalog) => setAgents(catalog.agents as AgentCapability[]))
       .catch(() => setAgents([]));
   }, []);
@@ -599,6 +603,7 @@ export function ChatWindow() {
             <MessageBubble
               key={msg.id}
               message={msg}
+              agentDisplayNames={agentDisplayNames}
               canRemember={!isStreaming}
               onRemember={rememberMessage}
               onOpenConversation={(sourceId) => void selectConversation(sourceId)}
@@ -692,9 +697,9 @@ export function ChatWindow() {
             className="h-11 max-w-full rounded-xl border border-input bg-card px-3 text-base sm:text-sm"
           >
             <option value="auto">Auto select</option>
-            {agents.map((agent) => (
+            {agents.filter((agent) => !agent.archived).map((agent) => (
               <option key={agent.name} value={agent.name}>
-                {AGENT_LABELS[agent.name] ?? agent.name.replaceAll("_", " ")}{agent.default_for_target ? " · default" : ""}
+                {AGENT_LABELS[agent.name] ?? (agent.display_name || agent.name.replaceAll("_", " "))}{agent.default_for_target ? " · default" : ""}
               </option>
             ))}
           </select>

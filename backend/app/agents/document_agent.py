@@ -49,7 +49,8 @@ async def document_agent_node(state: AgentState) -> dict[str, Any]:
     llm = llm_service.get_chat_model(temperature=0.1)
     llm_with_tools = llm.bind_tools(document_tools)
 
-    messages = [SystemMessage(content=DOCUMENT_SYSTEM_PROMPT)]
+    system_prompt = state.get("system_prompts", {}).get("document", DOCUMENT_SYSTEM_PROMPT)
+    messages = [SystemMessage(content=system_prompt)]
     memory_message = memory_context_message(state)
     if memory_message is not None:
         messages.append(memory_message)
