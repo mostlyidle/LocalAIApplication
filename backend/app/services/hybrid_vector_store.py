@@ -20,6 +20,8 @@ from app.services.vector_store import VectorStoreService
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
+    from app.agents.registry import AgentRegistry
+    from app.prompt_store import PromptStore
 
 class HybridVectorStoreService(VectorStoreService):
     """Drop-in vector-store API backed by Qdrant, BM25, and bounded profiles."""
@@ -32,7 +34,8 @@ class HybridVectorStoreService(VectorStoreService):
         )
         self._loader_queries = FastEmbedQueries(cache_dir=settings.fastembed_cache_path)
         self._prompt_dir = prompt_dir
-        self._profiles = None
+        self._profiles: AgentRegistry | None = None
+        self._prompts: PromptStore | None = None
 
     async def close(self) -> None:
         await self._rag.close()
@@ -87,10 +90,24 @@ class HybridVectorStoreService(VectorStoreService):
         score_threshold: float | None = None,
         agent_name: str = "rag",
         rewrite_model: str | None = None,
+        owner_id: str | None = None,
     ) -> list[dict[str, Any]]:
+        selected_collection = collection or settings.chroma_collection_name
+        if owner_id is not None:
+            from app.api.middleware.error_handler import NotFoundError
+            from app.services.database import get_app_session_factory
+            from app.services.rag_access import collection_access
+
+            async with get_app_session_factory()() as db:
+                access = await collection_access(
+                    db, self, name=selected_collection, owner_id=owner_id
+                )
+            if access in {"foreign", "unassigned", "missing"}:
+                raise NotFoundError("Collection", selected_collection)
+
         result = await self.search_with_provenance(
             query=query,
-            collection=collection or settings.chroma_collection_name,
+            collection=selected_collection,
             top_k=top_k or settings.rag_top_k,
             score_threshold=score_threshold,
             agent_name=agent_name,
@@ -216,9 +233,11 @@ class HybridVectorStoreService(VectorStoreService):
         profile = self.profile_registry().get(agent_name)
         if profile is None or profile.inference is None:
             return [], "invalid_profile"
-        from app.prompt_store import PromptStore
+        prompt_store = getattr(self, "_prompts", None)
+        if prompt_store is None:
+            from app.prompt_store import PromptStore
 
-        prompt_store = PromptStore(self._prompt_dir)
+            prompt_store = self._prompts = PromptStore(self._prompt_dir)
         system, prompt = prompt_store.render_messages_for(
             agent_name,
             "rag",
@@ -256,13 +275,20 @@ class HybridVectorStoreService(VectorStoreService):
             return [], "insufficient_distinct_rewrites"
         return distinct, None
 
-    def profile_registry(self):
+    def profile_registry(self) -> AgentRegistry:
         if self._profiles is None:
             from app.agents.registry import AgentRegistry
             from app.prompt_store import PromptStore
 
-            self._profiles = AgentRegistry(self._prompt_dir, PromptStore(self._prompt_dir))
+            prompts = PromptStore(self._prompt_dir)
+            self._prompts = prompts
+            self._profiles = AgentRegistry(self._prompt_dir, prompts)
         return self._profiles
+
+    def configure_profiles(self, profiles: AgentRegistry, prompts: PromptStore) -> None:
+        """Use the application registry and prompt sources for profile retrieval."""
+        self._profiles = profiles
+        self._prompts = prompts
 
     @staticmethod
     def _chat_model(*, model: str, temperature: float, max_output_tokens: int, context_window: int):

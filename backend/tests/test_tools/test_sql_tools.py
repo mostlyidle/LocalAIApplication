@@ -4,19 +4,24 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
-from typing import Any
+import time
+from types import SimpleNamespace
+from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.api.middleware.error_handler import UnsafeQueryError
+from app.api.middleware.error_handler import SQLExecutionError, UnsafeQueryError
 from app.tools.sql_tools import (
+    _execute_with_deadline,
     execute_query,
     format_schema_for_prompt,
     introspect_schema,
     validate_query,
 )
 
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncEngine
 
 # =============================================================================
 # validate_query — synchronous, pure function
@@ -260,14 +265,18 @@ class TestExecuteQuery:
     """Tests for executing SQL against the test database."""
 
     async def test_execution_timeout(self, sql_engine) -> None:
-        from app.api.middleware.error_handler import SQLExecutionError
-
         async def slow_execute(*args: Any, **kwargs: Any) -> None:
             await asyncio.sleep(1)
 
         session = AsyncMock()
         session.__aenter__.return_value = session
         session.execute.side_effect = slow_execute
+        driver_connection = SimpleNamespace(interrupt=AsyncMock())
+        raw_connection = SimpleNamespace(driver_connection=driver_connection)
+        async_connection = SimpleNamespace(
+            get_raw_connection=AsyncMock(return_value=raw_connection)
+        )
+        session.connection = AsyncMock(return_value=async_connection)
         with (
             patch("app.tools.sql_tools.get_sql_engine", return_value=sql_engine),
             patch("app.tools.sql_tools.AsyncSession", return_value=session),
@@ -275,6 +284,53 @@ class TestExecuteQuery:
             pytest.raises(SQLExecutionError, match="timed out"),
         ):
             await execute_query("SELECT 1")
+        driver_connection.interrupt.assert_awaited_once()
+
+    async def test_query_task_is_settled_when_caller_cancels(self) -> None:
+        started = asyncio.Event()
+        finished = asyncio.Event()
+        query_task: asyncio.Task[None] | None = None
+
+        async def slow_execute(*args: Any, **kwargs: Any) -> None:
+            nonlocal query_task
+            query_task = asyncio.current_task()
+            started.set()
+            try:
+                await asyncio.sleep(30)
+            finally:
+                finished.set()
+
+        session = SimpleNamespace(execute=slow_execute)
+        driver_connection = SimpleNamespace(interrupt=AsyncMock())
+        deadline_task = asyncio.create_task(
+            _execute_with_deadline(session, "SELECT 1", 30, driver_connection)
+        )
+        await started.wait()
+        deadline_task.cancel()
+
+        with pytest.raises(asyncio.CancelledError):
+            await deadline_task
+        await asyncio.wait_for(finished.wait(), timeout=1)
+        assert query_task is not None and query_task.done()
+        driver_connection.interrupt.assert_awaited_once()
+
+    async def test_sqlite_timeout_interrupts_a_running_driver_query(
+        self, sql_engine: AsyncEngine
+    ) -> None:
+        query = (
+            "WITH RECURSIVE cnt(x) AS (VALUES(0) "
+            "UNION ALL SELECT x + 1 FROM cnt WHERE x < 10000000) "
+            "SELECT SUM(x) FROM cnt"
+        )
+        started = time.perf_counter()
+        with (
+            patch("app.tools.sql_tools.get_sql_engine", return_value=sql_engine),
+            patch("app.tools.sql_tools.settings.sql_query_timeout_seconds", 0.01),
+            pytest.raises(SQLExecutionError, match="timed out"),
+        ):
+            await execute_query(query)
+
+        assert time.perf_counter() - started < 1
 
     @pytest.mark.parametrize(
         "sql",
@@ -303,6 +359,20 @@ class TestExecuteQuery:
         ):
             await execute_query("DELETE FROM users")
 
+    async def test_write_mode_commits_successful_statements(
+        self, sql_engine: AsyncEngine
+    ) -> None:
+        with (
+            patch("app.tools.sql_tools.get_sql_engine", return_value=sql_engine),
+            patch("app.tools.sql_tools.settings.sql_allow_writes", True),
+        ):
+            await execute_query(
+                "INSERT INTO users (name, email, age) VALUES ('Eve', 'eve@test.com', 22)"
+            )
+            result = await execute_query("SELECT name FROM users WHERE email = 'eve@test.com'")
+
+        assert result["rows"] == [["Eve"]]
+
     async def test_select_all(self, sql_engine):
         with patch("app.tools.sql_tools.get_sql_engine", return_value=sql_engine):
             result = await execute_query("SELECT * FROM users;")
@@ -321,9 +391,8 @@ class TestExecuteQuery:
         assert "Alice" in names
         assert "Charlie" in names
 
-    async def test_bad_query_raises(self, sql_engine):
-        from app.api.middleware.error_handler import SQLExecutionError
-
-        with patch("app.tools.sql_tools.get_sql_engine", return_value=sql_engine):
-            with pytest.raises(SQLExecutionError):
-                await execute_query("SELECT * FROM nonexistent_table;")
+    async def test_bad_query_raises(self, sql_engine: AsyncEngine) -> None:
+        with patch("app.tools.sql_tools.get_sql_engine", return_value=sql_engine), pytest.raises(
+            SQLExecutionError
+        ):
+            await execute_query("SELECT * FROM nonexistent_table;")

@@ -6,7 +6,7 @@ import io
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import TYPE_CHECKING
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, call
 
 from app.models.db_models import LEGACY_ACCOUNT_ID, Document, RagContainerFile
 
@@ -252,7 +252,8 @@ class TestRAGContainers:
         deleted = await client.delete(f"/api/v1/documents/{current_document_id}")
 
         assert deleted.status_code == 200
-        vector_store.delete_asset.assert_awaited_once_with(
-            container["name"], "previous-version-document"
-        )
+        assert vector_store.delete_asset.await_args_list == [
+            call(container["name"], "previous-version-document"),
+            call(container["name"], current_document_id),
+        ]
         assert await db_session.get(RagContainerFile, file_id, populate_existing=True) is None

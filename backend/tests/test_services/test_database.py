@@ -8,9 +8,10 @@ from unittest.mock import patch
 import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
 from app.models.db_models import Base, Conversation, Document, LEGACY_ACCOUNT_ID, Meeting
+from app.services.database import _enable_sqlite_wal
 
 
 # =============================================================================
@@ -27,6 +28,16 @@ class TestDatabaseFixtures:
     async def test_session_works(self, db_session: AsyncSession):
         result = await db_session.execute(text("SELECT 1"))
         assert result.scalar() == 1
+
+    async def test_sqlite_connections_enable_foreign_keys(self) -> None:
+        engine = create_async_engine("sqlite+aiosqlite://")
+        _enable_sqlite_wal(engine)
+        try:
+            async with engine.connect() as connection:
+                result = await connection.execute(text("PRAGMA foreign_keys"))
+            assert result.scalar_one() == 1
+        finally:
+            await engine.dispose()
 
     @pytest.mark.parametrize(
         "record_factory",

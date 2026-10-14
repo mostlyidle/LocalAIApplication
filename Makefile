@@ -16,7 +16,7 @@ help: ## Show this help message
 
 setup: ## Install all dependencies and pull Ollama models
 	@echo "==> Installing backend dependencies..."
-	cd $(BACKEND_DIR) && uv sync
+	uv sync --project $(BACKEND_DIR)
 	@echo "==> Installing frontend dependencies..."
 	cd $(FRONTEND_DIR) && pnpm install
 	@echo "==> Pulling Ollama models..."
@@ -29,7 +29,7 @@ setup: ## Install all dependencies and pull Ollama models
 	@echo "==> Creating data directories..."
 	mkdir -p data/uploads data/chroma data/fastembed
 	@echo "==> Running database migrations..."
-	cd $(BACKEND_DIR) && uv run alembic upgrade head
+	uv run --project $(BACKEND_DIR) alembic -c $(BACKEND_DIR)/alembic.ini upgrade head
 	@echo "==> Setup complete!"
 
 setup-backend: ## Install backend dependencies only
@@ -46,7 +46,7 @@ dev: ## Start backend + frontend concurrently
 	@make dev-backend & make dev-frontend
 
 dev-backend: ## Start FastAPI backend with hot reload
-	cd $(BACKEND_DIR) && uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+	uv run --project $(BACKEND_DIR) uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 dev-frontend: ## Start Next.js frontend dev server
 	cd $(FRONTEND_DIR) && pnpm dev
@@ -90,10 +90,10 @@ format: ## Auto-format all code
 # ---------------------------------------------------------------------------
 
 migrate: ## Run database migrations
-	cd $(BACKEND_DIR) && uv run alembic upgrade head
+	uv run --project $(BACKEND_DIR) alembic -c $(BACKEND_DIR)/alembic.ini upgrade head
 
 migrate-new: ## Create a new migration (usage: make migrate-new MSG="add users table")
-	cd $(BACKEND_DIR) && uv run alembic revision --autogenerate -m "$(MSG)"
+	uv run --project $(BACKEND_DIR) alembic -c $(BACKEND_DIR)/alembic.ini revision --autogenerate -m "$(MSG)"
 
 seed: ## Seed demo database with sample data
 	cd $(BACKEND_DIR) && uv run python ../scripts/seed_demo_db.py

@@ -310,7 +310,6 @@ async def run_agent(
         state["forced_agent"] = forced_agent
     if system_prompts is not None:
         state["system_prompts"] = system_prompts
-
     # Inject conversation history if provided
     if existing_messages:
         state["messages"] = list(existing_messages)
@@ -365,7 +364,6 @@ async def stream_agent(
         state["forced_agent"] = forced_agent
     if system_prompts is not None:
         state["system_prompts"] = system_prompts
-
     if existing_messages:
         state["messages"] = list(existing_messages)
     state["messages"].append(

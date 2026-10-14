@@ -9,6 +9,9 @@ from __future__ import annotations
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from limits import parse
+from limits.storage import MemoryStorage
+from limits.strategies import MovingWindowRateLimiter
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -16,19 +19,17 @@ from slowapi.util import get_remote_address
 from app.config import settings
 
 logger = structlog.get_logger(__name__)
+_websocket_limiter = MovingWindowRateLimiter(MemoryStorage())
 
 
 def _get_client_ip(request: Request) -> str:
-    """Extract client IP for rate limit keying.
-
-    Uses X-Forwarded-For if available (behind a reverse proxy),
-    otherwise falls back to the direct client address.
-    """
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        # First IP in the chain is the original client
-        return forwarded.split(",")[0].strip()
+    """Use the socket peer for rate limits; forwarded headers are caller-controlled."""
     return get_remote_address(request)
+
+
+def allow_websocket_inference(account_id: str) -> bool:
+    """Apply the configured LLM quota to one authenticated WebSocket account."""
+    return _websocket_limiter.hit(parse(settings.rate_limit_llm), "account", account_id)
 
 
 # Module-level limiter instance — imported by route modules for per-route decorators.

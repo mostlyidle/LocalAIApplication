@@ -303,10 +303,10 @@ class DocumentParserService:
 
             doc = DocxDocument(str(file_path))
             paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
-            full_text = "\n\n".join(paragraphs)
 
             # Extract tables
             tables = []
+            table_text = []
             for table in doc.tables:
                 rows_data = []
                 for row in table.rows:
@@ -318,9 +318,10 @@ class DocumentParserService:
                             "rows": rows_data[1:],
                         }
                     )
+                    table_text.append("\n".join(" | ".join(row) for row in rows_data))
 
             return ParsedDocument(
-                text=full_text,
+                text="\n\n".join([*paragraphs, *table_text]),
                 tables=tables,
                 metadata={"format": "docx", "filename": file_path.name},
             )
@@ -471,13 +472,16 @@ class DocumentParserService:
         return await asyncio.to_thread(_sync_parse)
 
     async def _parse_image(self, file_path: Path) -> ParsedDocument:
-        """Handle image files -- returns minimal text, OCR happens downstream."""
+        """Extract image text with the local OCR service for analysis and ingestion."""
+        from app.services.ocr import ocr_service
+
+        text = await ocr_service.extract_text(file_path)
         return ParsedDocument(
-            text=f"[Image file: {file_path.name}]",
+            text=text,
             metadata={
                 "format": file_path.suffix.lstrip(".").lower(),
                 "filename": file_path.name,
-                "requires_ocr": True,
+                "ocr_performed": True,
             },
         )
 

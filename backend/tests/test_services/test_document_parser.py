@@ -152,12 +152,16 @@ class TestParseRouting:
         assert result.metadata["title"] == "Test"
 
     async def test_routes_to_image_parser(self):
-        """Image format returns placeholder text with OCR metadata."""
+        """Image format routes through OCR before returning parsed text."""
         parser = DocumentParserService()
         fake_path = Path("/tmp/photo.png")
-        result = await parser.parse(fake_path, DocumentFormat.PNG)
-        assert "[Image file: photo.png]" in result.text
-        assert result.metadata["requires_ocr"] is True
+        with patch(
+            "app.services.ocr.ocr_service.extract_text", AsyncMock(return_value="OCR text")
+        ) as extract_text:
+            result = await parser.parse(fake_path, DocumentFormat.PNG)
+        assert result.text == "OCR text"
+        assert result.metadata["ocr_performed"] is True
+        extract_text.assert_awaited_once_with(fake_path)
 
     async def test_pdf_routes_to_pdf_parser(self):
         """PDF format calls _parse_pdf."""
@@ -347,19 +351,21 @@ class TestParseImage:
     """Tests for image file handling."""
 
     async def test_returns_placeholder_text(self):
-        """Image returns placeholder with requires_ocr flag."""
+        """Image text comes from OCR and is marked as processed."""
         parser = DocumentParserService()
-        result = await parser._parse_image(Path("/images/scan.jpg"))
-        assert "[Image file: scan.jpg]" in result.text
-        assert result.metadata["requires_ocr"] is True
+        with patch("app.services.ocr.ocr_service.extract_text", AsyncMock(return_value="Scanned invoice")):
+            result = await parser._parse_image(Path("/images/scan.jpg"))
+        assert result.text == "Scanned invoice"
+        assert result.metadata["ocr_performed"] is True
         assert result.metadata["format"] == "jpg"
 
     async def test_handles_different_extensions(self):
         """Various image extensions set correct format."""
         parser = DocumentParserService()
-        for ext, expected_fmt in [("png", "png"), ("tiff", "tiff"), ("bmp", "bmp")]:
-            result = await parser._parse_image(Path(f"/img/file.{ext}"))
-            assert result.metadata["format"] == expected_fmt
+        with patch("app.services.ocr.ocr_service.extract_text", AsyncMock(return_value="text")):
+            for ext, expected_fmt in [("png", "png"), ("tiff", "tiff"), ("bmp", "bmp")]:
+                result = await parser._parse_image(Path(f"/img/file.{ext}"))
+                assert result.metadata["format"] == expected_fmt
 
 
 # =============================================================================
@@ -616,10 +622,12 @@ class TestParseDocx:
         assert "First paragraph" in result.text
         assert "Third paragraph" in result.text
         # whitespace-only paragraph should not appear in text
-        assert result.text == "First paragraph\n\nThird paragraph"
+        assert result.text == "First paragraph\n\nThird paragraph\n\nName | Age\nAlice | 30"
         assert len(result.tables) == 1
         assert result.tables[0]["headers"] == ["Name", "Age"]
         assert result.tables[0]["rows"] == [["Alice", "30"]]
+        assert "Name | Age" in result.text
+        assert "Alice | 30" in result.text
         assert result.metadata["format"] == "docx"
         assert result.metadata["filename"] == "report.docx"
 

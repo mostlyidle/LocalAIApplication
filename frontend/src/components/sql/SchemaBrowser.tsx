@@ -25,19 +25,22 @@ export function SchemaBrowser({ database, onInsertText }: SchemaBrowserProps = {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let active = true;
     async function load() {
       setIsLoading(true);
       setError(null);
+      setTables([]);
       try {
         const data = await api.getSQLSchema(database);
-        setTables(data.tables ?? []);
+        if (active) setTables(data.tables ?? []);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load schema");
+        if (active) setError(err instanceof Error ? err.message : "Failed to load schema");
       } finally {
-        setIsLoading(false);
+        if (active) setIsLoading(false);
       }
     }
-    load();
+    void load();
+    return () => { active = false; };
   }, [database]);
 
   const toggleTable = (name: string) => {

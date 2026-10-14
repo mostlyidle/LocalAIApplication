@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from app.api.routes.meetings import _is_allowed_origin
 from app.dependencies import get_meeting_service
-from app.models.db_models import Meeting, MeetingStreamTicket, LEGACY_ACCOUNT_ID
+from app.models.db_models import LEGACY_ACCOUNT_ID, Meeting, MeetingStreamTicket
 from app.models.enums import MeetingStatus
 from app.services.meeting_answers import MeetingAnswerService
 from app.services.meetings import MeetingService
@@ -61,6 +61,7 @@ class TestMeetingRoutes:
         assert stopped.status_code == 200
         assert stopped_again.status_code == 200
         assert stopped.json()["stopped_at"] == stopped_again.json()["stopped_at"]
+        assert stopped.json()["failure_reason"] is None
 
         deleted = await client.delete(f"/api/v1/meetings/{meeting_id}")
         assert deleted.status_code == 200
@@ -230,6 +231,7 @@ async def test_canonical_meeting_stream_protocol(
             stopped = websocket.receive_json()
             assert stopped["type"] == "status"
             assert stopped["status"] == "stopped"
+            assert stopped["failure_reason"] is None
     finally:
         ws_client.close()
 

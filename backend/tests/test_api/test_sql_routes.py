@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, patch
 
 from httpx import AsyncClient
 
 from app.models.db_models import LEGACY_ACCOUNT_ID, SqlConnection
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from fastapi import FastAPI
+    from pytest import MonkeyPatch
 
 
 class TestSQLSchemaEndpoint:
@@ -110,6 +117,30 @@ class TestSQLExecuteEndpoint:
         data = resp.json()
         assert data["result"]["row_count"] == 2
 
+
+class TestSQLQueryEndpoint:
+    async def test_uses_saved_sql_system_prompt(
+        self, client: AsyncClient, app: FastAPI
+    ) -> None:
+        profile = app.state.agent_registry.default_for("sql")
+        saved_prompt = "Only query the data needed to answer."
+        app.state.agent_registry._prompts.set_system_override(
+            profile.name, profile.target, saved_prompt
+        )
+        with (
+            patch("app.api.routes.sql._require_sql_connection", AsyncMock()),
+            patch(
+                "app.api.routes.sql.sql_agent_node",
+                AsyncMock(return_value={"messages": [], "tool_calls": []}),
+            ) as invoke,
+        ):
+            response = await client.post(
+                "/api/v1/sql/query", json={"question": "Count the rows"}
+            )
+
+        assert response.status_code == 200
+        assert invoke.call_args.args[0]["system_prompts"]["sql"] == saved_prompt
+
     async def test_execute_unsafe_query_returns_422(self, client: AsyncClient):
         """Attempting to execute an unsafe query should return 422."""
         from app.api.middleware.error_handler import UnsafeQueryError
@@ -201,3 +232,23 @@ class TestSQLConnectionsEndpoint:
         )
         registry = await db_session.get(SqlConnection, "reports")
         assert registry is not None and registry.owner_id == LEGACY_ACCOUNT_ID
+
+    async def test_cannot_register_the_application_database(
+        self,
+        client: AsyncClient,
+        tmp_path: Path,
+        monkeypatch: MonkeyPatch,
+    ) -> None:
+        app_db = tmp_path / "application.db"
+        monkeypatch.setattr(
+            "app.api.routes.sql.settings.app_database_url",
+            f"sqlite+aiosqlite:///{app_db}",
+        )
+        with patch("app.services.database.get_sql_engine") as create_engine:
+            response = await client.post(
+                "/api/v1/sql/connections",
+                json={"name": "app-data", "url": f"sqlite:///{app_db}"},
+            )
+
+        assert response.status_code == 422
+        create_engine.assert_not_called()

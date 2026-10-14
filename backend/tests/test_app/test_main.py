@@ -5,10 +5,20 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, patch
 
+import pytest
 from fastapi import FastAPI
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+@pytest.fixture
+def lifespan_app_session_factory(
+    async_engine: AsyncEngine,
+) -> async_sessionmaker[AsyncSession]:
+    """Return an initialized fixture DB for lifespan configuration reads."""
+    return async_sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
 
 
 class TestCreateApp:
@@ -65,7 +75,11 @@ class TestCreateApp:
 class TestLifespan:
     """Tests for the lifespan context manager."""
 
-    async def test_lifespan_creates_directories(self, tmp_path: Path):
+    async def test_lifespan_creates_directories(
+        self,
+        tmp_path: Path,
+        lifespan_app_session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
         """Lifespan startup should create data directories."""
         upload_dir = tmp_path / "uploads"
         chroma_dir = tmp_path / "chroma"
@@ -73,6 +87,10 @@ class TestLifespan:
         with (
             patch("app.main.settings") as mock_settings,
             patch("app.services.database.init_app_db", new_callable=AsyncMock),
+            patch(
+                "app.services.database.get_app_session_factory",
+                return_value=lifespan_app_session_factory,
+            ),
             patch(
                 "app.services.meetings.meeting_service.reconcile_active_meetings",
                 new_callable=AsyncMock,
@@ -95,13 +113,21 @@ class TestLifespan:
                 assert upload_dir.exists()
                 assert chroma_dir.exists()
 
-    async def test_lifespan_initializes_db(self, tmp_path: Path):
+    async def test_lifespan_initializes_db(
+        self,
+        tmp_path: Path,
+        lifespan_app_session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
         """Lifespan should call init_app_db on startup."""
         mock_init = AsyncMock()
 
         with (
             patch("app.main.settings") as mock_settings,
             patch("app.services.database.init_app_db", mock_init),
+            patch(
+                "app.services.database.get_app_session_factory",
+                return_value=lifespan_app_session_factory,
+            ),
             patch(
                 "app.services.meetings.meeting_service.reconcile_active_meetings",
                 new_callable=AsyncMock,
@@ -123,7 +149,11 @@ class TestLifespan:
             async with lifespan(fake_app):
                 mock_init.assert_awaited_once()
 
-    async def test_lifespan_reconciles_interrupted_meetings(self, tmp_path: Path):
+    async def test_lifespan_reconciles_interrupted_meetings(
+        self,
+        tmp_path: Path,
+        lifespan_app_session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
         """Lifespan should reconcile persisted active meetings after DB initialization."""
         mock_init = AsyncMock()
         mock_reconcile = AsyncMock(return_value=2)
@@ -131,6 +161,10 @@ class TestLifespan:
         with (
             patch("app.main.settings") as mock_settings,
             patch("app.services.database.init_app_db", mock_init),
+            patch(
+                "app.services.database.get_app_session_factory",
+                return_value=lifespan_app_session_factory,
+            ),
             patch(
                 "app.services.meetings.meeting_service.reconcile_active_meetings",
                 mock_reconcile,
@@ -153,7 +187,11 @@ class TestLifespan:
                 mock_init.assert_awaited_once()
                 mock_reconcile.assert_awaited_once_with()
 
-    async def test_lifespan_closes_db_on_shutdown(self, tmp_path: Path):
+    async def test_lifespan_closes_db_on_shutdown(
+        self,
+        tmp_path: Path,
+        lifespan_app_session_factory: async_sessionmaker[AsyncSession],
+    ) -> None:
         """Lifespan should close DB connections on shutdown."""
         mock_close_sql = AsyncMock()
         mock_close_app = AsyncMock()
@@ -162,6 +200,10 @@ class TestLifespan:
         with (
             patch("app.main.settings") as mock_settings,
             patch("app.services.database.init_app_db", new_callable=AsyncMock),
+            patch(
+                "app.services.database.get_app_session_factory",
+                return_value=lifespan_app_session_factory,
+            ),
             patch(
                 "app.services.meetings.meeting_service.reconcile_active_meetings",
                 new_callable=AsyncMock,

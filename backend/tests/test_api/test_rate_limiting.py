@@ -94,26 +94,15 @@ class TestGetClientIp:
         request = _build_request(client_ip="10.0.0.5")
         assert _get_client_ip(request) == "10.0.0.5"
 
-    def test_returns_first_forwarded_ip(self):
-        """With X-Forwarded-For, returns the first (original client) IP."""
+    def test_ignores_untrusted_forwarded_ip(self) -> None:
+        """A caller cannot change its rate limit key by supplying a proxy header."""
         from app.api.middleware.rate_limiting import _get_client_ip
 
-        request = _build_request(forwarded_for="203.0.113.50, 70.41.3.18, 150.172.238.178")
-        assert _get_client_ip(request) == "203.0.113.50"
-
-    def test_single_forwarded_ip(self):
-        """X-Forwarded-For with a single IP returns that IP."""
-        from app.api.middleware.rate_limiting import _get_client_ip
-
-        request = _build_request(forwarded_for="198.51.100.42")
-        assert _get_client_ip(request) == "198.51.100.42"
-
-    def test_forwarded_takes_precedence_over_client(self):
-        """X-Forwarded-For is preferred over the socket client address."""
-        from app.api.middleware.rate_limiting import _get_client_ip
-
-        request = _build_request(client_ip="127.0.0.1", forwarded_for="8.8.8.8")
-        assert _get_client_ip(request) == "8.8.8.8"
+        request = _build_request(
+            client_ip="10.0.0.5",
+            forwarded_for="203.0.113.50, 70.41.3.18, 150.172.238.178",
+        )
+        assert _get_client_ip(request) == "10.0.0.5"
 
 
 # =============================================================================

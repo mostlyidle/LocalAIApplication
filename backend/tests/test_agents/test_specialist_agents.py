@@ -10,11 +10,14 @@ We verify:
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # =============================================================================
 # Helpers
@@ -144,6 +147,22 @@ class TestChatAgent:
         assert result["metadata"]["existing_key"] == "value"
         assert result["metadata"]["agent_used"] == "chat"
 
+    async def test_chat_agent_does_not_receive_operator_mcp_tools(self) -> None:
+        response = _mock_llm_response("I cannot access operator tools.")
+        mock_service = _mock_llm_service(response)
+        external_tool = MagicMock()
+        external_tool.name = "weather_forecast"
+        external_tool.ainvoke = AsyncMock(return_value="Forecast: sunny")
+
+        with patch("app.agents.chat_agent.llm_service", mock_service):
+            from app.agents.chat_agent import chat_agent_node
+
+            result = await chat_agent_node(_make_state(external_tools=[external_tool]))
+
+        mock_service.get_chat_model().bind_tools.assert_not_called()
+        external_tool.ainvoke.assert_not_awaited()
+        assert result["messages"][0].content == "I cannot access operator tools."
+
 
 # =============================================================================
 # SQL Agent
@@ -217,8 +236,8 @@ class TestSQLAgent:
         assert len(result["tool_calls"]) == 1
         assert result["tool_calls"][0]["tool_name"] == "sql_query_tool"
 
-    async def test_preserves_named_database_from_chat_tool_call(self) -> None:
-        """Chat SQL tool calls retain their named database without selected state."""
+    async def test_chat_tool_call_cannot_override_the_default_database(self) -> None:
+        """Chat SQL tool arguments cannot select a process-global named connection."""
         tool_call_response = _mock_llm_response(
             "",
             tool_calls=[
@@ -255,8 +274,8 @@ class TestSQLAgent:
 
             result = await sql_agent_node(_make_state(user_input="SELECT 1"))
 
-        assert result["tool_calls"][0]["tool_input"]["database"] == "named"
-        mock_tool.ainvoke.assert_awaited_once_with({"query": "SELECT 1", "database": "named"})
+        assert result["tool_calls"][0]["tool_input"]["database"] == "default"
+        mock_tool.ainvoke.assert_awaited_once_with({"query": "SELECT 1", "database": "default"})
 
     async def test_authoritative_state_database_overrides_tool_database(self) -> None:
         """An explicitly selected state database takes precedence over tool arguments."""
@@ -426,6 +445,35 @@ class TestDocumentAgent:
             result = await document_agent_node(state)
 
         assert result["tool_calls"][0]["tool_output"].startswith("Tool error")
+
+    async def test_document_agent_cannot_read_unattached_local_files(
+        self, tmp_path: Path
+    ) -> None:
+        private_file = tmp_path / "private.txt"
+        private_file.write_text("account secret", encoding="utf-8")
+        tool_call_response = _mock_llm_response(
+            "",
+            tool_calls=[
+                {
+                    "name": "document_parse_tool",
+                    "args": {"file_path": str(private_file)},
+                    "id": "tc-private-file",
+                }
+            ],
+        )
+        final_response = _mock_llm_response("I can only use attached documents.")
+        mock_chat_model = MagicMock()
+        mock_chat_model.ainvoke = AsyncMock(side_effect=[tool_call_response, final_response])
+        mock_chat_model.bind_tools = MagicMock(return_value=mock_chat_model)
+        mock_service = MagicMock()
+        mock_service.get_chat_model = MagicMock(return_value=mock_chat_model)
+
+        with patch("app.agents.document_agent.llm_service", mock_service):
+            from app.agents.document_agent import document_agent_node
+
+            result = await document_agent_node(_make_state(user_input="Read this file"))
+
+        assert "account secret" not in result["tool_calls"][0]["tool_output"]
 
 
 # =============================================================================

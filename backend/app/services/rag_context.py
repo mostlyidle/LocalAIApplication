@@ -32,6 +32,7 @@ async def prepare_rag_context(
     history: list[str] | None = None,
     owner_id: str | None = None,
     memory_context: str = "",
+    system_prompt: str | None = None,
 ) -> RagContext:
     """Retrieve first and include only complete passages that fit the answer budget."""
     from app.services.hybrid_vector_store import hybrid_vector_store_service
@@ -87,6 +88,8 @@ async def prepare_rag_context(
 
     def fits() -> bool:
         system, user = prompts.render_messages(execution.profile.name, "rag", context.prompt_values)
+        if system_prompt is not None:
+            system = system_prompt
         # shortcut: UTF-8 bytes conservatively bound text tokens; use model tokenization when available.
         return len(system.encode("utf-8")) + len(user.encode("utf-8")) + memory_size() <= budget
 

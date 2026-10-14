@@ -8,6 +8,7 @@ and automatically append LIMIT clauses to prevent unbounded result sets.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import time
 from typing import Any
@@ -27,6 +28,63 @@ from app.config import settings
 from app.services.database import get_sql_engine
 
 logger = structlog.get_logger(__name__)
+
+
+async def _execute_with_deadline(
+    session: AsyncSession,
+    statement: Any,
+    timeout_seconds: float,
+    sqlite_connection: Any = None,
+) -> Any:
+    """Run a statement without cancelling the driver before SQLite can interrupt it."""
+    task = asyncio.create_task(session.execute(statement))
+    try:
+        _, pending = await asyncio.wait({task}, timeout=timeout_seconds)
+        if not pending:
+            return task.result()
+
+        if sqlite_connection is not None:
+            try:
+                # aiosqlite's interrupt calls sqlite3.Connection.interrupt directly,
+                # so it can stop work already running on its worker thread.
+                await sqlite_connection.interrupt()
+            except Exception as exc:
+                logger.warning(
+                    "sqlite_query_interrupt_failed",
+                    database_connection=type(sqlite_connection).__name__,
+                    error=str(exc),
+                    exc_info=True,
+                )
+        try:
+            await asyncio.wait_for(asyncio.shield(task), timeout=1)
+        except TimeoutError:
+            task.cancel()
+            with contextlib.suppress(Exception, asyncio.CancelledError):
+                await task
+        except Exception:
+            # Retrieve an interrupted driver's exception before returning the timeout.
+            with contextlib.suppress(Exception, asyncio.CancelledError):
+                await task
+        raise TimeoutError
+    except asyncio.CancelledError:
+        if sqlite_connection is not None:
+            interrupt_task = asyncio.create_task(sqlite_connection.interrupt())
+            try:
+                await asyncio.shield(interrupt_task)
+            except asyncio.CancelledError:
+                with contextlib.suppress(Exception, asyncio.CancelledError):
+                    await interrupt_task
+            except Exception as exc:
+                logger.warning(
+                    "sqlite_query_interrupt_failed",
+                    database_connection=type(sqlite_connection).__name__,
+                    error=str(exc),
+                    exc_info=True,
+                )
+        task.cancel()
+        with contextlib.suppress(Exception, asyncio.CancelledError):
+            await task
+        raise
 
 
 class _SQLiteValidationGenerator(SQLite.Generator):
@@ -173,24 +231,35 @@ async def execute_query(
     engine = get_sql_engine(name=database)
     sql = validate_query(sql, dialect=engine.dialect.name)
     start = time.perf_counter()
+    sqlite_connection = None
 
     try:
-        async with (
-            asyncio.timeout(settings.sql_query_timeout_seconds),
-            AsyncSession(engine, expire_on_commit=False) as session,
-        ):
+        async with AsyncSession(engine, expire_on_commit=False) as session:
             if engine.dialect.name == "sqlite":
                 mode = "OFF" if settings.sql_allow_writes else "ON"
                 await session.execute(text(f"PRAGMA query_only={mode}"))
+                connection = await session.connection()
+                raw_connection = await connection.get_raw_connection()
+                sqlite_connection = raw_connection.driver_connection
             elif not settings.sql_allow_writes and engine.dialect.name == "postgresql":
                 await session.execute(text("SET TRANSACTION READ ONLY"))
-            result = await session.execute(text(sql))
-            columns = list(result.keys()) if result.returns_rows else []
-            rows = (
-                [list(row) for row in result.fetchmany(settings.sql_max_rows)]
-                if result.returns_rows
-                else []
-            )
+            try:
+                result = await _execute_with_deadline(
+                    session,
+                    text(sql),
+                    settings.sql_query_timeout_seconds,
+                    sqlite_connection,
+                )
+                columns = list(result.keys()) if result.returns_rows else []
+                rows = (
+                    [list(row) for row in result.fetchmany(settings.sql_max_rows)]
+                    if result.returns_rows
+                    else []
+                )
+                if settings.sql_allow_writes:
+                    await session.commit()
+            except TimeoutError:
+                raise
             duration_ms = (time.perf_counter() - start) * 1000
 
             logger.info(

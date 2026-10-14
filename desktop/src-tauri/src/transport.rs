@@ -11,7 +11,7 @@ const MAX_MEETING_ID_BYTES: usize = 36;
 pub enum TransportError {
     #[error("meeting_id must be between 1 and 36 UTF-8 bytes")]
     InvalidMeetingId,
-    #[error("sample rate and channels must be non-zero")]
+    #[error("audio format must use 8,000–96,000 Hz and 1–2 channels")]
     InvalidFormat,
     #[error("PCM payload exceeds the bounded transport limit")]
     PayloadTooLarge,
@@ -33,6 +33,13 @@ pub struct AudioEnvelopeHeader<'a> {
     pub duration_ms: u32,
 }
 
+pub fn validate_audio_format(sample_rate_hz: u32, channels: u16) -> Result<(), TransportError> {
+    if !(8_000..=96_000).contains(&sample_rate_hz) || !(1..=2).contains(&channels) {
+        return Err(TransportError::InvalidFormat);
+    }
+    Ok(())
+}
+
 /// Builds the binary frame sent by the future direct desktop-to-FastAPI WebSocket.
 ///
 /// Wire format: `[4-byte big-endian JSON length][UTF-8 JSON header][bounded PCM]`.
@@ -49,10 +56,7 @@ pub fn build_audio_envelope(
     if meeting_id.is_empty() || meeting_id.len() > MAX_MEETING_ID_BYTES {
         return Err(TransportError::InvalidMeetingId);
     }
-    if timestamp_ns == 0
-        || !(8_000..=96_000).contains(&sample_rate_hz)
-        || !(1..=2).contains(&channels)
-    {
+    if timestamp_ns == 0 || validate_audio_format(sample_rate_hz, channels).is_err() {
         return Err(TransportError::InvalidFormat);
     }
     if pcm_f32.is_empty() || pcm_f32.len() % usize::from(channels) != 0 {
@@ -175,6 +179,13 @@ mod tests {
                 .unwrap_err(),
             TransportError::PayloadTooLarge
         );
+    }
+
+    #[test]
+    fn capture_format_constraints_are_actionable_before_transport() {
+        assert_eq!(validate_audio_format(192_000, 2), Err(TransportError::InvalidFormat));
+        assert_eq!(validate_audio_format(48_000, 6), Err(TransportError::InvalidFormat));
+        assert!(validate_audio_format(48_000, 2).is_ok());
     }
 
     fn decode_hex(value: &str) -> Vec<u8> {

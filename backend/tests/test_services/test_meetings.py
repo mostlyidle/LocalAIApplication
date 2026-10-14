@@ -6,7 +6,7 @@ import asyncio
 import json
 import struct
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from pydantic import ValidationError
@@ -21,9 +21,12 @@ from app.models.schemas import (
     MeetingStartCommand,
     decode_audio_envelope,
 )
-from app.services.meetings import MeetingService
 from app.services.meeting_answers import MeetingAnswerService
+from app.services.meetings import MeetingService
 from app.services.transcription import FakeTranscriptionEngine, TranscriptionChunk
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def _header(meeting_id: str, sequence: int, source: AudioSource = AudioSource.MICROPHONE):
@@ -163,6 +166,49 @@ class TestMeetingService:
         assert meeting.id not in service.processor._sessions
         await service.disconnect_stream(meeting.id, "session-1")
 
+    async def test_transcript_timestamps_continue_across_pcm_windows(
+        self, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("app.services.meetings.settings.meeting_pcm_window_ms", 1)
+        service = MeetingService(
+            transcription_engine=FakeTranscriptionEngine(
+                [TranscriptionChunk("windowed speech", start_ms=100, end_ms=200)]
+            )
+        )
+        meeting = await service.create_meeting(
+            db_session,
+            owner_id=LEGACY_ACCOUNT_ID,
+            consent_policy_version="v1",
+            consent_attested_at=datetime.now(UTC),
+        )
+        await service.claim_stream(db_session, meeting.id, "session-1")
+        await service.start_stream(db_session, meeting.id, "session-1")
+        base_timestamp = int(datetime.now(UTC).timestamp() * 1_000_000_000)
+
+        for sequence in range(2):
+            header = _header(meeting.id, sequence)
+            header = header.model_copy(update={"timestamp_ns": base_timestamp + sequence})
+            await service.accept_audio(db_session, meeting.id, "session-1", header, b"\0" * 16)
+
+        await asyncio.wait_for(
+            _wait_for_transcription_calls(service.transcription_engine, 2), timeout=1
+        )
+        await service.stop_meeting(db_session, meeting.id)
+
+        segments = list(
+            (
+                await db_session.scalars(
+                    select(TranscriptSegment)
+                    .where(TranscriptSegment.meeting_id == meeting.id)
+                    .order_by(TranscriptSegment.sequence)
+                )
+            ).all()
+        )
+        assert [(segment.start_ms, segment.end_ms) for segment in segments] == [
+            (100, 200),
+            (101, 201),
+        ]
+
     async def test_slow_answer_provider_does_not_block_transcription(self, db_session, monkeypatch):
         started = asyncio.Event()
 
@@ -238,6 +284,35 @@ class TestMeetingService:
         assert stopped_again.stopped_at == stopped_at
         assert meeting.id not in service._sessions
 
+    async def test_stop_reports_final_processor_failure(
+        self, db_session: AsyncSession
+    ) -> None:
+        service = MeetingService(transcription_engine=FakeTranscriptionEngine())
+        meeting = await service.create_meeting(
+            db_session,
+            owner_id=LEGACY_ACCOUNT_ID,
+            consent_policy_version="v1",
+            consent_attested_at=datetime.now(UTC),
+        )
+        await service.claim_stream(db_session, meeting.id, "session")
+        await service.start_stream(db_session, meeting.id, "session")
+
+        async def fail_consumer(
+            header: AudioEnvelopeHeader, payload: bytes, offset_ms: int, final: bool
+        ) -> None:
+            raise RuntimeError("final persistence failed")
+
+        service.processor._sessions[meeting.id].consumer = fail_consumer
+        await service.accept_audio(
+            db_session, meeting.id, "session", _header(meeting.id, 0), b"\0" * 16
+        )
+
+        stopped = await service.stop_meeting(db_session, meeting.id)
+
+        assert stopped.status == MeetingStatus.FAILED.value
+        assert stopped.failure_reason == "final persistence failed"
+        assert stopped.failed_at is not None
+
     async def test_delete_cascades_transcript_and_questions(self, db_session):
         service = MeetingService(transcription_engine=FakeTranscriptionEngine())
         meeting = await service.create_meeting(
@@ -267,3 +342,26 @@ class TestMeetingService:
         assert await db_session.scalar(
             select(func.count(DetectedQuestion.id)).where(DetectedQuestion.meeting_id == meeting.id)
         ) == 0
+
+    async def test_delete_resets_audio_timeline(
+        self, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("app.services.meetings.settings.meeting_pcm_window_ms", 1)
+        engine = FakeTranscriptionEngine()
+        service = MeetingService(transcription_engine=engine)
+        meeting = await service.create_meeting(
+            db_session,
+            owner_id=LEGACY_ACCOUNT_ID,
+            consent_policy_version="v1",
+            consent_attested_at=datetime.now(UTC),
+        )
+        await service.claim_stream(db_session, meeting.id, "session")
+        await service.start_stream(db_session, meeting.id, "session")
+        await service.accept_audio(
+            db_session, meeting.id, "session", _header(meeting.id, 0), b"\0" * 16
+        )
+        await asyncio.wait_for(_wait_for_transcription_calls(engine, 1), timeout=1)
+
+        await service.delete_meeting(db_session, meeting.id)
+
+        assert meeting.id not in service.processor._consumed_duration_ns

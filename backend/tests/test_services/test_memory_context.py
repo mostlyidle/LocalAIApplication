@@ -154,3 +154,37 @@ async def test_memory_context_includes_relevant_past_chat_only_when_enabled(
         exclude_conversation_id="current-chat",
         limit=4,
     )
+
+
+async def test_past_chat_recall_does_not_require_explicit_memory_opt_in(
+    db_session: AsyncSession,
+) -> None:
+    db_session.add(
+        Account(
+            id=LEGACY_ACCOUNT_ID,
+            username="independent-past-chat-memory",
+            display_name="Independent Past Chat",
+            password_hash="!test!",
+            memory_enabled=False,
+            past_chat_recall_enabled=True,
+            memory_epoch=1,
+        )
+    )
+    await db_session.commit()
+    search = AsyncMock(
+        return_value=[
+            {
+                "type": "past_conversation",
+                "conversation_id": "older-chat",
+                "title": "Prior decision",
+                "content": "The user chose PostgreSQL.",
+            }
+        ]
+    )
+    with patch("app.services.memory_vector_index.memory_vector_index.search_summaries", search):
+        context = await load_account_memory_context(
+            LEGACY_ACCOUNT_ID, query="Which database?", db=db_session
+        )
+
+    assert "PostgreSQL" in context
+    search.assert_awaited_once()

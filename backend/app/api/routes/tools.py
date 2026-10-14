@@ -81,7 +81,7 @@ _PATH_BASED_TOOL_NAMES = {tool.name for tool in document_tools + filesystem_tool
 async def list_tools(
     _authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
 ) -> list[ToolInfo]:
-    """List all available tools with their metadata and parameter schemas."""
+    """List tools available to authenticated accounts."""
     result = []
     for tool in all_tools:
         # Extract parameter schema from the tool's args_schema
@@ -126,6 +126,14 @@ async def execute_tool(
 
     tool = _TOOL_LOOKUP.get(body.tool_name)
     if tool is None:
+        if any(
+            item.name == body.tool_name
+            for item in getattr(request.app.state, "operator_mcp_tools", [])
+        ):
+            raise HTTPException(
+                status_code=403,
+                detail="Configured MCP tools are restricted to local operator use.",
+            )
         raise NotFoundError("Tool", body.tool_name)
 
     if body.tool_name in _PATH_BASED_TOOL_NAMES:

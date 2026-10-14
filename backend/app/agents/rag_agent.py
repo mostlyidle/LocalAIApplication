@@ -36,6 +36,7 @@ async def rag_agent_node(state: AgentState) -> dict[str, Any]:
         for message in state["messages"][:-1][-8:]
         if getattr(message, "content", None)
     ]
+    system_prompt = state.get("system_prompts", {}).get("rag")
     context = await prepare_rag_context(
         request,
         execution,
@@ -43,10 +44,11 @@ async def rag_agent_node(state: AgentState) -> dict[str, Any]:
         history=history,
         owner_id=state.get("owner_id"),
         memory_context=state.get("memory_context", ""),
+        system_prompt=system_prompt,
     )
     if context.citations:
         system, user = prompts.render_messages(profile.name, "rag", context.prompt_values)
-        system = state.get("system_prompts", {}).get("rag", system)
+        system = system_prompt or system
         messages = [SystemMessage(content=system)]
         if context.memory_context:
             messages.append(
@@ -75,6 +77,7 @@ async def rag_agent_node(state: AgentState) -> dict[str, Any]:
     return {
         "messages": [response],
         "current_agent": "rag",
+        "tool_calls": state.get("tool_calls", []),
         "memory_context": context.memory_context,
         "metadata": {**state.get("metadata", {}), "agent_used": "rag", "retrieval": context.retrieval, "execution": result.model_dump(mode="json")},
     }

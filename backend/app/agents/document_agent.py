@@ -6,6 +6,7 @@ perform OCR on images, and answer questions about document content.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import structlog
@@ -47,7 +48,8 @@ async def document_agent_node(state: AgentState) -> dict[str, Any]:
     logger.info("document_agent_invoked", conversation_id=state.get("conversation_id"))
 
     llm = llm_service.get_chat_model(temperature=0.1)
-    llm_with_tools = llm.bind_tools(document_tools)
+    available_tools = document_tools
+    llm_with_tools = llm.bind_tools(available_tools)
 
     system_prompt = state.get("system_prompts", {}).get("document", DOCUMENT_SYSTEM_PROMPT)
     messages = [SystemMessage(content=system_prompt)]
@@ -65,6 +67,7 @@ async def document_agent_node(state: AgentState) -> dict[str, Any]:
         messages.append(HumanMessage(content=user_msg))
 
     tool_calls_record: list[dict[str, Any]] = []
+    allowed_paths = {Path(path).resolve() for path in state.get("attachments", [])}
     max_iterations = 5
 
     for iteration in range(max_iterations):
@@ -78,13 +81,18 @@ async def document_agent_node(state: AgentState) -> dict[str, Any]:
             tool_name = tc["name"]
             tool_args = tc["args"]
 
-            tool_fn = next((t for t in document_tools if t.name == tool_name), None)
+            tool_fn = next((t for t in available_tools if t.name == tool_name), None)
             if tool_fn is None:
                 tool_result = f"Unknown tool: {tool_name}"
             else:
                 try:
+                    if tool_name in {item.name for item in document_tools}:
+                        path_key = "image_path" if tool_name == "document_ocr_tool" else "file_path"
+                        if Path(tool_args[path_key]).resolve() not in allowed_paths:
+                            raise ValueError("Document tools can only access attached files.")
                     tool_result = await tool_fn.ainvoke(tool_args)
                 except Exception as exc:
+                    logger.exception("document_tool_execution_failed", tool=tool_name)
                     tool_result = f"Tool error: {exc}"
 
             tool_calls_record.append(

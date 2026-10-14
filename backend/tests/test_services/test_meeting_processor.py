@@ -96,3 +96,130 @@ class TestMeetingAudioProcessor:
             await processor.accept(
                 "meeting-1", "session-1", _header("meeting-1", 1, timestamp + 1), payload
             )
+
+    async def test_stop_completes_after_consumer_failure_with_queued_audio(self) -> None:
+        processor = MeetingAudioProcessor(max_queue_size=2)
+        consumer_started = asyncio.Event()
+        fail_consumer = asyncio.Event()
+
+        async def fail_after_queueing(
+            header: AudioEnvelopeHeader, payload: bytes, offset_ms: int, final: bool
+        ) -> None:
+            consumer_started.set()
+            await fail_consumer.wait()
+            raise RuntimeError("transcript persistence failed")
+
+        await processor.start(
+            "meeting-1", "session-1", consumer=fail_after_queueing, window_ms=1
+        )
+        timestamp = int(datetime.now(UTC).timestamp() * 1_000_000_000)
+        payload = b"\0" * 16
+        await processor.accept("meeting-1", "session-1", _header("meeting-1", 0, timestamp), payload)
+        await consumer_started.wait()
+        await processor.accept(
+            "meeting-1", "session-1", _header("meeting-1", 1, timestamp + 1), payload
+        )
+        fail_consumer.set()
+
+        try:
+            await asyncio.wait_for(processor.stop("meeting-1", "session-1"), timeout=0.1)
+        finally:
+            await processor.purge("meeting-1", "session-1")
+
+    async def test_stop_discards_partial_buffers_when_final_flush_fails(self) -> None:
+        processor = MeetingAudioProcessor()
+
+        async def fail_on_final_flush(
+            header: AudioEnvelopeHeader, payload: bytes, offset_ms: int, final: bool
+        ) -> None:
+            raise RuntimeError("final transcript persistence failed")
+
+        session = await processor.start(
+            "meeting-final", "session-final", consumer=fail_on_final_flush, window_ms=2
+        )
+        timestamp = int(datetime.now(UTC).timestamp() * 1_000_000_000)
+        await processor.accept(
+            "meeting-final",
+            "session-final",
+            _header("meeting-final", 0, timestamp),
+            b"\0" * 16,
+        )
+
+        await asyncio.wait_for(processor.stop("meeting-final", "session-final"), timeout=0.1)
+
+        assert session.state.value == "failed"
+        assert session.buffers == {}
+        assert session.worker is None
+
+    async def test_reconnect_continues_offsets_until_timeline_is_reset(self) -> None:
+        processor = MeetingAudioProcessor()
+        offsets: list[int] = []
+
+        async def collect_offsets(
+            header: AudioEnvelopeHeader, payload: bytes, offset_ms: int, final: bool
+        ) -> None:
+            offsets.append(offset_ms)
+
+        payload = b"\0" * 16
+        await processor.start(
+            "meeting-reconnect", "session-first", consumer=collect_offsets, window_ms=1
+        )
+        first_timestamp = int(datetime.now(UTC).timestamp() * 1_000_000_000)
+        for sequence in range(2):
+            await processor.accept(
+                "meeting-reconnect",
+                "session-first",
+                _header("meeting-reconnect", sequence, first_timestamp + sequence),
+                payload,
+            )
+        await processor.stop("meeting-reconnect", "session-first")
+        await processor.purge("meeting-reconnect", "session-first")
+
+        await processor.start(
+            "meeting-reconnect", "session-second", consumer=collect_offsets, window_ms=1
+        )
+        await processor.accept(
+            "meeting-reconnect",
+            "session-second",
+            _header("meeting-reconnect", 0, first_timestamp + 2),
+            payload,
+        )
+        await processor.stop("meeting-reconnect", "session-second")
+
+        assert offsets == [0, 1, 2]
+
+        await processor.purge("meeting-reconnect", "session-second")
+        await processor.reset_timeline("meeting-reconnect")
+
+    async def test_reconnect_offsets_use_elapsed_time_when_sample_rate_changes(self) -> None:
+        processor = MeetingAudioProcessor()
+        offsets: list[int] = []
+
+        async def collect_offsets(
+            header: AudioEnvelopeHeader, payload: bytes, offset_ms: int, final: bool
+        ) -> None:
+            offsets.append(offset_ms)
+
+        for session_id, sample_rate_hz in (("session-first", 8_000), ("session-second", 16_000)):
+            await processor.start(
+                "meeting-rate-change", session_id, consumer=collect_offsets, window_ms=1_000
+            )
+            header = _header("meeting-rate-change", 0, sample_rate_hz)
+            header = header.model_copy(
+                update={
+                    "sample_rate_hz": sample_rate_hz,
+                    "frame_count": sample_rate_hz,
+                    "duration_ms": 1_000,
+                }
+            )
+            await processor.accept(
+                "meeting-rate-change",
+                session_id,
+                header,
+                b"\0" * sample_rate_hz * 2,
+            )
+            await processor.stop("meeting-rate-change", session_id)
+            await processor.purge("meeting-rate-change", session_id)
+
+        assert offsets == [0, 1_000]
+        await processor.reset_timeline("meeting-rate-change")

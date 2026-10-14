@@ -157,6 +157,17 @@ mod tests {
         assert_eq!(buffer.frames(), 0);
         assert_eq!(buffer.error().as_deref(), Some("native stream ended"));
     }
+
+    #[test]
+    fn deactivating_capture_keeps_buffered_pcm_available_for_transport_drain() {
+        let mut buffer = PcmRing::new(1);
+        buffer.push_interleaved(&[0.25, -0.25]);
+        buffer.deactivate();
+
+        assert!(!buffer.is_active());
+        assert_eq!(buffer.frames(), 2);
+        assert_eq!(buffer.drain(2), vec![0.25, -0.25]);
+    }
 }
 
 pub fn levels(samples: &[f32]) -> (f32, f32) {

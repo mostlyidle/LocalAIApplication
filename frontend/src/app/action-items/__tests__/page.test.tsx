@@ -60,6 +60,36 @@ describe("ActionItemsPage", () => {
     expect(await screen.findByText(item.title)).toBeTruthy();
   });
 
+  it("loads older chats into the planner source choices", async () => {
+    const firstPage = Array.from({ length: 51 }, (_, index) => ({
+      id: `chat-${index}`,
+      title: index === 50 ? "Archived chat" : `Recent chat ${index}`,
+    }));
+    const shiftedPage = [
+      firstPage[49],
+      ...Array.from({ length: 49 }, (_, index) => ({
+        id: `chat-${index + 50}`,
+        title: index === 0 ? "Archived chat" : `Older chat ${index}`,
+      })),
+      { id: "chat-99", title: "Lookahead chat" },
+    ];
+    api.getConversations
+      .mockResolvedValueOnce({ conversations: firstPage })
+      .mockResolvedValueOnce({ conversations: shiftedPage })
+      .mockResolvedValueOnce({ conversations: [{ id: "chat-99", title: "Lookahead chat" }] });
+    render(<ActionItemsPage />);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Load older chats" }));
+    expect(api.getConversations).toHaveBeenNthCalledWith(2, 51, 50);
+    await userEvent.click(await screen.findByRole("combobox", { name: "Source" }));
+    expect(screen.getAllByRole("option", { name: "Recent chat 49" })).toHaveLength(1);
+    await userEvent.click(await screen.findByRole("option", { name: "Archived chat" }));
+
+    expect(screen.getByRole("combobox", { name: "Source" })).toHaveTextContent("Archived chat");
+    await userEvent.click(screen.getByRole("button", { name: "Load older chats" }));
+    expect(api.getConversations).toHaveBeenNthCalledWith(3, 51, 100);
+  });
+
   it("updates task status", async () => {
     api.getActionItems.mockResolvedValueOnce({ items: [item], total: 1 });
     render(<ActionItemsPage />);

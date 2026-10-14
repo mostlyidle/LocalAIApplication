@@ -91,6 +91,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         configurations = (await db.execute(select(AgentConfiguration))).scalars().all()
         app.state.agent_registry.apply_configurations(list(configurations))
 
+    from app.services.hybrid_vector_store import hybrid_vector_store_service
+
+    hybrid_vector_store_service.configure_profiles(app.state.agent_registry, prompts)
+
     from app.services.memory_recall_worker import run_recall_worker
 
     app.state.memory_recall_worker_stop = asyncio.Event()
@@ -114,6 +118,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     try:
         tools = await mcp_client.discover_tools()
+        # Keep operator tools out of authenticated routes and shared-account agents.
+        app.state.operator_mcp_tools = tools
         if tools:
             logger.info("mcp_tools_available", count=len(tools))
     except Exception as exc:
@@ -162,6 +168,7 @@ def create_app() -> FastAPI:
         version="0.1.0",
         lifespan=lifespan,
     )
+    app.state.operator_mcp_tools = []
 
     # Middleware (order matters: outermost → innermost)
     setup_cors(app)
