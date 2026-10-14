@@ -1,5 +1,12 @@
 import "@testing-library/jest-dom/vitest";
 
+// Radix Select uses Pointer Events APIs that happy-dom does not implement.
+if (!Element.prototype.hasPointerCapture) {
+  Element.prototype.hasPointerCapture = () => false;
+  Element.prototype.setPointerCapture = () => {};
+  Element.prototype.releasePointerCapture = () => {};
+}
+
 // Stub crypto.randomUUID for jsdom
 if (!globalThis.crypto?.randomUUID) {
   let counter = 0;

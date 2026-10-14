@@ -17,6 +17,14 @@ vi.mock("lucide-react", () => {
     Loader2: (props: Record<string, unknown>) => <span data-testid="loader" {...props} />,
     Wrench: icon,
     Github: icon,
+    Bot: icon,
+    Save: icon,
+    RotateCcw: icon,
+    Archive: icon,
+    Plus: icon,
+    ChevronDownIcon: icon,
+    ChevronUpIcon: icon,
+    CheckIcon: icon,
   };
 });
 
@@ -55,6 +63,7 @@ vi.mock("next-themes", () => ({
 
 const mockGetHealth = vi.fn();
 const mockGetTools = vi.fn();
+const mockGetAgentCatalogWithArchived = vi.fn();
 const mockAddSQLConnection = vi.fn();
 const mockGetGitHubConnection = vi.fn();
 const mockStartGitHubConnection = vi.fn();
@@ -64,6 +73,7 @@ const mockSetGitHubRepositorySelection = vi.fn();
 vi.mock("@/lib/api", () => ({
   getHealth: (...args: unknown[]) => mockGetHealth(...args),
   getTools: (...args: unknown[]) => mockGetTools(...args),
+  getAgentCatalogWithArchived: (...args: unknown[]) => mockGetAgentCatalogWithArchived(...args),
   addSQLConnection: (...args: unknown[]) => mockAddSQLConnection(...args),
   getGitHubConnection: (...args: unknown[]) => mockGetGitHubConnection(...args),
   startGitHubConnection: (...args: unknown[]) => mockStartGitHubConnection(...args),
@@ -93,6 +103,7 @@ describe("SettingsPage", () => {
         { name: "calculator_tool", description: "Calculate expressions" },
       ],
     });
+    mockGetAgentCatalogWithArchived.mockResolvedValue({ agents: [] });
     mockGetGitHubConnection.mockResolvedValue({
       configured: false, connected: false, login: null, expires_at: null, install_url: null,
     });

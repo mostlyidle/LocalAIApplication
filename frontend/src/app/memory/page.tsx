@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   createMemory,
   deleteAllMemories,
@@ -196,9 +197,12 @@ export default function MemoryPage() {
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="memory-kind">Type</Label>
-              <select id="memory-kind" value={kind} onChange={(event) => setKind(event.target.value as MemoryRecord["kind"])} className="h-9 w-full rounded-md border bg-background px-3 text-sm">
-                {MEMORY_KINDS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-              </select>
+              <Select value={kind} onValueChange={(value) => setKind(value as MemoryRecord["kind"])}>
+                <SelectTrigger id="memory-kind" className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent position="popper" align="start">
+                  {MEMORY_KINDS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="memory-project">Project (optional)</Label>

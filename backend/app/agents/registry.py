@@ -143,9 +143,13 @@ class AgentManifest(BaseModel):
 
 class AgentCapability(BaseModel):
     name: str
+    display_name: str
     target: RoutableTarget
     description: str
     default_for_target: bool
+    system_prompt: str
+    is_custom: bool = False
+    archived: bool = False
     inference: InferenceManifest | None
     retrieval: RetrievalManifest | None
     model_availability: dict[str, bool | None] = Field(default_factory=dict)
@@ -167,35 +171,122 @@ class AgentRegistry:
     def __init__(self, prompt_dir: Path, prompts: PromptStore) -> None:
         self._prompt_dir = prompt_dir
         self._prompts = prompts
-        self._agents = self._load()
+        self._base_agents = self._load()
+        self._agents = dict(self._base_agents)
+        self._display_names = {name: name.replace("_", " ").title() for name in self._agents}
+        self._custom_names: set[str] = set()
+        self._archived_names: set[str] = set()
+        self._base_profiles: dict[str, str] = {}
+        self._apply_defaults()
+
+    def _apply_defaults(self) -> None:
         self._defaults = {
             agent.target: agent
             for agent in self._agents.values()
             if agent.enabled and agent.default_for_target
         }
 
-    def get(self, agent_name: str) -> AgentManifest | None:
+    def get(self, agent_name: str, *, include_archived: bool = False) -> AgentManifest | None:
         agent = self._agents.get(agent_name)
-        return agent if agent and agent.enabled else None
+        return (
+            agent
+            if agent
+            and agent.enabled
+            and (include_archived or agent_name not in self._archived_names)
+            else None
+        )
 
     def default_for(self, target: RoutableTarget) -> AgentManifest:
         return self._defaults[target]
 
-    def capabilities(self) -> AgentCatalogResponse:
+    def capabilities(self, *, include_archived: bool = False) -> AgentCatalogResponse:
         agents = [
             AgentCapability(
                 name=agent.name,
+                display_name=self._display_names.get(agent.name, agent.name),
                 target=agent.target,
                 description=agent.description,
                 default_for_target=agent.default_for_target,
+                system_prompt=self.system_prompt(agent.name),
+                is_custom=agent.name in self._custom_names,
+                archived=agent.name in self._archived_names,
                 inference=agent.inference,
                 retrieval=agent.retrieval,
             )
             for agent in self._agents.values()
-            if agent.enabled
+            if include_archived or (agent.enabled and agent.name not in self._archived_names)
         ]
         agents.sort(key=lambda agent: (agent.target, agent.name))
         return AgentCatalogResponse(agents=agents)
+
+    def system_prompt(self, agent_name: str) -> str:
+        """Return the resolved system prompt for an agent profile."""
+        agent = self._agents[agent_name]
+        return self._prompts.system_prompt(agent.name, agent.target)
+
+    def default_system_prompts(self) -> dict[str, str]:
+        """Return system prompts for the default profile in each agent domain."""
+        return {
+            target: self.system_prompt(profile.name)
+            for target, profile in self._defaults.items()
+        }
+
+    def prompt_source(self, agent_name: str) -> str:
+        """Return the built-in profile from which an agent was derived."""
+        return self._base_profiles.get(agent_name, agent_name)
+
+    def apply_configurations(self, configurations: list[object]) -> None:
+        """Apply persisted installation-wide prompt edits and custom profiles."""
+        self._agents = dict(self._base_agents)
+        self._display_names = {
+            name: name.replace("_", " ").title() for name in self._agents
+        }
+        self._custom_names = set()
+        self._archived_names = set()
+        self._base_profiles = {}
+        self._prompts.clear_overrides()
+
+        for config in configurations:
+            name = config.name
+            if not config.is_custom:
+                if name not in self._agents:
+                    continue
+                if config.target != self._agents[name].target:
+                    raise AgentCatalogError(f"Saved configuration for '{name}' has the wrong target.")
+                self._display_names[name] = config.display_name
+                self._prompts.set_system_override(name, config.target, config.system_prompt)
+                continue
+
+            try:
+                profile = AgentManifest.model_validate_json(config.manifest_json)
+            except (ValidationError, TypeError) as exc:
+                raise AgentCatalogError(f"Invalid saved custom profile '{name}'.") from exc
+            if profile.name != name or profile.target != config.target or profile.default_for_target:
+                raise AgentCatalogError(f"Invalid saved custom profile '{name}'.")
+            base_agent = config.base_agent
+            if (
+                base_agent not in self._base_agents
+                or self._base_agents[base_agent].target != profile.target
+                or profile.target not in INFERENCE_TARGETS
+            ):
+                raise AgentCatalogError(f"Custom profile '{name}' has an invalid source agent.")
+            if name in self._agents:
+                raise AgentCatalogError(f"Custom profile '{name}' conflicts with a built-in agent.")
+            self._agents[name] = profile.model_copy(
+                update={"description": config.description, "enabled": True}
+            )
+            self._display_names[name] = config.display_name
+            self._custom_names.add(name)
+            self._base_profiles[name] = base_agent
+            self._prompts.set_system_override(name, config.target, config.system_prompt)
+            if config.archived:
+                self._archived_names.add(name)
+
+        for config in configurations:
+            if config.is_custom:
+                self._prompts.set_source(config.name, config.target, self._base_profiles[config.name])
+
+        self._apply_defaults()
 
     def resolve_inference(
         self, agent: AgentManifest, request: TaskRequest

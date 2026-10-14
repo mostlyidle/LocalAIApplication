@@ -149,6 +149,25 @@ class SqlConnection(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
 
 
+class AgentConfiguration(Base):
+    """Installation-wide prompt overrides and custom agent profiles."""
+
+    __tablename__ = "agent_configurations"
+
+    name: Mapped[str] = mapped_column(String(63), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(100))
+    target: Mapped[str] = mapped_column(String(32))
+    description: Mapped[str] = mapped_column(String(500))
+    system_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    base_agent: Mapped[str | None] = mapped_column(String(63), nullable=True)
+    manifest_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_custom: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
+
 class Conversation(Base):
     """A chat conversation containing multiple messages."""
 

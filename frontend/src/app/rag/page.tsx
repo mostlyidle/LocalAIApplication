@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Search, Trash2, Database, Loader2, FileText, Upload } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -46,6 +47,9 @@ export default function RAGPage() {
   const [isSearching, setIsSearching] = useState(false);
   const [isLoadingCollections, setIsLoadingCollections] = useState(true);
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(true);
+  const [collectionsError, setCollectionsError] = useState("");
+  const [containersError, setContainersError] = useState("");
+  const [documentsError, setDocumentsError] = useState("");
   const [ingestingIds, setIngestingIds] = useState<Set<string>>(new Set());
   const [ingestCollection, setIngestCollection] = useState("documents");
   const [error, setError] = useState<string | null>(null);
@@ -55,9 +59,10 @@ export default function RAGPage() {
       const data = await api.getRAGCollections();
       const next = (data.collections ?? []) as Collection[];
       setCollections(next);
+      setCollectionsError("");
       setSelectedCollection((current) => current || next[0]?.name || "");
     } catch (err) {
-      console.error("Failed to load collections:", err);
+      setCollectionsError(err instanceof Error ? err.message : "Could not load collections.");
     } finally {
       setIsLoadingCollections(false);
     }
@@ -67,10 +72,11 @@ export default function RAGPage() {
     try {
       const data = await api.getRAGContainers();
       setContainers(data);
+      setContainersError("");
       setSelectedContainer((current) => current || data[0]?.name || "");
       setSelectedCollection((current) => current || data[0]?.name || "");
     } catch (err) {
-      console.error("Failed to load containers:", err);
+      setContainersError(err instanceof Error ? err.message : "Could not load containers.");
     }
   }, []);
 
@@ -78,8 +84,9 @@ export default function RAGPage() {
     try {
       const data = await api.getDocuments();
       setDocuments((data.documents ?? data ?? []) as DocumentItem[]);
+      setDocumentsError("");
     } catch (err) {
-      console.error("Failed to load documents:", err);
+      setDocumentsError(err instanceof Error ? err.message : "Could not load documents.");
     } finally {
       setIsLoadingDocuments(false);
     }
@@ -162,6 +169,14 @@ export default function RAGPage() {
           onSelect={selectContainer}
           onRefresh={refreshRag}
         />
+        {containersError && (
+          <div role="alert" className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+            <p>Could not load RAG containers: {containersError}</p>
+            <Button type="button" size="sm" variant="outline" onClick={() => void loadContainers()}>
+              Retry
+            </Button>
+          </div>
+        )}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -169,52 +184,52 @@ export default function RAGPage() {
           {/* Search form */}
           <Card>
             <CardContent className="pt-6">
-              <form onSubmit={handleSearch} className="flex flex-wrap gap-2">
-                <label htmlFor="rag-query" className="basis-full text-sm font-semibold">Search your knowledge base</label>
+              <form onSubmit={handleSearch} className="grid gap-3 sm:grid-cols-2">
+                <label htmlFor="rag-query" className="text-sm font-semibold sm:col-span-2">Search your knowledge base</label>
                 <Input
                   id="rag-query"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Search your knowledge base..."
-                  className="min-w-0 basis-full sm:basis-48 sm:flex-1"
+                  className="min-w-0 w-full sm:col-span-2"
                 />
-                <select
-                  aria-label="Search index"
+                <Select
                   value={selectedCollection}
-                  onChange={(event) => {
-                    setSelectedCollection(event.target.value);
-                    if (containers.some((container) => container.name === event.target.value)) {
-                      setSelectedContainer(event.target.value);
+                  onValueChange={(value) => {
+                    setSelectedCollection(value);
+                    if (containers.some((container) => container.name === value)) {
+                      setSelectedContainer(value);
                     }
                   }}
-                  className="h-11 max-w-full rounded-xl border border-input bg-card px-3 text-base sm:text-sm"
                 >
-                  <option value="" disabled>Select an index</option>
+                  <SelectTrigger aria-label="Search index" className="w-full min-w-0"><SelectValue placeholder="Select an index" /></SelectTrigger>
+                  <SelectContent position="popper" align="start">
                   {containers.length > 0 && (
-                    <optgroup label="Private containers">
+                    <SelectGroup>
+                      <SelectLabel>Private containers</SelectLabel>
                       {containers.map((container) => (
-                        <option key={container.name} value={container.name}>{container.display_name}</option>
+                        <SelectItem key={container.name} value={container.name}>{container.display_name}</SelectItem>
                       ))}
-                    </optgroup>
+                    </SelectGroup>
                   )}
                   {searchableCollections.length > 0 && (
-                    <optgroup label="Existing collections">
+                    <SelectGroup>
+                      <SelectLabel>Existing collections</SelectLabel>
                       {searchableCollections.map((collection) => (
-                        <option key={collection.name} value={collection.name}>{collection.name}</option>
+                        <SelectItem key={collection.name} value={collection.name}>{collection.name}</SelectItem>
                       ))}
-                    </optgroup>
+                    </SelectGroup>
                   )}
-                </select>
-                <select
-                  aria-label="Retrieval profile"
-                  value={agentName}
-                  onChange={(e) => setAgentName(e.target.value)}
-                  className="h-11 max-w-full rounded-xl border border-input bg-card px-3 text-base sm:text-sm"
-                >
-                  <option value="rag">Hybrid retrieval</option>
-                  <option value="rag_v2">Hybrid + query rewrites</option>
-                </select>
-                  <Button type="submit" disabled={!query.trim() || !selectedCollection || isSearching}>
+                  </SelectContent>
+                </Select>
+                <Select value={agentName} onValueChange={setAgentName}>
+                  <SelectTrigger aria-label="Retrieval profile" className="w-full min-w-0"><SelectValue /></SelectTrigger>
+                  <SelectContent position="popper" align="start">
+                    <SelectItem value="rag">Hybrid retrieval</SelectItem>
+                    <SelectItem value="rag_v2">Hybrid + query rewrites</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button className="sm:col-span-2 sm:justify-self-start" type="submit" disabled={!query.trim() || !selectedCollection || isSearching}>
                   {isSearching ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   ) : (
@@ -308,6 +323,13 @@ export default function RAGPage() {
                   <Skeleton className="h-10 w-full" />
                   <Skeleton className="h-10 w-full" />
                 </div>
+              ) : documentsError ? (
+                <div role="alert" className="space-y-3 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+                  <p>Could not load documents: {documentsError}</p>
+                  <Button type="button" size="sm" variant="outline" onClick={() => void loadDocuments()}>
+                    Retry
+                  </Button>
+                </div>
               ) : documents.length === 0 ? (
                 <div className="rounded-xl border border-dashed p-6 text-center">
                   <FileText className="mx-auto mb-2 size-8 text-muted-foreground" aria-hidden="true" />
@@ -372,6 +394,13 @@ export default function RAGPage() {
                 <div className="space-y-2">
                   <Skeleton className="h-8 w-full" />
                   <Skeleton className="h-8 w-full" />
+                </div>
+              ) : collectionsError ? (
+                <div role="alert" className="space-y-3 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+                  <p>Could not load collections: {collectionsError}</p>
+                  <Button type="button" size="sm" variant="outline" onClick={() => void loadCollections()}>
+                    Retry
+                  </Button>
                 </div>
               ) : searchableCollections.length === 0 ? (
                 <p className="text-xs text-muted-foreground">

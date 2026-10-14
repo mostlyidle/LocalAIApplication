@@ -42,6 +42,7 @@ class AgentState(TypedDict):
     forced_agent: NotRequired[str]
     owner_id: NotRequired[str]
     memory_context: NotRequired[str]
+    system_prompts: NotRequired[dict[str, str]]
 
 
 def create_initial_state(

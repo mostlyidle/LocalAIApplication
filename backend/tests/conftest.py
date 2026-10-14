@@ -99,9 +99,13 @@ def authenticated_test_session() -> AuthenticatedSession:
 @pytest.fixture
 async def app(async_engine: AsyncEngine, authenticated_test_session: AuthenticatedSession):
     """Create a FastAPI app with dependency overrides for testing."""
+    from app.agents.registry import AgentRegistry
     from app.main import create_app
+    from app.prompt_store import PromptStore
 
     test_app = create_app()
+    profile_dir = Path(__file__).resolve().parents[1] / "app" / "prompts"
+    test_app.state.agent_registry = AgentRegistry(profile_dir, PromptStore(profile_dir))
 
     # Override the database dependency to use our test session
     factory = async_sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)

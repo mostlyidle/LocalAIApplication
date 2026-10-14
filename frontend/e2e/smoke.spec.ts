@@ -85,7 +85,7 @@ test.describe("Settings page functionality", () => {
 });
 
 test("chat profile selector exposes matching specialist inputs", async ({ page }) => {
-  await page.route("**/api/v1/agents", (route) => route.fulfill({
+  await page.route("**/api/v1/agents**", (route) => route.fulfill({
     status: 200,
     contentType: "application/json",
     body: JSON.stringify({
@@ -107,7 +107,9 @@ test("chat profile selector exposes matching specialist inputs", async ({ page }
   }));
 
   await page.goto("/chat");
-  await page.getByLabel("Agent profile").selectOption("stock_research");
+  await page.getByRole("combobox", { name: "Agent profile" }).click();
+  await page.getByRole("option", { name: /Stock Research/ }).click();
+  await page.getByRole("button", { name: "Options" }).click();
   await expect(page.getByLabel("Ticker symbol")).toBeVisible();
-  await expect(page.getByLabel("Agent model")).toHaveValue("qwen2.5:7b");
+  await expect(page.getByRole("combobox", { name: "Agent model" })).toContainText("qwen2.5:7b");
 });

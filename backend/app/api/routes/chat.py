@@ -170,6 +170,7 @@ async def send_message(
         attachments=attachment_paths,
         existing_messages=existing_messages,
         owner_id=owner_id,
+        system_prompts=request.app.state.agent_registry.default_system_prompts(),
     )
 
     # Extract response content
@@ -460,6 +461,7 @@ async def chat_stream(
                         attachments=attachment_paths,
                         existing_messages=existing_messages,
                         owner_id=owner_id,
+                        system_prompts=websocket.app.state.agent_registry.default_system_prompts(),
                     ):
                         await consume_event(event)
             except HTTPException as exc:
@@ -710,6 +712,7 @@ async def _execute_selected_profile(
                     existing_messages=existing,
                     forced_agent=profile.target,
                     owner_id=owner_id,
+                    system_prompts={profile.target: registry.system_prompt(profile.name)},
                 )
             else:
                 state = None
@@ -720,6 +723,7 @@ async def _execute_selected_profile(
                     existing_messages=existing,
                     forced_agent=profile.target,
                     owner_id=owner_id,
+                    system_prompts={profile.target: registry.system_prompt(profile.name)},
                 ):
                     if event.get("type") == "done":
                         state = event.get("state")
