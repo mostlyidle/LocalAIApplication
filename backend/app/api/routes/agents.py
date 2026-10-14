@@ -21,12 +21,16 @@ router = APIRouter()
 
 
 class AgentCreateRequest(BaseModel):
+    """Validated fields for creating a specialist from an existing agent."""
+
     source_agent: str = Field(pattern=r"^[a-z][a-z0-9_]{0,62}$")
     display_name: str = Field(min_length=1, max_length=100)
     description: str = Field(min_length=1, max_length=500)
 
 
 class AgentUpdateRequest(BaseModel):
+    """Optional fields for updating a prompt or custom agent profile."""
+
     display_name: str | None = Field(default=None, min_length=1, max_length=100)
     description: str | None = Field(default=None, min_length=1, max_length=500)
     system_prompt: str | None = Field(default=None, max_length=20_000)

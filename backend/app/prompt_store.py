@@ -35,6 +35,7 @@ class PromptStore:
         )
 
     def set_system_override(self, agent_name: str, target: str, prompt: str | None) -> None:
+        """Set or remove an agent's application-level system prompt override."""
         key = (target, agent_name)
         if prompt is None:
             self._system_overrides.pop(key, None)
@@ -42,6 +43,7 @@ class PromptStore:
             self._system_overrides[key] = prompt
 
     def set_source(self, agent_name: str, target: str, source_name: str | None) -> None:
+        """Set or remove the built-in prompt profile used by an agent."""
         key = (target, agent_name)
         if source_name is None:
             self._sources.pop(key, None)
@@ -49,14 +51,13 @@ class PromptStore:
             self._sources[key] = source_name
 
     def clear_overrides(self) -> None:
+        """Clear prompt overrides and source mappings before reloading settings."""
         self._system_overrides.clear()
         self._sources.clear()
 
     def system_prompt(self, agent_name: str, target: str) -> str:
-        override = self._system_overrides.get((target, agent_name))
-        if override is not None:
-            return override
-        return self._template(agent_name, target, "system").render({}).strip()
+        """Render the system prompt for an agent without request-specific values."""
+        return self._render(agent_name, target, "system", {})
 
     def validate(self, agent_name: str, target: str) -> None:
         self._template(agent_name, target, "system")

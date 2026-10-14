@@ -23,6 +23,7 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    """Create the application-wide agent configuration table."""
     op.create_table(
         "agent_configurations",
         sa.Column("name", sa.String(63), primary_key=True),
@@ -39,4 +40,5 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Drop the application-wide agent configuration table."""
     op.drop_table("agent_configurations")

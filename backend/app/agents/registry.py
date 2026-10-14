@@ -220,16 +220,19 @@ class AgentRegistry:
         return AgentCatalogResponse(agents=agents)
 
     def system_prompt(self, agent_name: str) -> str:
+        """Return the resolved system prompt for an agent profile."""
         agent = self._agents[agent_name]
         return self._prompts.system_prompt(agent.name, agent.target)
 
     def default_system_prompts(self) -> dict[str, str]:
+        """Return system prompts for the default profile in each agent domain."""
         return {
             target: self.system_prompt(profile.name)
             for target, profile in self._defaults.items()
         }
 
     def prompt_source(self, agent_name: str) -> str:
+        """Return the built-in profile from which an agent was derived."""
         return self._base_profiles.get(agent_name, agent_name)
 
     def apply_configurations(self, configurations: list[object]) -> None:

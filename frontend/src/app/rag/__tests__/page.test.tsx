@@ -127,6 +127,22 @@ describe("RAG Page", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
+  it("shows a retryable container loading error", async () => {
+    mockGetContainers
+      .mockRejectedValueOnce(new Error("Container service unavailable"))
+      .mockResolvedValueOnce([]);
+
+    await act(async () => {
+      render(<RAGPage />);
+    });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not load RAG containers: Container service unavailable",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+  });
+
   it("search button is disabled when input is empty", async () => {
     await act(async () => {
       render(<RAGPage />);

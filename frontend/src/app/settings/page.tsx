@@ -318,7 +318,7 @@ export default function SettingsPage() {
                 {selectedAgent?.is_custom && <Button size="sm" variant="outline" onClick={() => void toggleAgentArchive()} disabled={agentBusy}>{selectedAgent.archived ? <><Plus className="mr-2 h-4 w-4" />Restore agent</> : <><Archive className="mr-2 h-4 w-4" />Archive agent</>}</Button>}
               </div>
               <div className="space-y-3 border-t pt-4">
-                <div><h3 className="text-sm font-semibold">Create specialist</h3><p className="text-xs text-muted-foreground">Copy one existing agent type, then customize its prompt.</p></div>
+                <div><h3 className="text-sm font-semibold">Create specialist</h3><p className="text-xs text-muted-foreground">Copy one existing agent type, including its tools and inference settings. Agent types cannot be combined.</p></div>
                 <div className="grid gap-3 sm:grid-cols-3">
                   <div className="space-y-1.5"><Label htmlFor="new-agent-name">Name</Label><Input id="new-agent-name" value={newAgentName} onChange={(event) => setNewAgentName(event.target.value)} placeholder="Research helper" maxLength={100} /></div>
                   <div className="space-y-1.5"><Label htmlFor="new-agent-type">Copy from</Label><Select value={newAgentSource} onValueChange={setNewAgentSource}><SelectTrigger id="new-agent-type" className="w-full"><SelectValue /></SelectTrigger><SelectContent position="popper" align="start">{creatableAgents.map((agent) => <SelectItem key={agent.name} value={agent.name}>{agent.display_name}</SelectItem>)}</SelectContent></Select></div>
