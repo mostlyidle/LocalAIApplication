@@ -2,7 +2,7 @@
 
 import { useRef, useEffect, useState, type FormEvent, type ChangeEvent, type ReactNode } from "react";
 import Link from "next/link";
-import { Send, Plus, Loader2, Paperclip, X, Image as ImageIcon, History, Sparkles, Lightbulb, BookOpen, ListChecks, PenLine, SlidersHorizontal, Search } from "lucide-react";
+import { Send, Plus, Loader2, X, Image as ImageIcon, History, Sparkles, Lightbulb, BookOpen, ListChecks, PenLine, SlidersHorizontal, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -875,24 +875,12 @@ export function ChatWindow() {
               variant="ghost"
               size="icon"
               className="h-11 w-11 shrink-0 rounded-xl"
-              onClick={startNewConversation}
-              disabled={isStreaming || restoringConversation}
-              title="New conversation"
-              aria-label="New conversation"
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-11 w-11 shrink-0 rounded-xl"
               onClick={() => fileInputRef.current?.click()}
               disabled={isStreaming}
-              title="Attach file"
-              aria-label="Attach file"
+              title="Add files"
+              aria-label="Add files"
             >
-              <Paperclip className="h-4 w-4" />
+              <Plus className="h-4 w-4" />
             </Button>
             <input
               ref={fileInputRef}
