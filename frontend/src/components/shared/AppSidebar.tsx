@@ -48,10 +48,10 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader className="px-5 pb-5 pt-6">
-        <Link href="/" className="flex items-center gap-2.5 rounded-lg">
+      <SidebarHeader className="px-5 pb-5 pt-6 group-data-[collapsible=icon]:items-center group-data-[collapsible=icon]:px-2 group-data-[collapsible=icon]:py-3">
+        <Link href="/" className="flex items-center gap-2.5 rounded-lg group-data-[collapsible=icon]:justify-center">
           <BrandMark />
-          <div>
+          <div className="group-data-[collapsible=icon]:hidden">
             <span className="text-xl font-bold tracking-tight">Local AI</span>
             <p className="text-xs text-muted-foreground">Your little AI studio</p>
           </div>
@@ -72,7 +72,7 @@ export function AppSidebar() {
                     isActive={pathname === item.href || pathname.startsWith(item.href + "/")}
                   >
                     <Link href={item.href} onClick={() => { if (isMobile) setOpenMobile(false); }} aria-current={pathname === item.href || pathname.startsWith(item.href + "/") ? "page" : undefined}>
-                      <span className={`grid size-8 shrink-0 place-items-center rounded-md transition-colors ${pathname === item.href || pathname.startsWith(item.href + "/") ? "bg-primary/10 text-primary" : "text-muted-foreground group-hover:text-foreground"}`}>
+                      <span className={`grid size-8 shrink-0 place-items-center rounded-md transition-colors group-data-[collapsible=icon]:size-4! ${pathname === item.href || pathname.startsWith(item.href + "/") ? "bg-primary/10 text-primary" : "text-muted-foreground group-hover:text-foreground"}`}>
                         <item.icon className="h-4 w-4" aria-hidden="true" />
                       </span>
                       <span>{item.title}</span>
@@ -84,7 +84,7 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter className="gap-4 px-5 pb-5 pt-3">
+      <SidebarFooter className="gap-4 px-5 pb-5 pt-3 group-data-[collapsible=icon]:hidden">
         <div className="rounded-2xl border border-mint-ink/15 bg-mint-soft p-4 text-mint-ink">
           <p className="text-sm font-semibold">Big ideas. Close to home.</p>
           <p className="mt-1 text-xs leading-relaxed">Fully Local Intelligence</p>
