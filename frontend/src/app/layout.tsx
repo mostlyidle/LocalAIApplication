@@ -3,8 +3,8 @@ import "./globals.css";
 import { ClientProviders } from "@/components/shared/ClientProviders";
 
 export const metadata: Metadata = {
-  title: "Local AI — Your friendly AI studio",
-  description: "Chat, create, and explore with your own team of local AI agents.",
+  title: "Mallow — Your local AI studio",
+  description: "A cozy workspace for local chat, documents, research, and agents.",
   icons: { icon: "/local-ai-logo.svg" },
 };
 
