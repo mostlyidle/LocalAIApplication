@@ -139,3 +139,14 @@
     scroll-behavior: auto !important;
   }
 }
+
+@media (pointer: coarse) {
+  [data-slot="button"],
+  [data-slot="sidebar-menu-button"] {
+    min-height: 44px;
+  }
+
+  [data-slot="button"][data-size^="icon"] {
+    min-width: 44px;
+  }
+}

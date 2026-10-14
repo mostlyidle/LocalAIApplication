@@ -94,6 +94,7 @@ single faint shadow or a tinted surface, not stacked shadows.
   direct verb label.
 - Secondary actions use a tinted or outlined surface.
 - Buttons stay one line and at least 44px tall for touch.
+- Compact button variants expand to meet the touch target on coarse-pointer devices.
 
 ## Brand
 
