@@ -49,7 +49,8 @@ async def web_agent_node(state: AgentState) -> dict[str, Any]:
     logger.info("web_agent_invoked", conversation_id=state.get("conversation_id"))
 
     llm = llm_service.get_chat_model(temperature=0.2)
-    llm_with_tools = llm.bind_tools(web_tools)
+    available_tools = web_tools
+    llm_with_tools = llm.bind_tools(available_tools)
 
     system_prompt = state.get("system_prompts", {}).get("web", WEB_SYSTEM_PROMPT)
     messages = [SystemMessage(content=system_prompt)]
@@ -75,13 +76,14 @@ async def web_agent_node(state: AgentState) -> dict[str, Any]:
             tool_name = tc["name"]
             tool_args = tc["args"]
 
-            tool_fn = next((t for t in web_tools if t.name == tool_name), None)
+            tool_fn = next((t for t in available_tools if t.name == tool_name), None)
             if tool_fn is None:
                 tool_result = f"Unknown tool: {tool_name}"
             else:
                 try:
                     tool_result = await tool_fn.ainvoke(tool_args)
                 except Exception as exc:
+                    logger.exception("web_tool_execution_failed", tool=tool_name)
                     tool_result = f"Tool error: {exc}"
 
             tool_calls_record.append(

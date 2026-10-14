@@ -57,6 +57,7 @@ async def chat_agent_node(state: AgentState) -> dict[str, Any]:
     return {
         "messages": [response],
         "current_agent": "chat",
+        "tool_calls": state.get("tool_calls", []),
         "metadata": {
             **state.get("metadata", {}),
             "agent_used": "chat",

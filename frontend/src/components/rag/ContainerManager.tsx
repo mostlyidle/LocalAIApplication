@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Database, Loader2, RotateCcw, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,27 +34,41 @@ export function ContainerManager({ containers, selectedName, onSelect, onRefresh
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const filesRequestId = useRef(0);
+  const selectedNameRef = useRef(selectedName);
+  selectedNameRef.current = selectedName;
   const active = containers.find((container) => container.name === selectedName);
   const isWorking = Boolean(active && active.queued_file_count + active.processing_file_count > 0);
 
-  const refreshFiles = useCallback(async () => {
-    if (!selectedName) {
+  const refreshFiles = useCallback(async (expectedName = selectedName) => {
+    if (expectedName !== selectedNameRef.current) return;
+    const requestId = ++filesRequestId.current;
+    if (!expectedName) {
       setFiles([]);
+      setIsLoadingFiles(false);
       return;
     }
     setIsLoadingFiles(true);
     try {
-      setFiles(await getRAGContainerFiles(selectedName));
-      setError("");
+      const nextFiles = await getRAGContainerFiles(expectedName);
+      if (requestId === filesRequestId.current && selectedNameRef.current === expectedName) {
+        setFiles(nextFiles);
+        setError("");
+      }
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Could not load container files.");
+      if (requestId === filesRequestId.current && selectedNameRef.current === expectedName) {
+        setError(loadError instanceof Error ? loadError.message : "Could not load container files.");
+      }
     } finally {
-      setIsLoadingFiles(false);
+      if (requestId === filesRequestId.current && selectedNameRef.current === expectedName) {
+        setIsLoadingFiles(false);
+      }
     }
   }, [selectedName]);
 
   useEffect(() => {
     void refreshFiles();
+    return () => { filesRequestId.current += 1; };
   }, [refreshFiles]);
 
   useEffect(() => {
@@ -88,15 +102,19 @@ export function ContainerManager({ containers, selectedName, onSelect, onRefresh
 
   const handleLoad = async () => {
     if (!active || isLoading) return;
+    const operationName = active.name;
     setError("");
     setNotice("");
     setIsLoading(true);
     try {
       const result = await loadRAGContainer(active.name);
+      if (selectedNameRef.current !== operationName) return;
       await Promise.all([refreshFiles(), onRefresh()]);
       setNotice(result.queued ? `Queued ${result.queued} file${result.queued === 1 ? "" : "s"} for indexing.` : "No staged files to load.");
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Could not start indexing.");
+      if (selectedNameRef.current === operationName) {
+        setError(loadError instanceof Error ? loadError.message : "Could not start indexing.");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -104,23 +122,31 @@ export function ContainerManager({ containers, selectedName, onSelect, onRefresh
 
   const handleRetry = async (file: RAGContainerFile) => {
     if (!active) return;
+    const operationName = active.name;
     setError("");
     try {
       await retryRAGContainerFile(active.name, file.id);
+      if (selectedNameRef.current !== operationName) return;
       await Promise.all([refreshFiles(), onRefresh()]);
     } catch (retryError) {
-      setError(retryError instanceof Error ? retryError.message : "Could not retry file.");
+      if (selectedNameRef.current === operationName) {
+        setError(retryError instanceof Error ? retryError.message : "Could not retry file.");
+      }
     }
   };
 
   const handleRemoveFile = async (file: RAGContainerFile) => {
     if (!active) return;
+    const operationName = active.name;
     setError("");
     try {
       await deleteRAGContainerFile(active.name, file.id);
+      if (selectedNameRef.current !== operationName) return;
       await Promise.all([refreshFiles(), onRefresh()]);
     } catch (removeError) {
-      setError(removeError instanceof Error ? removeError.message : "Could not remove file.");
+      if (selectedNameRef.current === operationName) {
+        setError(removeError instanceof Error ? removeError.message : "Could not remove file.");
+      }
     }
   };
 
@@ -211,7 +237,11 @@ export function ContainerManager({ containers, selectedName, onSelect, onRefresh
             )}
 
             <ContainerUploader containerName={active.name} onUploaded={async () => {
-              await Promise.all([refreshFiles(), onRefresh()]);
+              const operationName = active.name;
+              if (selectedNameRef.current !== operationName) return;
+              await refreshFiles(operationName);
+              if (selectedNameRef.current !== operationName) return;
+              await onRefresh();
               setNotice("Files staged. Load index when ready.");
             }} />
 

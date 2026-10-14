@@ -5,6 +5,7 @@ Targets app/mcp/client.py for 0% → 80%+ coverage.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 from pathlib import Path
@@ -224,6 +225,25 @@ class TestDiscoverStdio:
         result = await manager._discover_stdio(config, "test")
         assert result == []
 
+    async def test_times_out_and_closes_a_stalled_server(self) -> None:
+        manager = MCPClientManager()
+        connection = MagicMock()
+
+        async def stall(_params: Any) -> None:
+            await asyncio.sleep(1)
+
+        connection.connect = stall
+        connection.close = AsyncMock()
+
+        with (
+            patch("app.mcp.client.MCP_DISCOVERY_TIMEOUT_SECONDS", 0.01, create=True),
+            patch("app.mcp.client._StdioConnection", return_value=connection),
+            pytest.raises(TimeoutError),
+        ):
+            await manager._discover_stdio({"command": "server"}, "stalled")
+
+        connection.close.assert_awaited_once()
+
 
 # =============================================================================
 # _convert_mcp_tool
@@ -271,6 +291,27 @@ class TestConvertMcpTool:
         session = AsyncMock()
         result = manager._convert_mcp_tool(mcp_tool, session, "srv")
         assert isinstance(result, StructuredTool)
+
+    def test_preserves_array_and_object_input_schema_types(self) -> None:
+        manager = MCPClientManager()
+        mcp_tool = MagicMock()
+        mcp_tool.name = "structured"
+        mcp_tool.description = "Accept structured values"
+        mcp_tool.inputSchema = {
+            "properties": {
+                "ids": {"type": "array", "items": {"type": "integer"}},
+                "options": {"type": "object"},
+            },
+            "required": ["ids", "options"],
+        }
+
+        tool = manager._convert_mcp_tool(mcp_tool, AsyncMock(), "srv")
+
+        parsed = tool.args_schema.model_validate({"ids": [1, 2], "options": {"enabled": True}})
+        assert parsed.ids == [1, 2]
+        assert parsed.options == {"enabled": True}
+        with pytest.raises(ValueError):
+            tool.args_schema.model_validate({"ids": "1,2", "options": []})
 
 
 # =============================================================================

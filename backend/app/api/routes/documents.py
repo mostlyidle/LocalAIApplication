@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, UploadFile
 from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: TC002
 
@@ -33,15 +33,17 @@ from app.dependencies import (
     get_document_parser,
     get_vector_store,
 )
-from app.models.db_models import Document, RagContainerFile
+from app.models.db_models import Document, RagCollection, RagContainerFile
 from app.models.enums import DocumentFormat, DocumentStatus
 from app.models.schemas import (
+    DocumentAnalyzeRequest,
     DocumentAnalysisResult,
     DocumentListItem,
     DocumentUploadResponse,
     ExtractedTable,
 )
 from app.services.auth import AuthenticatedSession  # noqa: TC001
+from app.services.rag_store import RagCollectionSchemaError
 from app.services.vector_store import VectorStoreService  # noqa: TC001
 
 logger = structlog.get_logger(__name__)
@@ -73,8 +75,10 @@ async def upload_document(
     if extension not in settings.allowed_extensions_set:
         raise UnsupportedFormatError(extension)
 
-    # Validate size (read header to check)
-    content = await file.read()
+    # Starlette knows the parsed file size; cap reads if that metadata is absent.
+    if file.size is not None and file.size > settings.max_upload_size_bytes:
+        raise DocumentTooLargeError(settings.max_upload_size_bytes)
+    content = await file.read(settings.max_upload_size_bytes + 1)
     size_bytes = len(content)
     if size_bytes > settings.max_upload_size_bytes:
         raise DocumentTooLargeError(settings.max_upload_size_bytes)
@@ -129,6 +133,8 @@ async def upload_document(
 @router.post("/documents/{document_id}/analyze", response_model=DocumentAnalysisResult)
 async def analyze_document(
     document_id: str,
+    request: Request,
+    body: DocumentAnalyzeRequest = Body(default=DocumentAnalyzeRequest()),
     authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
     parser: DocumentParserService = Depends(get_document_parser),  # noqa: B008
@@ -159,6 +165,23 @@ async def analyze_document(
     try:
         doc_format = DocumentFormat(doc.format)
         parsed = await parser.parse(file_path, doc_format)
+        answer = None
+        if body.prompt:
+            from app.models.profile_schemas import TaskRequest
+
+            profile = request.app.state.agent_registry.default_for("document")
+            task = TaskRequest(
+                prompt=body.prompt,
+                agent_name=profile.name,
+                context=parsed.text[:100_000],
+            )
+            answer = (
+                await request.app.state.task_runner.run(
+                    task,
+                    request_id=str(uuid.uuid4()),
+                    owner_id=authenticated.account.id,
+                )
+            ).answer
 
         # Update document record
         doc.status = DocumentStatus.COMPLETED
@@ -190,6 +213,7 @@ async def analyze_document(
             page_count=parsed.page_count,
             word_count=parsed.word_count,
             status=DocumentStatus.COMPLETED,
+            answer=answer,
         )
 
     except Exception as exc:
@@ -305,6 +329,15 @@ async def delete_document(
     if any(item.status in {"processing", "deleting"} for item in memberships):
         raise HTTPException(status_code=409, detail="Wait for container indexing to finish.")
     prior_statuses = {item.id: item.status for item in memberships}
+    owned_collections = list(
+        (
+            await db.scalars(
+                select(RagCollection.name).where(
+                    RagCollection.owner_id == authenticated.account.id
+                )
+            )
+        ).all()
+    )
     if memberships:
         claimed = await db.execute(
             update(RagContainerFile)
@@ -328,6 +361,16 @@ async def delete_document(
             else:
                 item.indexed_document_id = None
                 item.status = prior_statuses[item.id]
+        for collection in owned_collections:
+            try:
+                await vector_store.delete_asset(collection, document_id)
+            except RagCollectionSchemaError as exc:
+                logger.warning(
+                    "document_vector_cleanup_skipped",
+                    document_id=document_id,
+                    collection=collection,
+                    reason=str(exc),
+                )
         await db.delete(doc)
         await db.commit()
     except Exception:

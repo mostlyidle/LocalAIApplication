@@ -41,6 +41,27 @@ from pydantic import BaseModel, create_model
 from app.config import settings
 
 logger = structlog.get_logger(__name__)
+MCP_DISCOVERY_TIMEOUT_SECONDS = 5.0
+
+
+def _json_schema_python_type(schema: Any) -> Any:
+    """Map the supported JSON Schema value types to Pydantic field types."""
+    if not isinstance(schema, dict):
+        return Any
+    schema_type = schema.get("type")
+    type_map = {"string": str, "integer": int, "number": float, "boolean": bool}
+    if schema_type == "array":
+        item_type = _json_schema_python_type(schema.get("items", {}))
+        return list[item_type]
+    if schema_type == "object":
+        additional_properties = schema.get("additionalProperties")
+        value_type = (
+            _json_schema_python_type(additional_properties)
+            if isinstance(additional_properties, dict)
+            else Any
+        )
+        return dict[str, value_type]
+    return type_map.get(schema_type, Any)
 
 
 class _StdioConnection:
@@ -219,15 +240,19 @@ class MCPClientManager:
         )
 
         conn = _StdioConnection()
-        session = await conn.connect(server_params)
+        try:
+            async with asyncio.timeout(MCP_DISCOVERY_TIMEOUT_SECONDS):
+                session = await conn.connect(server_params)
+                mcp_tools = await session.list_tools()
+                tools = [
+                    self._convert_mcp_tool(mcp_tool, session, server_name)
+                    for mcp_tool in mcp_tools.tools
+                ]
+        except BaseException:
+            await conn.close()
+            raise
+
         self._connections[server_name] = conn
-
-        tools: list[StructuredTool] = []
-        mcp_tools = await session.list_tools()
-        for mcp_tool in mcp_tools.tools:
-            lc_tool = self._convert_mcp_tool(mcp_tool, session, server_name)
-            tools.append(lc_tool)
-
         return tools
 
     def _convert_mcp_tool(
@@ -259,21 +284,19 @@ class MCPClientManager:
                     return "\n".join(parts) if parts else str(result)
                 return str(result)
             except Exception as exc:
-                logger.error(
+                logger.exception(
                     "mcp_tool_call_failed",
                     tool=tool_name,
-                    error=str(exc),
                 )
                 return f"Tool error: {exc}"
 
         # Build a dynamic Pydantic model from the MCP input schema so that
         # LangChain's StructuredTool has the required ``args_schema``.
-        type_map = {"string": str, "integer": int, "number": float, "boolean": bool}
         fields: dict[str, Any] = {}
         props = input_schema.get("properties", {})
         required_fields = set(input_schema.get("required", []))
         for field_name, field_info in props.items():
-            py_type = type_map.get(field_info.get("type", "string"), str)
+            py_type = _json_schema_python_type(field_info)
             if field_name in required_fields:
                 fields[field_name] = (py_type, ...)
             else:

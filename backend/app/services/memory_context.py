@@ -91,29 +91,31 @@ async def _load_context(
     exclude_conversation_id: str | None = None,
 ) -> str:
     account = await db.scalar(select(Account).where(Account.id == owner_id))
-    if account is None or not account.memory_enabled:
+    if account is None:
         return ""
 
     now = datetime.now(UTC)
-    rows = await db.scalars(
-        select(Memory)
-        .where(
-            Memory.owner_id == owner_id,
-            Memory.approved.is_(True),
-            Memory.deleted_at.is_(None),
-            (Memory.expires_at.is_(None) | (Memory.expires_at > now)),
+    items = []
+    if account.memory_enabled:
+        rows = await db.scalars(
+            select(Memory)
+            .where(
+                Memory.owner_id == owner_id,
+                Memory.approved.is_(True),
+                Memory.deleted_at.is_(None),
+                (Memory.expires_at.is_(None) | (Memory.expires_at > now)),
+            )
+            .order_by(Memory.updated_at.desc(), Memory.id)
+            .limit(MAX_MEMORY_ITEMS)
         )
-        .order_by(Memory.updated_at.desc(), Memory.id)
-        .limit(MAX_MEMORY_ITEMS)
-    )
-    items = [
-        {
-            "type": memory.kind,
-            "project": memory.project_scope,
-            "content": memory.content[:MAX_MEMORY_ITEM_CHARS],
-        }
-        for memory in rows
-    ]
+        items.extend(
+            {
+                "type": memory.kind,
+                "project": memory.project_scope,
+                "content": memory.content[:MAX_MEMORY_ITEM_CHARS],
+            }
+            for memory in rows
+        )
     if account.past_chat_recall_enabled and query and query.strip():
         try:
             from app.services.memory_vector_index import memory_vector_index

@@ -7,8 +7,9 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi import HTTPException
 from qdrant_client import AsyncQdrantClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from app.api.middleware.error_handler import NotFoundError
 from app.agents.registry import AgentExecution, AgentRegistry
 from app.models.db_models import RagCollection
 from app.models.profile_schemas import TaskRequest
@@ -89,6 +90,30 @@ async def test_rag_omits_oversized_memory_before_document_evidence() -> None:
     assert any("Personal memory was omitted" in item for item in context.limitations)
 
 
+async def test_rag_context_budget_includes_saved_system_prompt() -> None:
+    registry, prompts = profiles()
+    request = TaskRequest(
+        prompt="When?", agent_name="rag", inference={"context_window": 1024, "max_output_tokens": 64}
+    )
+    profile = registry.get("rag")
+    execution = AgentExecution(profile, registry.resolve_inference(profile, request))
+    search = SimpleNamespace(passages=[{"content": "Friday."}], retrieval={})
+
+    with (
+        patch(
+            "app.services.hybrid_vector_store.hybrid_vector_store_service.search_with_provenance",
+            AsyncMock(return_value=search),
+        ),
+        pytest.raises(HTTPException, match="context budget"),
+    ):
+        await prepare_rag_context(
+            request,
+            execution,
+            prompts,
+            system_prompt="Saved instruction " * 200,
+        )
+
+
 async def test_rag_context_rejects_another_accounts_collection(
     db_session: AsyncSession, async_engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -104,6 +129,74 @@ async def test_rag_context_rejects_another_accounts_collection(
     with pytest.raises(HTTPException) as error:
         await prepare_rag_context(request, execution, prompts, owner_id="current-account")
     assert error.value.status_code == 404
+
+
+async def test_hybrid_search_rejects_another_accounts_collection(
+    db_session: AsyncSession,
+    async_engine: AsyncEngine,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db_session.add(RagCollection(name="private-rag", owner_id="another-account"))
+    await db_session.commit()
+    maker = async_sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
+    monkeypatch.setattr("app.services.database.get_app_session_factory", lambda: maker)
+    service = HybridVectorStoreService.__new__(HybridVectorStoreService)
+
+    with pytest.raises(NotFoundError):
+        await service.search(
+            query="private?", collection="private-rag", owner_id="current-account"
+        )
+
+
+async def test_hybrid_search_uses_configured_custom_rag_profile() -> None:
+    prompt_dir = Path(__file__).resolve().parents[2] / "app" / "prompts"
+    prompts = PromptStore(prompt_dir)
+    registry = AgentRegistry(prompt_dir, prompts)
+    source = registry.get("rag_v2")
+    assert source is not None
+    custom = source.model_copy(
+        update={"name": "saved_rag", "description": "Saved RAG", "default_for_target": False}
+    )
+    registry.apply_configurations(
+        [
+            SimpleNamespace(
+                name="saved_rag",
+                display_name="Saved RAG",
+                target="rag",
+                description="Saved RAG",
+                system_prompt="Use the saved RAG instructions.",
+                base_agent="rag_v2",
+                manifest_json=custom.model_dump_json(),
+                is_custom=True,
+                archived=False,
+            )
+        ]
+    )
+    service = HybridVectorStoreService.__new__(HybridVectorStoreService)
+    service._prompt_dir = prompt_dir
+    service._profiles = None
+    service._prompts = None
+    service._rag = SimpleNamespace(capabilities=AsyncMock(return_value=None))
+    rewrite = AsyncMock(return_value={"queries": ["First rewrite", "Second rewrite"]})
+    llm = SimpleNamespace(
+        with_structured_output=lambda _schema: SimpleNamespace(
+            ainvoke=rewrite
+        )
+    )
+
+    service.configure_profiles(registry, prompts)
+    with patch.object(service, "_chat_model", return_value=llm):
+        result = await service.search_with_provenance(
+            query="Original question",
+            collection="missing",
+            top_k=3,
+            agent_name="saved_rag",
+        )
+
+    rewrite_prompt = rewrite.call_args.args[0]
+    assert result.retrieval["mode"] == "missing_collection"
+    assert "You rewrite retrieval queries for a grounded RAG system." in rewrite_prompt
+    assert "Original question" in rewrite_prompt
 
 
 @pytest.mark.parametrize("model, revision, succeeds, historical", [

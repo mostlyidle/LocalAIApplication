@@ -46,7 +46,7 @@ async def _seed_summary(db: AsyncSession) -> ConversationRecallSummary:
         username="vector-account",
         display_name="Vector Account",
         password_hash="!test!",
-        memory_enabled=True,
+        memory_enabled=False,
         past_chat_recall_enabled=True,
         memory_epoch=2,
     )

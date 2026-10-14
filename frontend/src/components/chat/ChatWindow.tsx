@@ -41,6 +41,7 @@ interface PendingAttachment {
 }
 
 const IMAGE_TYPES = [".png", ".jpg", ".jpeg", ".tiff", ".bmp", ".webp"];
+const CONVERSATION_PAGE_SIZE = 50;
 const starterPrompts = [
   { title: "Spark an idea", hint: "Find a fresh perspective", prompt: "Help me brainstorm a few creative ideas for ", icon: Lightbulb, tone: "bg-peach-soft text-peach-ink" },
   { title: "Explain something", hint: "Make the complex feel simple", prompt: "Explain this in simple terms, with an example: ", icon: BookOpen, tone: "bg-sky-soft text-sky-ink" },
@@ -100,6 +101,9 @@ export function ChatWindow() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyQuery, setHistoryQuery] = useState("");
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
+  const [historyHasMore, setHistoryHasMore] = useState(false);
+  const [historyOffset, setHistoryOffset] = useState(0);
   const [conversationError, setConversationError] = useState("");
   const [conversations, setConversations] = useState<Awaited<ReturnType<typeof getConversations>>["conversations"]>([]);
   const [restoringConversation, setRestoringConversation] = useState(false);
@@ -114,6 +118,7 @@ export function ChatWindow() {
   const [savingMemory, setSavingMemory] = useState(false);
   const [memoryError, setMemoryError] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+  const historyRequestIdRef = useRef(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const selectedProfile = agents.find((agent) => agent.name === selectedAgent && !agent.archived);
@@ -210,25 +215,56 @@ export function ChatWindow() {
 
   useEffect(() => {
     if (!historyOpen) return;
+    const requestId = ++historyRequestIdRef.current;
     let active = true;
     setHistoryLoading(true);
-    getConversations()
+    setHistoryLoadingMore(false);
+    setHistoryHasMore(false);
+    setHistoryOffset(0);
+    getConversations(CONVERSATION_PAGE_SIZE, 0, historyQuery)
       .then((result) => {
-        if (active) {
+        if (active && historyRequestIdRef.current === requestId) {
           setConversations(result.conversations);
+          setHistoryOffset(result.conversations.length);
+          setHistoryHasMore(result.conversations.length === CONVERSATION_PAGE_SIZE);
           setConversationError("");
         }
       })
       .catch(() => {
-        if (active) setConversationError("Could not load your saved conversations.");
+        if (active && historyRequestIdRef.current === requestId) {
+          setConversationError("Could not load your saved conversations.");
+        }
       })
       .finally(() => {
-        if (active) setHistoryLoading(false);
+        if (active && historyRequestIdRef.current === requestId) setHistoryLoading(false);
       });
     return () => {
       active = false;
     };
-  }, [historyOpen, conversationId]);
+  }, [historyOpen, conversationId, historyQuery]);
+
+  const loadMoreConversations = async () => {
+    if (historyLoadingMore || !historyHasMore) return;
+    const requestId = historyRequestIdRef.current;
+    setHistoryLoadingMore(true);
+    try {
+      const result = await getConversations(CONVERSATION_PAGE_SIZE, historyOffset, historyQuery);
+      if (historyRequestIdRef.current !== requestId) return;
+      setConversations((current) => {
+        const existingIds = new Set(current.map((conversation) => conversation.id));
+        return [...current, ...result.conversations.filter((conversation) => !existingIds.has(conversation.id))];
+      });
+      setHistoryOffset((current) => current + result.conversations.length);
+      setHistoryHasMore(result.conversations.length === CONVERSATION_PAGE_SIZE);
+      setConversationError("");
+    } catch {
+      if (historyRequestIdRef.current === requestId) {
+        setConversationError("Could not load older conversations.");
+      }
+    } finally {
+      if (historyRequestIdRef.current === requestId) setHistoryLoadingMore(false);
+    }
+  };
 
   const startNewConversation = () => {
     clearMessages();
@@ -407,7 +443,12 @@ export function ChatWindow() {
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     const trimmed = input.trim();
-    if ((!trimmed && attachments.length === 0) || isStreaming || restoringConversation) return;
+    if (
+      (!trimmed && attachments.length === 0)
+      || isStreaming
+      || restoringConversation
+      || hasUploadingFiles
+    ) return;
 
     // Collect uploaded attachment IDs
     const uploadedIds = attachments
@@ -454,7 +495,7 @@ export function ChatWindow() {
       if (selectedProfile.target === "software_engineer") {
         options.workspace_path = workspacePath.trim() || undefined;
       }
-      if (selectedProfile.name === "document_analytics") {
+      if (selectedProfile.target === "document") {
         options.context = context.trim() || undefined;
       }
       if (selectedProfile.target === "image_generation") {
@@ -574,6 +615,16 @@ export function ChatWindow() {
                 </span>
               </button>
             ))}
+            {historyHasMore && (
+              <button
+                type="button"
+                className="min-h-11 w-full rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-muted disabled:opacity-50"
+                onClick={() => void loadMoreConversations()}
+                disabled={historyLoadingMore}
+              >
+                {historyLoadingMore ? "Loading older conversations…" : "Load older conversations"}
+              </button>
+            )}
           </div>
         </SheetContent>
       </Sheet>
@@ -786,7 +837,7 @@ export function ChatWindow() {
           {selectedProfile?.target === "software_engineer" && (
             <label className="flex min-w-48 flex-1 flex-col gap-1 text-xs text-muted-foreground">Workspace path (optional)<input aria-label="Workspace path" value={workspacePath} onChange={(event) => setWorkspacePath(event.target.value)} placeholder="Workspace subpath" className="h-11 w-full rounded-xl border border-input bg-card px-3 text-base sm:text-sm text-foreground" /></label>
           )}
-          {selectedProfile?.name === "document_analytics" && (
+          {selectedProfile?.target === "document" && (
             <label className="flex min-w-48 flex-1 flex-col gap-1 text-xs text-muted-foreground">Document context (optional)<input aria-label="Document context" value={context} onChange={(event) => setContext(event.target.value)} placeholder="Add a little context" className="h-11 w-full rounded-xl border border-input bg-card px-3 text-base sm:text-sm text-foreground" /></label>
           )}
           {selectedProfile?.target === "image_generation" && (

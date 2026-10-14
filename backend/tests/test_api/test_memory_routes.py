@@ -245,6 +245,33 @@ async def test_update_requires_matching_revision_and_delete_hides_memory(
 
 
 @pytest.mark.asyncio
+async def test_memory_update_can_clear_scope_and_rejects_null_content(
+    client: AsyncClient,
+) -> None:
+    created = await client.post(
+        "/api/v1/memory",
+        json={"content": "Use blue", "kind": "preference", "project_scope": "Work"},
+        headers={"X-CSRF-Token": "test-csrf-token"},
+    )
+    memory_id = created.json()["id"]
+
+    cleared = await client.patch(
+        f"/api/v1/memory/{memory_id}",
+        json={"revision": 1, "project_scope": None},
+        headers={"X-CSRF-Token": "test-csrf-token"},
+    )
+    invalid = await client.patch(
+        f"/api/v1/memory/{memory_id}",
+        json={"revision": 2, "content": None, "kind": "preference"},
+        headers={"X-CSRF-Token": "test-csrf-token"},
+    )
+
+    assert cleared.status_code == 200
+    assert cleared.json()["project_scope"] is None
+    assert invalid.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_settings_are_independent_and_delete_all_advances_epoch(
     client: AsyncClient, db_session: AsyncSession
 ):

@@ -247,7 +247,7 @@ Generate the encryption key with `python -c 'from cryptography.fernet import Fer
 
 - `.env.example` lists supported backend settings. Docker Compose reads `.env.docker` for the backend. Compose interpolation values such as `COMFYUI_URL` and `AGENT_WORKSPACE_HOST_PATH` come from your shell or the root `.env` file.
 - Stock research needs `FINNHUB_API_KEY`; image generation needs a reachable ComfyUI server. Other Ollama models are listed by `GET /api/v1/agents`.
-- Built-in MCP servers are operator-only local stdio tools. They do not use signed-in account ownership and must not be exposed over HTTP or offered through the shared-user interface. Treat `mcp_servers.json` as trusted operator configuration; configured commands are started by the backend at startup. Discovered external MCP tools are not currently attached to agent execution.
+- Configured MCP servers are operator-only local stdio tools. Their tools do not carry signed-in account ownership and are excluded from authenticated HTTP routes and shared-account agents. Treat `mcp_servers.json` as trusted operator configuration; configured commands are started by the backend at startup.
 - For native development, Apple Silicon setup, and meeting transcription requirements, follow [GUIDE.md](GUIDE.md).
 - Backend tests: `cd backend && uv run pytest`
 - Frontend tests: `cd frontend && pnpm test`

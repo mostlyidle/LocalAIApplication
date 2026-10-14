@@ -8,7 +8,7 @@ test("planner creates, edits, completes, and deletes an action item", async ({ p
   await page.route("**/api/v1/auth/me", (route) => route.fulfill({
     json: { account: { id: "owner-1", username: "planner", display_name: "Planner" }, csrf_token: "csrf" },
   }));
-  await page.route("**/api/v1/chat/conversations", (route) => route.fulfill({
+  await page.route("**/api/v1/chat/conversations**", (route) => route.fulfill({
     json: [{ id: "chat-1", title: "Planning chat", created_at: "2026-10-12T12:00:00Z", last_message_at: "2026-10-12T12:00:00Z", message_count: 1 }],
   }));
   await page.route("**/api/v1/documents", (route) => route.fulfill({ json: [] }));

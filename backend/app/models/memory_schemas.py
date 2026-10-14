@@ -56,7 +56,11 @@ class MemoryUpdate(BaseModel):
 
     @model_validator(mode="after")
     def require_a_change(self) -> MemoryUpdate:
-        if self.content is None and self.kind is None and self.project_scope is None:
+        if "content" in self.model_fields_set and self.content is None:
+            raise ValueError("Memory content cannot be null.")
+        if "kind" in self.model_fields_set and self.kind is None:
+            raise ValueError("Memory kind cannot be null.")
+        if not self.model_fields_set.intersection({"content", "kind", "project_scope"}):
             raise ValueError("At least one memory field must be updated.")
         return self
 

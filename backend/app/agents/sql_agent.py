@@ -69,7 +69,8 @@ async def sql_agent_node(state: AgentState) -> dict[str, Any]:
     system_prompt = f"{system_prompt}\n\n{schema_context}"
 
     llm = llm_service.get_chat_model(temperature=0.0)
-    llm_with_tools = llm.bind_tools(sql_tools)
+    available_tools = sql_tools
+    llm_with_tools = llm.bind_tools(available_tools)
 
     messages = [SystemMessage(content=system_prompt)]
     memory_message = memory_context_message(state)
@@ -83,7 +84,7 @@ async def sql_agent_node(state: AgentState) -> dict[str, Any]:
     # Run the agent loop (tool calling)
     tool_calls_record: list[dict[str, Any]] = []
     max_iterations = 5
-    selected_database = state.get("database")
+    selected_database = state.get("database", "default")
 
     for iteration in range(max_iterations):
         response = await llm_with_tools.ainvoke(messages)
@@ -99,20 +100,18 @@ async def sql_agent_node(state: AgentState) -> dict[str, Any]:
         for tc in response.tool_calls:
             tool_name = tc["name"]
             tool_args = dict(tc["args"])
-            if (
-                tool_name in {"sql_query_tool", "sql_schema_tool", "sql_validate_tool"}
-                and selected_database is not None
-            ):
+            if tool_name in {"sql_query_tool", "sql_schema_tool", "sql_validate_tool"}:
                 tool_args["database"] = selected_database
 
             # Find the matching tool
-            tool_fn = next((t for t in sql_tools if t.name == tool_name), None)
+            tool_fn = next((t for t in available_tools if t.name == tool_name), None)
             if tool_fn is None:
                 tool_result = f"Unknown tool: {tool_name}"
             else:
                 try:
                     tool_result = await tool_fn.ainvoke(tool_args)
                 except Exception as exc:
+                    logger.exception("sql_tool_execution_failed", tool=tool_name)
                     tool_result = f"Tool error: {exc}"
 
             tool_calls_record.append(

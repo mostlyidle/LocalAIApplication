@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { adapters, createMeetingStreamTicket, ensureMeetingReady, listenToMeetingEvents, permissionReady } from "../meetingBridge";
+import { adapters, createMeetingStreamTicket, ensureMeetingReady, listenToMeetingEvents, permissionReady, stopMeeting } from "../meetingBridge";
 import { setCsrfToken } from "@/lib/auth-session";
 
 const listen = vi.hoisted(() => vi.fn());
@@ -80,7 +80,25 @@ describe("meeting bridge contracts", () => {
 
   it("keeps transport errors and rejects malformed processor payloads", () => {
     expect(adapters.transportStatus({ phase: "failed", error: "final-event drain timed out" })).toEqual({ phase: "failed", message: "final-event drain timed out" });
+    expect(adapters.transportStatus({ type: "error", message: "audio frame was rejected" })).toEqual({ phase: "unknown", message: "audio frame was rejected" });
+    expect(adapters.transportStatus({ type: "degraded", message: "transcription unavailable" })).toEqual({ phase: "unknown", message: "transcription unavailable" });
     expect(adapters.transcript({ segment_id: "s1", source: "system", text: "hello", start_ms: 10, end_ms: 20 })).not.toBeNull();
     expect(adapters.transcript({ segment_id: "s1", source: "system", text: "hello", start_ms: 10 })).toBeNull();
+  });
+
+  it("preserves a backend meeting failure reason", () => {
+    expect(adapters.meetingStatus({ status: "failed", meeting_id: "m-1", failure_reason: "final persistence failed" })).toEqual({
+      status: "failed",
+      meetingId: "m-1",
+      failureReason: "final persistence failed",
+    });
+  });
+
+  it("rejects malformed stop responses at the API boundary", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ status: "failed", failure_reason: 42 }), { status: 200 }),
+    ));
+
+    await expect(stopMeeting("meeting-1")).rejects.toThrow();
   });
 });

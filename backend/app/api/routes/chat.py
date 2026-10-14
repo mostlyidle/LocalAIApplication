@@ -15,10 +15,12 @@ import json
 import time
 import uuid
 from collections.abc import Awaitable, Callable  # noqa: TC003
+from datetime import UTC, datetime
+from typing import Annotated
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: TC002
@@ -26,7 +28,7 @@ from sqlalchemy.orm import selectinload
 
 from app.agents.orchestrator import run_agent, stream_agent
 from app.api.middleware.error_handler import AppError
-from app.api.middleware.rate_limiting import limiter
+from app.api.middleware.rate_limiting import allow_websocket_inference, limiter
 from app.config import settings
 from app.dependencies import (
     WEBSOCKET_SESSION_RECHECK_SECONDS,
@@ -79,6 +81,11 @@ def _attach_memory_sources(
         "memory_sources": sources,
     }
     return result
+
+
+def _utc_datetime(value: datetime) -> datetime:
+    """Treat SQLite's naive persisted timestamps as UTC for API responses."""
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
 # ---------------------------------------------------------------------------
@@ -135,6 +142,7 @@ async def send_message(
             )
         if conversation.title == "New Conversation":
             conversation.title = body.content[:80].strip()
+        conversation.updated_at = datetime.now(UTC)
         await enqueue_conversation_recall(
             db,
             owner_id=owner_id,
@@ -213,6 +221,7 @@ async def send_message(
     # Update conversation title from first user message
     if conversation.title == "New Conversation":
         conversation.title = body.content[:80].strip()
+    conversation.updated_at = datetime.now(UTC)
 
     await enqueue_conversation_recall(
         db,
@@ -372,6 +381,12 @@ async def chat_stream(
                         )
                     continue
 
+            if not allow_websocket_inference(owner_id):
+                await websocket.send_json(
+                    {"type": "error", "content": "Rate limit exceeded. Try again shortly."}
+                )
+                continue
+
             # Accumulators for persistence after streaming completes
             token_chunks: list[str] = []
             tool_calls_data: list[dict] = []
@@ -528,29 +543,47 @@ async def chat_stream(
 
 @router.get("/chat/conversations", response_model=list[ConversationSummary])
 async def list_conversations(
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    q: Annotated[str | None, Query(max_length=256)] = None,
     authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> list[ConversationSummary]:
     """List all conversations ordered by most recent activity."""
-    stmt = (
-        select(Conversation)
-        .options(selectinload(Conversation.messages))
-        .where(Conversation.owner_id == authenticated.account.id)
-        .order_by(Conversation.updated_at.desc())
+    message_stats = (
+        select(
+            Message.conversation_id.label("conversation_id"),
+            func.count(Message.id).label("message_count"),
+            func.max(Message.created_at).label("last_message_at"),
+        )
+        .group_by(Message.conversation_id)
+        .subquery()
     )
+    stmt = (
+        select(
+            Conversation,
+            func.coalesce(message_stats.c.message_count, 0),
+            func.coalesce(message_stats.c.last_message_at, Conversation.created_at),
+        )
+        .outerjoin(message_stats, message_stats.c.conversation_id == Conversation.id)
+        .where(Conversation.owner_id == authenticated.account.id)
+    )
+    if q and q.strip():
+        stmt = stmt.where(Conversation.title.ilike(f"%{q.strip()}%"))
+    stmt = stmt.order_by(Conversation.updated_at.desc()).limit(limit).offset(offset)
     result = await db.execute(stmt)
-    conversations = result.scalars().all()
+    conversations = result.all()
 
     return [
         ConversationSummary(
             id=conv.id,
             title=conv.title,
-            message_count=len(conv.messages),
-            last_message_at=conv.messages[-1].created_at if conv.messages else conv.created_at,
-            created_at=conv.created_at,
+            message_count=message_count,
+            last_message_at=_utc_datetime(last_message_at),
+            created_at=_utc_datetime(conv.created_at),
             exclude_from_memory=conv.exclude_from_memory,
         )
-        for conv in conversations
+        for conv, message_count, last_message_at in conversations
     ]
 
 
@@ -585,8 +618,8 @@ async def get_conversation(
     return {
         "id": conversation.id,
         "title": conversation.title,
-        "created_at": conversation.created_at.isoformat(),
-        "updated_at": conversation.updated_at.isoformat(),
+        "created_at": _utc_datetime(conversation.created_at).isoformat(),
+        "updated_at": _utc_datetime(conversation.updated_at).isoformat(),
         "exclude_from_memory": conversation.exclude_from_memory,
         "messages": [
             {
@@ -596,7 +629,7 @@ async def get_conversation(
                 "content": msg.content,
                 "agent_type": msg.agent_type,
                 "execution": json.loads(msg.execution_metadata) if msg.execution_metadata else None,
-                "created_at": msg.created_at.isoformat(),
+                "created_at": _utc_datetime(msg.created_at).isoformat(),
                 "tool_calls": [
                     {
                         "id": tc.id,
@@ -687,10 +720,7 @@ async def _execute_selected_profile(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    if (
-        profile.target in {"chat", "sql", "document", "web"}
-        and profile.name != "document_analytics"
-    ):
+    if profile.target in {"chat", "sql", "web"}:
         conversation_id = body.conversation_id or str(uuid.uuid4())
         existing = []
         if body.conversation_id:
@@ -920,6 +950,7 @@ async def _persist_ws_messages(
             # Update conversation title from first user message
             if conversation.title == "New Conversation":
                 conversation.title = user_content[:80].strip()
+            conversation.updated_at = datetime.now(UTC)
 
             await enqueue_conversation_recall(
                 db,

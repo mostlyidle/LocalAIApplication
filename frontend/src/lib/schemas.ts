@@ -246,6 +246,7 @@ export const analysisResultSchema = z.object({
   page_count: z.number().nullable().optional(),
   word_count: z.number(),
   status: z.string(),
+  answer: z.string().nullable().optional(),
 });
 
 // ---------------------------------------------------------------------------

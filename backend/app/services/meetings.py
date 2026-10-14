@@ -32,7 +32,7 @@ from app.services.meeting_answers import (
     DeterministicQuestionDetector,
     MeetingAnswerService,
 )
-from app.services.meeting_processor import MeetingAudioProcessor, WindowConsumer
+from app.services.meeting_processor import MeetingAudioProcessor, ProcessorState, WindowConsumer
 from app.services.transcription import (
     ASR_READINESS_TIMEOUT_SECONDS,
     TranscriptionEngine,
@@ -169,7 +169,7 @@ class MeetingService:
                 engine,
                 self._session_factory_for(db),
             )
-            self._ensure_answer_worker(meeting_id, session_id)
+            self._ensure_answer_worker(meeting_id, session_id, meeting.owner_id)
             try:
                 await self.processor.start(
                     meeting_id,
@@ -284,6 +284,7 @@ class MeetingService:
             await closing.wait()
             await db.refresh(meeting)
             if meeting.status in {MeetingStatus.STOPPED.value, MeetingStatus.FAILED.value}:
+                await self.processor.reset_timeline(meeting_id)
                 return meeting
         if meeting.status not in {MeetingStatus.STOPPED.value, MeetingStatus.FAILED.value}:
             meeting.status = MeetingStatus.STOPPED.value
@@ -292,11 +293,24 @@ class MeetingService:
             await db.refresh(meeting)
         try:
             if session_id is not None:
-                await self.processor.stop(meeting_id, session_id)
+                processor_session = await self.processor.stop(meeting_id, session_id)
                 await self.processor.purge(meeting_id, session_id)
+                if (
+                    processor_session is not None
+                    and processor_session.state == ProcessorState.FAILED
+                ):
+                    meeting.status = MeetingStatus.FAILED.value
+                    meeting.failed_at = datetime.now(UTC)
+                    meeting.failure_reason = (
+                        processor_session.failure_reason
+                        or "Audio processing failed while stopping."
+                    )[:500]
+                    await db.commit()
+                    await db.refresh(meeting)
         finally:
             if session_id is not None:
                 await self._close_answer_worker(meeting_id, session_id, drain=True)
+            await self.processor.reset_timeline(meeting_id)
             self._event_queues.pop(meeting_id, None)
             if closing is not None:
                 async with self._session_lock:
@@ -323,6 +337,7 @@ class MeetingService:
                 self._sessions.pop(meeting_id, None)
                 self._event_queues.pop(meeting_id, None)
                 await self._close_answer_worker(meeting_id, active_session, drain=False)
+        await self.processor.reset_timeline(meeting_id)
         if meeting.status == MeetingStatus.STOPPED.value:
             return meeting
         if meeting.status != MeetingStatus.FAILED.value:
@@ -386,6 +401,7 @@ class MeetingService:
             await self.processor.purge(meeting_id, session_id)
         finally:
             await self._close_answer_worker(meeting_id, session_id, drain=False)
+            await self.processor.reset_timeline(meeting_id)
             self._event_queues.pop(meeting_id, None)
         await db.execute(delete(DetectedQuestion).where(DetectedQuestion.meeting_id == meeting_id))
         await db.execute(
@@ -447,7 +463,9 @@ class MeetingService:
     ) -> WindowConsumer:
         """Build the asynchronous transcription/persistence callback."""
 
-        async def consume(header: AudioEnvelopeHeader, payload: bytes, final: bool) -> None:
+        async def consume(
+            header: AudioEnvelopeHeader, payload: bytes, offset_ms: int, final: bool
+        ) -> None:
             try:
                 chunks = await engine.transcribe(
                     payload,
@@ -480,8 +498,8 @@ class MeetingService:
                         source=header.source.value,
                         speaker=header.source.value,
                         text=text,
-                        start_ms=chunk.start_ms,
-                        end_ms=chunk.end_ms,
+                        start_ms=offset_ms + chunk.start_ms,
+                        end_ms=offset_ms + chunk.end_ms,
                     )
                     inference_db.add(segment)
                     await inference_db.flush()
@@ -504,8 +522,8 @@ class MeetingService:
                         segment_id=segment.id,
                         source=header.source,
                         text=text,
-                        start_ms=chunk.start_ms,
-                        end_ms=chunk.end_ms,
+                        start_ms=offset_ms + chunk.start_ms,
+                        end_ms=offset_ms + chunk.end_ms,
                     ),
                 )
 
@@ -533,6 +551,7 @@ class MeetingService:
         self,
         meeting_id: str,
         session_id: str,
+        owner_id: str,
     ) -> asyncio.Queue[PendingMeetingAnswer]:
         """Create one bounded answer worker for the claimed stream session."""
         worker = self._answer_workers.get(meeting_id)
@@ -547,7 +566,7 @@ class MeetingService:
         self._answer_queues[meeting_id] = queue
         self._answer_sessions[meeting_id] = session_id
         self._answer_workers[meeting_id] = asyncio.create_task(
-            self._run_answer_worker(meeting_id, session_id, queue)
+            self._run_answer_worker(meeting_id, session_id, owner_id, queue)
         )
         return queue
 
@@ -572,6 +591,7 @@ class MeetingService:
         self,
         meeting_id: str,
         session_id: str,
+        owner_id: str,
         queue: asyncio.Queue[PendingMeetingAnswer],
     ) -> None:
         """Process answer work independently from the audio processor worker."""
@@ -589,7 +609,8 @@ class MeetingService:
                         continue
                     try:
                         suggestion = await asyncio.wait_for(
-                            self.answer_service.suggest(request.question), timeout=request_timeout
+                            self.answer_service.suggest(request.question, owner_id=owner_id),
+                            timeout=request_timeout,
                         )
                     except asyncio.TimeoutError:
                         await self._emit(
