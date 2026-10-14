@@ -94,9 +94,11 @@ single faint shadow or a tinted surface, not stacked shadows.
 ## Brand
 
 The working product name is **Mallow**, with “Local AI studio” as the
-descriptive line. The mascot is a small, friendly otter rendered as a simple
-vector mark. The shared mark is inline SVG so fur and line colors follow light
-and dark themes; the browser icon uses a matching palette. Keep its expression
+descriptive line. The mascot is a small, friendly cartoon otter with a soft
+rounded face, small round ears, a broad muzzle, bright eyes, and a gentle smile.
+Avoid pointed ears or sharp angles that make it read as a cat or fox. The shared
+mark is inline SVG so fur and line colors follow light and dark themes; the
+browser icon uses the same silhouette, expression, and palette. Keep its face
 readable at sidebar and favicon sizes; do not add decorative emoji.
 
 ## What pages must share
