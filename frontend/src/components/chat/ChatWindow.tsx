@@ -851,9 +851,9 @@ export function ChatWindow() {
         </div>}
         <form
           onSubmit={handleSubmit}
-          className="mx-auto max-w-3xl rounded-2xl border border-input bg-card p-3 shadow-sm focus-within:border-primary/60 sm:p-4"
+          className="mx-auto max-w-3xl rounded-2xl border border-border/45 bg-card p-4 shadow-sm focus-within:border-primary/40 sm:p-5"
         >
-          <label htmlFor="chat-message" className="mb-1 block px-1 text-xs font-semibold text-muted-foreground">Your message</label>
+          <label htmlFor="chat-message" className="mb-1 block px-2 text-xs font-semibold text-muted-foreground">Your message</label>
           <Textarea
             id="chat-message"
             ref={textareaRef}
@@ -865,7 +865,7 @@ export function ChatWindow() {
                 ? "Describe what to do with the attached file(s)..."
                 : "Type a message... (Shift+Enter for new line)"
             }
-            className="min-h-14 max-h-32 resize-none rounded-xl border-0 bg-transparent px-1 text-base shadow-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="min-h-14 max-h-32 resize-none rounded-xl border-0 bg-transparent px-2 text-base shadow-none focus-visible:ring-2 focus-visible:ring-ring sm:px-3"
             rows={2}
             disabled={isStreaming || restoringConversation}
           />
