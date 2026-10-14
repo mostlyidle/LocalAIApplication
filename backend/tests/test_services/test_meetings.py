@@ -6,7 +6,7 @@ import asyncio
 import json
 import struct
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from pydantic import ValidationError
@@ -24,6 +24,9 @@ from app.models.schemas import (
 from app.services.meeting_answers import MeetingAnswerService
 from app.services.meetings import MeetingService
 from app.services.transcription import FakeTranscriptionEngine, TranscriptionChunk
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def _header(meeting_id: str, sequence: int, source: AudioSource = AudioSource.MICROPHONE):
@@ -279,7 +282,9 @@ class TestMeetingService:
         assert stopped_again.stopped_at == stopped_at
         assert meeting.id not in service._sessions
 
-    async def test_stop_reports_final_processor_failure(self, db_session) -> None:
+    async def test_stop_reports_final_processor_failure(
+        self, db_session: AsyncSession
+    ) -> None:
         service = MeetingService(transcription_engine=FakeTranscriptionEngine())
         meeting = await service.create_meeting(
             db_session,
@@ -336,7 +341,9 @@ class TestMeetingService:
             select(func.count(DetectedQuestion.id)).where(DetectedQuestion.meeting_id == meeting.id)
         ) == 0
 
-    async def test_delete_resets_audio_timeline(self, db_session, monkeypatch) -> None:
+    async def test_delete_resets_audio_timeline(
+        self, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setattr("app.services.meetings.settings.meeting_pcm_window_ms", 1)
         engine = FakeTranscriptionEngine()
         service = MeetingService(transcription_engine=engine)

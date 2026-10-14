@@ -92,7 +92,12 @@ enum ControlMessage {
 #[serde(tag = "type", deny_unknown_fields)]
 pub enum BackendEvent {
     #[serde(rename = "status")]
-    Status { status: String, meeting_id: String },
+    Status {
+        status: String,
+        meeting_id: String,
+        #[serde(default)]
+        failure_reason: Option<String>,
+    },
     #[serde(rename = "source_status")]
     SourceStatus {
         meeting_id: String,
@@ -352,9 +357,7 @@ fn run_worker(
                 ) {
                     SessionResult::Stop(stop_warning) => {
                         let _ = socket.send(control(ControlMessage::Stop));
-                        let server_drain_error = (!drain_after_stop(&mut socket, &app)).then(|| {
-                            "backend stopped status was not received before timeout".into()
-                        });
+                        let server_drain_error = drain_after_stop(&mut socket, &app).err();
                         finish(
                             &app,
                             &capture,
@@ -759,40 +762,60 @@ fn control(value: ControlMessage) -> Message {
     )
 }
 
-fn drain_after_stop(socket: &mut WebSocket<MaybeTlsStream<TcpStream>>, app: &AppHandle) -> bool {
+fn drain_after_stop(
+    socket: &mut WebSocket<MaybeTlsStream<TcpStream>>,
+    app: &AppHandle,
+) -> Result<(), String> {
     let deadline = Instant::now() + STOP_DRAIN_TIMEOUT;
     loop {
         if Instant::now() >= deadline {
-            return false;
+            return Err("backend stopped status was not received before timeout".into());
         }
         match socket.read() {
             Ok(Message::Text(text)) => match serde_json::from_str::<BackendEvent>(&text) {
                 Ok(event) => {
-                    let stopped = matches!(
-                        &event,
-                        BackendEvent::Status { status, .. } if status == "stopped"
-                    );
+                    let terminal = match &event {
+                        BackendEvent::Status { status, .. } if status == "stopped" => Some(Ok(())),
+                        BackendEvent::Status {
+                            status,
+                            failure_reason,
+                            ..
+                        } if status == "failed" => Some(Err(failure_reason
+                            .clone()
+                            .unwrap_or_else(|| "backend meeting failed".into()))),
+                        _ => None,
+                    };
                     emit_backend_event(app, event);
-                    if stopped {
-                        return true;
+                    if let Some(result) = terminal {
+                        return result;
                     }
                 }
                 Err(_) => {}
             },
-            Ok(Message::Close(_)) | Err(WebSocketError::ConnectionClosed) => return false,
+            Ok(Message::Close(_)) | Err(WebSocketError::ConnectionClosed) => {
+                return Err(
+                    "backend stopped status was not received before connection closed".into(),
+                )
+            }
             Ok(_) => {}
             Err(WebSocketError::Io(error))
                 if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {}
-            Err(_) => return false,
+            Err(_) => return Err("backend stopped status could not be read".into()),
         }
     }
 }
 
 fn backend_event_terminal(event: &BackendEvent) -> Option<String> {
     match event {
-        BackendEvent::Status { status, .. } if status == "failed" => {
-            Some("backend meeting failed".into())
-        }
+        BackendEvent::Status {
+            status,
+            failure_reason,
+            ..
+        } if status == "failed" => Some(
+            failure_reason
+                .clone()
+                .unwrap_or_else(|| "backend meeting failed".into()),
+        ),
         BackendEvent::Status { status, .. } if status == "stopped" => {
             Some("backend meeting stopped".into())
         }
@@ -1175,6 +1198,19 @@ mod tests {
         .unwrap();
         assert!(backend_event_retryable(&event));
         assert_eq!(backend_event_terminal(&event), None);
+    }
+
+    #[test]
+    fn failed_backend_status_preserves_the_persisted_reason() {
+        let event = serde_json::from_str::<BackendEvent>(
+            r#"{"type":"status","status":"failed","meeting_id":"meeting-1","failure_reason":"final persistence failed"}"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            backend_event_terminal(&event),
+            Some("final persistence failed".into())
+        );
     }
 
     #[test]

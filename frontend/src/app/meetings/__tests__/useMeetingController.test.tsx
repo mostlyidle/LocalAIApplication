@@ -9,6 +9,9 @@ const bridge = vi.hoisted(() => ({
   ensureMeetingReady: vi.fn(async () => undefined),
   startNativeCapture: vi.fn(async () => undefined),
   startMeetingTransport: vi.fn(async () => undefined),
+  stopMeetingTransport: vi.fn(async () => ({})),
+  stopNativeCapture: vi.fn(async () => undefined),
+  stopMeeting: vi.fn(async () => ({ status: "stopped", failure_reason: null as string | null })),
   stopMeetingResources: vi.fn(async () => undefined),
   deleteMeeting: vi.fn(async () => undefined),
   isNativeMeetingHost: vi.fn(() => true),
@@ -38,6 +41,18 @@ describe("meeting startup cancellation", () => {
     expect(bridge.startNativeCapture).not.toHaveBeenCalled();
     expect(bridge.startMeetingTransport).not.toHaveBeenCalled();
     expect(bridge.stopMeetingResources).toHaveBeenCalledWith("m-race");
+  });
+
+  it("shows the persisted backend failure when stopping", async () => {
+    bridge.stopMeeting.mockResolvedValueOnce({ status: "failed", failure_reason: "final persistence failed" });
+    const { result } = renderHook(() => useMeetingController());
+
+    act(() => { result.current.setConsent(true); });
+    await act(async () => { await result.current.start(); });
+    await act(async () => { await result.current.stop(); });
+
+    expect(result.current.error).toBe("final persistence failed");
+    expect(result.current.phase).toBe("review");
   });
 
   it.each(["readiness", "native start"] as const)("reset during %s does not continue startup", async (blockedAt) => {

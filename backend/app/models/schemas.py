@@ -442,6 +442,7 @@ class MeetingStatusEvent(BaseModel):
     type: Literal["status"] = "status"
     status: MeetingStatus
     meeting_id: str
+    failure_reason: str | None = None
 
 
 class MeetingSourceStatusEvent(BaseModel):
