@@ -73,8 +73,10 @@ async def upload_document(
     if extension not in settings.allowed_extensions_set:
         raise UnsupportedFormatError(extension)
 
-    # Validate size (read header to check)
-    content = await file.read()
+    # Starlette knows the parsed file size; cap reads if that metadata is absent.
+    if file.size is not None and file.size > settings.max_upload_size_bytes:
+        raise DocumentTooLargeError(settings.max_upload_size_bytes)
+    content = await file.read(settings.max_upload_size_bytes + 1)
     size_bytes = len(content)
     if size_bytes > settings.max_upload_size_bytes:
         raise DocumentTooLargeError(settings.max_upload_size_bytes)

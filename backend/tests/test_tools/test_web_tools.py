@@ -155,18 +155,29 @@ class TestExtractLinks:
 class TestFetchUrl:
     """Tests for the fetch_url async function."""
 
+    @staticmethod
+    def _mock_stream_client(response: MagicMock) -> MagicMock:
+        stream_context = MagicMock()
+        stream_context.__aenter__ = AsyncMock(return_value=response)
+        stream_context.__aexit__ = AsyncMock(return_value=None)
+        mock_client = MagicMock()
+        mock_client.stream = MagicMock(return_value=stream_context)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        return mock_client
+
     async def test_successful_fetch(self):
         """Successful HTTP GET returns url, status, content, headers."""
         mock_response = MagicMock()
         mock_response.url = "https://example.com"
         mock_response.status_code = 200
         mock_response.headers = {"content-type": "text/html"}
-        mock_response.text = "<html><body>Hello</body></html>"
+        mock_response.encoding = "utf-8"
+        mock_response.aiter_bytes = lambda chunk_size: self._chunks(
+            b"<html><body>Hello</body></html>"
+        )
 
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=mock_response)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client = self._mock_stream_client(mock_response)
 
         with patch("app.tools.web_tools.httpx.AsyncClient", return_value=mock_client):
             result = await fetch_url("https://example.com")
@@ -176,10 +187,10 @@ class TestFetchUrl:
 
     async def test_timeout_error(self):
         """Timeout returns error dict, not exception."""
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(side_effect=httpx.TimeoutException("timed out"))
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client = self._mock_stream_client(MagicMock())
+        mock_client.stream.return_value.__aenter__.side_effect = httpx.TimeoutException(
+            "timed out"
+        )
 
         with patch("app.tools.web_tools.httpx.AsyncClient", return_value=mock_client):
             result = await fetch_url("https://slow.com")
@@ -189,10 +200,8 @@ class TestFetchUrl:
 
     async def test_connect_error(self):
         """Connection error returns error dict."""
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(side_effect=httpx.ConnectError("refused"))
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client = self._mock_stream_client(MagicMock())
+        mock_client.stream.return_value.__aenter__.side_effect = httpx.ConnectError("refused")
 
         with patch("app.tools.web_tools.httpx.AsyncClient", return_value=mock_client):
             result = await fetch_url("https://down.com")
@@ -208,10 +217,8 @@ class TestFetchUrl:
 
     async def test_generic_exception(self):
         """Unexpected exceptions are caught gracefully."""
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(side_effect=RuntimeError("unexpected"))
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client = self._mock_stream_client(MagicMock())
+        mock_client.stream.return_value.__aenter__.side_effect = RuntimeError("unexpected")
 
         with patch("app.tools.web_tools.httpx.AsyncClient", return_value=mock_client):
             result = await fetch_url("https://broken.com")
@@ -220,22 +227,31 @@ class TestFetchUrl:
 
     async def test_content_truncation(self):
         """Content exceeding MAX_CONTENT_LENGTH is truncated."""
-        huge_text = "x" * (MAX_CONTENT_LENGTH + 1000)
         mock_response = MagicMock()
         mock_response.url = "https://big.com"
         mock_response.status_code = 200
         mock_response.headers = {"content-type": "text/html"}
-        mock_response.text = huge_text
+        mock_response.encoding = "utf-8"
+        yielded_chunks: list[bytes] = []
 
-        mock_client = AsyncMock()
-        mock_client.get = AsyncMock(return_value=mock_response)
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=None)
+        async def chunks(chunk_size: int):
+            for content in (b"x" * MAX_CONTENT_LENGTH, b"excess" * 1000):
+                yielded_chunks.append(content)
+                yield content
+
+        mock_response.aiter_bytes = chunks
+
+        mock_client = self._mock_stream_client(mock_response)
 
         with patch("app.tools.web_tools.httpx.AsyncClient", return_value=mock_client):
             result = await fetch_url("https://big.com")
 
         assert len(result["text"]) == MAX_CONTENT_LENGTH
+        assert len(yielded_chunks) == 2
+
+    @staticmethod
+    async def _chunks(content: bytes):
+        yield content
 
 
 # =============================================================================
