@@ -2,7 +2,7 @@
 
 import { useRef, useEffect, useState, type FormEvent, type ChangeEvent, type ReactNode } from "react";
 import Link from "next/link";
-import { Send, Plus, Loader2, Paperclip, X, Image as ImageIcon, History, Sparkles, Lightbulb, BookOpen, ListChecks, PenLine, SlidersHorizontal, Search } from "lucide-react";
+import { Send, Plus, Loader2, X, Image as ImageIcon, History, Sparkles, Lightbulb, BookOpen, ListChecks, PenLine, SlidersHorizontal, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -851,9 +851,9 @@ export function ChatWindow() {
         </div>}
         <form
           onSubmit={handleSubmit}
-          className="mx-auto max-w-3xl rounded-2xl border border-input bg-card p-3 shadow-sm focus-within:border-primary/60 sm:p-4"
+          className="mx-auto max-w-3xl rounded-2xl border border-border/45 bg-card p-4 shadow-sm focus-within:border-primary/40 sm:p-5"
         >
-          <label htmlFor="chat-message" className="mb-1 block px-1 text-xs font-semibold text-muted-foreground">Your message</label>
+          <label htmlFor="chat-message" className="mb-1 block px-2 text-xs font-semibold text-muted-foreground">Your message</label>
           <Textarea
             id="chat-message"
             ref={textareaRef}
@@ -865,7 +865,7 @@ export function ChatWindow() {
                 ? "Describe what to do with the attached file(s)..."
                 : "Type a message... (Shift+Enter for new line)"
             }
-            className="min-h-14 max-h-32 resize-none rounded-xl border-0 bg-transparent px-1 text-base shadow-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="min-h-14 max-h-32 resize-none rounded-xl border-0 bg-transparent px-2 text-base shadow-none focus-visible:ring-0 sm:px-3"
             rows={2}
             disabled={isStreaming || restoringConversation}
           />
@@ -875,24 +875,12 @@ export function ChatWindow() {
               variant="ghost"
               size="icon"
               className="h-11 w-11 shrink-0 rounded-xl"
-              onClick={startNewConversation}
-              disabled={isStreaming || restoringConversation}
-              title="New conversation"
-              aria-label="New conversation"
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-11 w-11 shrink-0 rounded-xl"
               onClick={() => fileInputRef.current?.click()}
               disabled={isStreaming}
-              title="Attach file"
-              aria-label="Attach file"
+              title="Add files"
+              aria-label="Add files"
             >
-              <Paperclip className="h-4 w-4" />
+              <Plus className="h-4 w-4" />
             </Button>
             <input
               ref={fileInputRef}

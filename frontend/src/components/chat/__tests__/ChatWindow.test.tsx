@@ -464,7 +464,7 @@ describe("ChatWindow", () => {
     const user = userEvent.setup();
     render(<ChatWindow />);
 
-    const newBtn = screen.getByTitle("New conversation");
+    const newBtn = screen.getByRole("button", { name: "New chat" });
     await user.click(newBtn);
 
     expect(mockClearMessages).toHaveBeenCalled();
@@ -491,11 +491,11 @@ describe("ChatWindow", () => {
     expect(mockConnect).toHaveBeenCalled();
   });
 
-  it("has an attach file button", () => {
+  it("has an add files button", () => {
     render(<ChatWindow />);
 
-    const attachBtn = screen.getByTitle("Attach file");
-    expect(attachBtn).toBeInTheDocument();
+    const addFilesButton = screen.getByRole("button", { name: "Add files" });
+    expect(addFilesButton).toBeInTheDocument();
   });
 
   it("uploads file and shows attachment preview", async () => {

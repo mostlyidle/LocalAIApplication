@@ -67,9 +67,9 @@ describe("AppSidebar", () => {
     mockSetOpenMobile.mockClear();
   });
 
-  it("renders the Local AI brand title", () => {
+  it("renders the Mallow brand title", () => {
     render(<AppSidebar />);
-    expect(screen.getByText("Local AI")).toBeDefined();
+    expect(screen.getByText("Mallow")).toBeDefined();
   });
 
   it("closes the mobile drawer after selecting a page", () => {
@@ -81,7 +81,7 @@ describe("AppSidebar", () => {
 
   it("renders the subtitle", () => {
     render(<AppSidebar />);
-    expect(screen.getByText("Fully Local Intelligence")).toBeDefined();
+    expect(screen.getByText("Local AI studio")).toBeDefined();
   });
 
   it("renders all navigation items", () => {
@@ -143,8 +143,10 @@ describe("AppSidebar", () => {
     expect(screen.getByText("Local")).toBeDefined();
   });
 
-  it("renders the Navigation group label", () => {
+  it("renders the navigation groups", () => {
     render(<AppSidebar />);
-    expect(screen.getByText("Navigation")).toBeDefined();
+    expect(screen.getByText("Ask & explore")).toBeDefined();
+    expect(screen.getByText("Get things done")).toBeDefined();
+    expect(screen.getByText("Personalize")).toBeDefined();
   });
 });
