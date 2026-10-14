@@ -239,6 +239,19 @@ describe("ChatWindow", () => {
     expect(window.localStorage.getItem("local-ai-active-conversation:account-alice")).toBeNull();
   });
 
+  it("closes model options when starting a new chat", async () => {
+    const user = userEvent.setup();
+    render(<ChatWindow />);
+    const optionsButton = screen.getByRole("button", { name: "Options" });
+
+    await user.click(optionsButton);
+    expect(optionsButton).toHaveAttribute("aria-expanded", "true");
+    await user.click(screen.getByRole("button", { name: "New chat" }));
+
+    expect(optionsButton).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("Choose an agent profile to configure its model options.")).not.toBeInTheDocument();
+  });
+
   it("renders empty state when no messages", () => {
     render(<ChatWindow />);
 
