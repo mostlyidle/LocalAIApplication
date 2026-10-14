@@ -359,7 +359,9 @@ class TestExecuteQuery:
         ):
             await execute_query("DELETE FROM users")
 
-    async def test_write_mode_commits_successful_statements(self, sql_engine):
+    async def test_write_mode_commits_successful_statements(
+        self, sql_engine: AsyncEngine
+    ) -> None:
         with (
             patch("app.tools.sql_tools.get_sql_engine", return_value=sql_engine),
             patch("app.tools.sql_tools.settings.sql_allow_writes", True),
@@ -389,7 +391,7 @@ class TestExecuteQuery:
         assert "Alice" in names
         assert "Charlie" in names
 
-    async def test_bad_query_raises(self, sql_engine):
+    async def test_bad_query_raises(self, sql_engine: AsyncEngine) -> None:
         with patch("app.tools.sql_tools.get_sql_engine", return_value=sql_engine), pytest.raises(
             SQLExecutionError
         ):

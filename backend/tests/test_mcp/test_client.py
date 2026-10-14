@@ -225,11 +225,11 @@ class TestDiscoverStdio:
         result = await manager._discover_stdio(config, "test")
         assert result == []
 
-    async def test_times_out_and_closes_a_stalled_server(self):
+    async def test_times_out_and_closes_a_stalled_server(self) -> None:
         manager = MCPClientManager()
         connection = MagicMock()
 
-        async def stall(_params):
+        async def stall(_params: Any) -> None:
             await asyncio.sleep(1)
 
         connection.connect = stall
@@ -292,7 +292,7 @@ class TestConvertMcpTool:
         result = manager._convert_mcp_tool(mcp_tool, session, "srv")
         assert isinstance(result, StructuredTool)
 
-    def test_preserves_array_and_object_input_schema_types(self):
+    def test_preserves_array_and_object_input_schema_types(self) -> None:
         manager = MCPClientManager()
         mcp_tool = MagicMock()
         mcp_tool.name = "structured"

@@ -26,6 +26,8 @@ const statusLabels: Record<ActionItemRecord["status"], string> = {
 };
 type PlannerSourceType = "chat" | "meeting" | "document";
 interface PlannerSource { id: string; type: PlannerSourceType; title: string }
+const CONVERSATION_PAGE_SIZE = 50;
+const CONVERSATION_PAGE_LOOKAHEAD = 1;
 
 export default function ActionItemsPage() {
   const [items, setItems] = useState<ActionItemRecord[]>([]);
@@ -35,6 +37,9 @@ export default function ActionItemsPage() {
   const [dueDate, setDueDate] = useState("");
   const [editing, setEditing] = useState<ActionItemRecord | null>(null);
   const [sources, setSources] = useState<PlannerSource[]>([]);
+  const [conversationOffset, setConversationOffset] = useState(0);
+  const [hasMoreConversations, setHasMoreConversations] = useState(false);
+  const [loadingOlderConversations, setLoadingOlderConversations] = useState(false);
   const [sourceType, setSourceType] = useState<PlannerSourceType>("chat");
   const [sourceId, setSourceId] = useState("");
   const [suggestions, setSuggestions] = useState<ActionItemSuggestion[]>([]);
@@ -48,11 +53,17 @@ export default function ActionItemsPage() {
     setLoading(true);
     try {
       const [actionItems, conversations, documents, meetings] = await Promise.all([
-        getActionItems(), getConversations(), getDocuments(), getMeetings(),
+        getActionItems(),
+        getConversations(CONVERSATION_PAGE_SIZE + CONVERSATION_PAGE_LOOKAHEAD),
+        getDocuments(),
+        getMeetings(),
       ]);
       setItems(actionItems.items);
+      const firstConversations = conversations.conversations.slice(0, CONVERSATION_PAGE_SIZE);
+      setConversationOffset(firstConversations.length);
+      setHasMoreConversations(conversations.conversations.length > CONVERSATION_PAGE_SIZE);
       setSources([
-        ...conversations.conversations.map((conversation) => ({
+        ...firstConversations.map((conversation) => ({
           id: conversation.id, type: "chat" as const, title: conversation.title,
         })),
         ...documents.documents.map((document) => ({
@@ -72,6 +83,50 @@ export default function ActionItemsPage() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  const refreshItems = async () => {
+    try {
+      const actionItems = await getActionItems();
+      setItems(actionItems.items);
+      setError("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not load action items.");
+    }
+  };
+
+  const loadOlderConversations = async () => {
+    setLoadingOlderConversations(true);
+    try {
+      const page = await getConversations(
+        CONVERSATION_PAGE_SIZE + CONVERSATION_PAGE_LOOKAHEAD,
+        conversationOffset,
+      );
+      const pageConversations = page.conversations.slice(0, CONVERSATION_PAGE_SIZE);
+      setSources((current) => {
+        const existingChatIds = new Set(
+          current.filter((source) => source.type === "chat").map((source) => source.id),
+        );
+        const newConversations = pageConversations.filter((conversation) => {
+          if (existingChatIds.has(conversation.id)) return false;
+          existingChatIds.add(conversation.id);
+          return true;
+        });
+        return [
+          ...current,
+          ...newConversations.map((conversation) => ({
+            id: conversation.id, type: "chat" as const, title: conversation.title,
+          })),
+        ];
+      });
+      setConversationOffset((current) => current + pageConversations.length);
+      setHasMoreConversations(page.conversations.length > CONVERSATION_PAGE_SIZE);
+      setError("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not load older chats.");
+    } finally {
+      setLoadingOlderConversations(false);
+    }
+  };
 
   const resetForm = () => {
     setEditing(null);
@@ -104,7 +159,7 @@ export default function ActionItemsPage() {
         });
       }
       resetForm();
-      await load();
+      await refreshItems();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save this action item.");
     } finally {
@@ -123,7 +178,7 @@ export default function ActionItemsPage() {
   const changeStatus = async (item: ActionItemRecord, status: ActionItemRecord["status"]) => {
     try {
       await updateActionItem(item.id, { revision: item.revision, status });
-      await load();
+      await refreshItems();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not update this action item.");
     }
@@ -132,7 +187,7 @@ export default function ActionItemsPage() {
   const remove = async (item: ActionItemRecord) => {
     try {
       await deleteActionItem(item.id);
-      await load();
+      await refreshItems();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not delete this action item.");
     }
@@ -167,7 +222,7 @@ export default function ActionItemsPage() {
         source_quote: suggestion.source_quote,
       });
       setSuggestions((current) => current.filter((item) => item !== suggestion));
-      await load();
+      await refreshItems();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save this suggestion.");
     } finally {
@@ -220,7 +275,31 @@ export default function ActionItemsPage() {
         </CardHeader>
         <CardContent className="grid gap-4 sm:grid-cols-[1fr_2fr_auto] sm:items-end">
           <div className="space-y-2"><Label htmlFor="planner-source-type">Source type</Label><Select value={sourceType} onValueChange={(value) => { setSourceType(value as PlannerSourceType); setSourceId(""); setSuggestions([]); }}><SelectTrigger id="planner-source-type" className="w-full"><SelectValue /></SelectTrigger><SelectContent position="popper" align="start"><SelectItem value="chat">Chat</SelectItem><SelectItem value="meeting">Meeting</SelectItem><SelectItem value="document">Document</SelectItem></SelectContent></Select></div>
-          <div className="space-y-2"><Label htmlFor="planner-source">Source</Label><Select value={sourceId} onValueChange={setSourceId}><SelectTrigger id="planner-source" className="w-full"><SelectValue placeholder={`Choose a ${sourceType}…`} /></SelectTrigger><SelectContent position="popper" align="start">{availableSources.map((source) => <SelectItem key={source.id} value={source.id}>{source.title}</SelectItem>)}</SelectContent></Select></div>
+          <div className="space-y-2">
+            <Label htmlFor="planner-source">Source</Label>
+            <Select value={sourceId} onValueChange={setSourceId}>
+              <SelectTrigger id="planner-source" className="w-full">
+                <SelectValue placeholder={`Choose a ${sourceType}…`} />
+              </SelectTrigger>
+              <SelectContent position="popper" align="start">
+                {availableSources.map((source) => (
+                  <SelectItem key={source.id} value={source.id}>{source.title}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {sourceType === "chat" && hasMoreConversations && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void loadOlderConversations()}
+                disabled={loading || loadingOlderConversations}
+              >
+                {loadingOlderConversations && <Loader2 className="animate-spin" />}
+                {loadingOlderConversations ? "Loading chats…" : "Load older chats"}
+              </Button>
+            )}
+          </div>
           <Button onClick={() => void runPlanner()} disabled={proposing || !sourceId}>{proposing ? <Loader2 className="animate-spin" /> : <Sparkles />} Suggest next steps</Button>
         </CardContent>
       </Card>

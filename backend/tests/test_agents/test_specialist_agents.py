@@ -10,11 +10,14 @@ We verify:
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # =============================================================================
 # Helpers
@@ -144,13 +147,9 @@ class TestChatAgent:
         assert result["metadata"]["existing_key"] == "value"
         assert result["metadata"]["agent_used"] == "chat"
 
-    async def test_invokes_discovered_mcp_tools(self) -> None:
-        tool_response = _mock_llm_response(
-            "", tool_calls=[{"name": "weather_forecast", "args": {"city": "Toronto"}, "id": "mcp-1"}]
-        )
-        final_response = _mock_llm_response("It will be sunny.")
-        mock_service = _mock_llm_service()
-        mock_service.get_chat_model().ainvoke = AsyncMock(side_effect=[tool_response, final_response])
+    async def test_chat_agent_does_not_receive_operator_mcp_tools(self) -> None:
+        response = _mock_llm_response("I cannot access operator tools.")
+        mock_service = _mock_llm_service(response)
         external_tool = MagicMock()
         external_tool.name = "weather_forecast"
         external_tool.ainvoke = AsyncMock(return_value="Forecast: sunny")
@@ -160,10 +159,9 @@ class TestChatAgent:
 
             result = await chat_agent_node(_make_state(external_tools=[external_tool]))
 
-        mock_service.get_chat_model().bind_tools.assert_called_once_with([external_tool])
-        external_tool.ainvoke.assert_awaited_once_with({"city": "Toronto"})
-        assert result["messages"][0].content == "It will be sunny."
-        assert result["tool_calls"][0]["tool_name"] == "weather_forecast"
+        mock_service.get_chat_model().bind_tools.assert_not_called()
+        external_tool.ainvoke.assert_not_awaited()
+        assert result["messages"][0].content == "I cannot access operator tools."
 
 
 # =============================================================================
@@ -448,7 +446,9 @@ class TestDocumentAgent:
 
         assert result["tool_calls"][0]["tool_output"].startswith("Tool error")
 
-    async def test_document_agent_cannot_read_unattached_local_files(self, tmp_path) -> None:
+    async def test_document_agent_cannot_read_unattached_local_files(
+        self, tmp_path: Path
+    ) -> None:
         private_file = tmp_path / "private.txt"
         private_file.write_text("account secret", encoding="utf-8")
         tool_call_response = _mock_llm_response(

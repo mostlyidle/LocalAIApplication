@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import AsyncClient
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from fastapi import FastAPI
 
 
 class TestListTools:
@@ -57,7 +61,9 @@ class TestListTools:
             params = tool["parameters"]
             assert isinstance(params, dict)
 
-    async def test_lists_and_executes_discovered_mcp_tool(self, client: AsyncClient, app):
+    async def test_operator_mcp_tools_are_not_exposed_to_accounts(
+        self, client: AsyncClient, app: FastAPI
+    ) -> None:
         class WeatherArguments(BaseModel):
             city: str
 
@@ -66,18 +72,17 @@ class TestListTools:
         external_tool.description = "Get a local weather forecast"
         external_tool.args_schema = WeatherArguments
         external_tool.ainvoke = AsyncMock(return_value="Sunny")
-        app.state.mcp_tools = [external_tool]
+        app.state.operator_mcp_tools = [external_tool]
 
         listed = await client.get("/api/v1/tools")
-        assert any(tool["name"] == "weather_get_forecast" for tool in listed.json())
+        assert all(tool["name"] != "weather_get_forecast" for tool in listed.json())
 
         executed = await client.post(
             "/api/v1/tools/execute",
             json={"tool_name": "weather_get_forecast", "arguments": {"city": "Toronto"}},
         )
-        assert executed.status_code == 200
-        assert executed.json()["output"] == "Sunny"
-        external_tool.ainvoke.assert_awaited_once_with({"city": "Toronto"})
+        assert executed.status_code == 403
+        external_tool.ainvoke.assert_not_awaited()
 
 
 class TestExecuteTool:

@@ -10,7 +10,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -19,6 +19,11 @@ from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request as StarletteRequest
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
+    from fastapi import FastAPI
 
 from app.models.db_models import (
     LEGACY_ACCOUNT_ID,
@@ -150,8 +155,8 @@ class TestSendMessage:
         assert json.loads(messages[0].execution_metadata)["artifacts"]["prompt_id"] == "job-1"
 
     async def test_renamed_document_profile_keeps_uploaded_asset_context(
-        self, client: AsyncClient, app, db_session: AsyncSession, tmp_path: Path
-    ):
+        self, client: AsyncClient, app: FastAPI, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
         from app.models.profile_schemas import AgentResult, ExecutionMetadata
 
         registry = app.state.agent_registry
@@ -600,7 +605,7 @@ class TestListConversationsDirect:
 
     async def test_list_conversations_paginates_newest_first(
         self, client: AsyncClient, db_session: AsyncSession
-    ):
+    ) -> None:
         db_session.add_all(
             [
                 Conversation(
@@ -1410,8 +1415,8 @@ class TestWebSocketStream:
                 assert r2["content"] == "reply 2"
                 ws.receive_json()  # done
 
-    def test_websocket_chat_enforces_the_configured_inference_quota(self):
-        async def mock_stream(**kwargs):
+    def test_websocket_chat_enforces_the_configured_inference_quota(self) -> None:
+        async def mock_stream(**kwargs: Any) -> AsyncIterator[dict[str, Any]]:
             yield {"type": "done", "metadata": {}}
 
         client, app = self._make_test_client()

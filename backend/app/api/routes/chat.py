@@ -179,7 +179,6 @@ async def send_message(
         existing_messages=existing_messages,
         owner_id=owner_id,
         system_prompts=request.app.state.agent_registry.default_system_prompts(),
-        external_tools=getattr(request.app.state, "mcp_tools", []),
     )
 
     # Extract response content
@@ -478,7 +477,6 @@ async def chat_stream(
                         existing_messages=existing_messages,
                         owner_id=owner_id,
                         system_prompts=websocket.app.state.agent_registry.default_system_prompts(),
-                        external_tools=getattr(websocket.app.state, "mcp_tools", []),
                     ):
                         await consume_event(event)
             except HTTPException as exc:
@@ -745,7 +743,6 @@ async def _execute_selected_profile(
                     forced_agent=profile.target,
                     owner_id=owner_id,
                     system_prompts={profile.target: registry.system_prompt(profile.name)},
-                    external_tools=getattr(app.state, "mcp_tools", []),
                 )
             else:
                 state = None
@@ -757,7 +754,6 @@ async def _execute_selected_profile(
                     forced_agent=profile.target,
                     owner_id=owner_id,
                     system_prompts={profile.target: registry.system_prompt(profile.name)},
-                    external_tools=getattr(app.state, "mcp_tools", []),
                 ):
                     if event.get("type") == "done":
                         state = event.get("state")

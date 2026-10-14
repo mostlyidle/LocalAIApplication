@@ -49,7 +49,7 @@ async def web_agent_node(state: AgentState) -> dict[str, Any]:
     logger.info("web_agent_invoked", conversation_id=state.get("conversation_id"))
 
     llm = llm_service.get_chat_model(temperature=0.2)
-    available_tools = web_tools + state.get("external_tools", [])
+    available_tools = web_tools
     llm_with_tools = llm.bind_tools(available_tools)
 
     system_prompt = state.get("system_prompts", {}).get("web", WEB_SYSTEM_PROMPT)
@@ -83,6 +83,7 @@ async def web_agent_node(state: AgentState) -> dict[str, Any]:
                 try:
                     tool_result = await tool_fn.ainvoke(tool_args)
                 except Exception as exc:
+                    logger.exception("web_tool_execution_failed", tool=tool_name)
                     tool_result = f"Tool error: {exc}"
 
             tool_calls_record.append(

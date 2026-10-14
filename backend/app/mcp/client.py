@@ -284,10 +284,9 @@ class MCPClientManager:
                     return "\n".join(parts) if parts else str(result)
                 return str(result)
             except Exception as exc:
-                logger.error(
+                logger.exception(
                     "mcp_tool_call_failed",
                     tool=tool_name,
-                    error=str(exc),
                 )
                 return f"Tool error: {exc}"
 

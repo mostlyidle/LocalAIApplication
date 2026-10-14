@@ -29,7 +29,7 @@ class TestDatabaseFixtures:
         result = await db_session.execute(text("SELECT 1"))
         assert result.scalar() == 1
 
-    async def test_sqlite_connections_enable_foreign_keys(self):
+    async def test_sqlite_connections_enable_foreign_keys(self) -> None:
         engine = create_async_engine("sqlite+aiosqlite://")
         _enable_sqlite_wal(engine)
         try:

@@ -247,7 +247,7 @@ async def test_update_requires_matching_revision_and_delete_hides_memory(
 @pytest.mark.asyncio
 async def test_memory_update_can_clear_scope_and_rejects_null_content(
     client: AsyncClient,
-):
+) -> None:
     created = await client.post(
         "/api/v1/memory",
         json={"content": "Use blue", "kind": "preference", "project_scope": "Work"},

@@ -5,10 +5,15 @@ from __future__ import annotations
 import io
 from pathlib import Path
 from types import SimpleNamespace
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from httpx import AsyncClient
+
+if TYPE_CHECKING:
+    from fastapi import FastAPI
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class TestDocumentUpload:
@@ -51,7 +56,9 @@ class TestDocumentUpload:
         data = resp.json()
         assert data["error"]["code"] == "UNSUPPORTED_FORMAT"
 
-    async def test_rejects_oversized_upload_before_reading_file(self, client: AsyncClient):
+    async def test_rejects_oversized_upload_before_reading_file(
+        self, client: AsyncClient
+    ) -> None:
         content = b"x" * (4 * 1024 * 1024 + 1)
         files = {"file": ("large.txt", io.BytesIO(content), "text/plain")}
         with (
@@ -129,8 +136,8 @@ class TestDocumentGetAndDelete:
         assert get_resp2.status_code == 404
 
     async def test_delete_cleans_legacy_ingest_vectors_for_owned_collections(
-        self, client: AsyncClient, app, db_session
-    ):
+        self, client: AsyncClient, app: FastAPI, db_session: AsyncSession
+    ) -> None:
         from app.dependencies import get_vector_store
         from app.models.db_models import Account, Document, LEGACY_ACCOUNT_ID, RagCollection
 
@@ -172,8 +179,12 @@ class TestDocumentGetAndDelete:
 
 class TestDocumentAnalyze:
     async def test_user_question_is_answered_alongside_extraction(
-        self, client: AsyncClient, app, db_session, tmp_path
-    ):
+        self,
+        client: AsyncClient,
+        app: FastAPI,
+        db_session: AsyncSession,
+        tmp_path: Path,
+    ) -> None:
         from app.dependencies import get_document_parser
         from app.models.db_models import Document, LEGACY_ACCOUNT_ID
         from app.services.document_parser import ParsedDocument

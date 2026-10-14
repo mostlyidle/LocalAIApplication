@@ -166,7 +166,9 @@ class TestMeetingService:
         assert meeting.id not in service.processor._sessions
         await service.disconnect_stream(meeting.id, "session-1")
 
-    async def test_transcript_timestamps_continue_across_pcm_windows(self, db_session, monkeypatch):
+    async def test_transcript_timestamps_continue_across_pcm_windows(
+        self, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setattr("app.services.meetings.settings.meeting_pcm_window_ms", 1)
         service = MeetingService(
             transcription_engine=FakeTranscriptionEngine(

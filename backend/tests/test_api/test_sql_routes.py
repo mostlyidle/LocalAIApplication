@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, patch
 
 from httpx import AsyncClient
 
 from app.models.db_models import LEGACY_ACCOUNT_ID, SqlConnection
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+    from fastapi import FastAPI
+    from pytest import MonkeyPatch
 
 
 class TestSQLSchemaEndpoint:
@@ -112,7 +119,9 @@ class TestSQLExecuteEndpoint:
 
 
 class TestSQLQueryEndpoint:
-    async def test_uses_saved_sql_system_prompt(self, client: AsyncClient, app):
+    async def test_uses_saved_sql_system_prompt(
+        self, client: AsyncClient, app: FastAPI
+    ) -> None:
         profile = app.state.agent_registry.default_for("sql")
         saved_prompt = "Only query the data needed to answer."
         app.state.agent_registry._prompts.set_system_override(
@@ -224,7 +233,12 @@ class TestSQLConnectionsEndpoint:
         registry = await db_session.get(SqlConnection, "reports")
         assert registry is not None and registry.owner_id == LEGACY_ACCOUNT_ID
 
-    async def test_cannot_register_the_application_database(self, client, tmp_path, monkeypatch):
+    async def test_cannot_register_the_application_database(
+        self,
+        client: AsyncClient,
+        tmp_path: Path,
+        monkeypatch: MonkeyPatch,
+    ) -> None:
         app_db = tmp_path / "application.db"
         monkeypatch.setattr(
             "app.api.routes.sql.settings.app_database_url",
