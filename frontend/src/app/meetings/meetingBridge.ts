@@ -3,9 +3,11 @@ import { getCsrfToken } from "@/lib/auth-session";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { AudioSourceState, CapabilityCheck, DetectedQuestion, TranscriptLine } from "@/types/meeting";
+import { z } from "zod";
 
 type EventName = "capture-status" | "capture-meter" | "transport-status" | "meeting-status" | "backend-event" | "degraded" | "backpressure";
 type EventPayload = AudioSourceState | TranscriptLine | DetectedQuestion | { message: string; error?: string; status?: string; failure_reason?: string | null; phase?: string; meeting_id?: string; type?: string; source?: string; rms?: number; peak?: number; running?: boolean; frames_buffered?: number; dropped_frames?: number; question_id?: string; text?: string; answer?: string; citations?: string[]; segment_id?: string; start_ms?: number; end_ms?: number };
+const meetingStopResponseSchema = z.object({ status: z.enum(["created", "active", "stopped", "failed"]), failure_reason: z.string().nullable().optional() });
 
 export function isNativeMeetingHost() { return typeof window !== "undefined" && Boolean((window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__); }
 const object = (value: unknown): Record<string, unknown> => typeof value === "object" && value !== null ? value as Record<string, unknown> : {};
@@ -50,7 +52,7 @@ export async function startNativeCapture() { await invoke("start_capture", { req
 export async function stopNativeCapture() { await invoke("stop_capture", { source: "microphone" }); await invoke("stop_capture", { source: "system" }); }
 export async function startMeetingTransport(meetingId: string, streamTicket: string) { if (!isNativeMeetingHost()) throw new Error("Native meeting transport is unavailable in a browser."); await invoke("start_meeting_transport", { request: { meetingId, streamTicket, backendUrl: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000" } }); }
 export async function stopMeetingTransport(): Promise<{ phase?: string; error?: string }> { if (!isNativeMeetingHost()) return {}; return invoke("stop_meeting_transport"); }
-export async function stopMeeting(meetingId: string): Promise<{ status: string; failure_reason?: string | null }> { return api(`/meetings/${meetingId}/stop`, { method: "POST", body: JSON.stringify({}) }); }
+export async function stopMeeting(meetingId: string) { return meetingStopResponseSchema.parse(await api<unknown>(`/meetings/${meetingId}/stop`, { method: "POST", body: JSON.stringify({}) })); }
 export async function deleteMeeting(meetingId: string) { return api(`/meetings/${meetingId}`, { method: "DELETE" }); }
 export async function stopMeetingResources(meetingId: string) { await stopMeetingTransport().catch(() => undefined); await stopNativeCapture().catch(() => undefined); await stopMeeting(meetingId).catch(() => undefined); }
 
