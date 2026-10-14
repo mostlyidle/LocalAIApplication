@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { adapters, createMeetingStreamTicket, ensureMeetingReady, listenToMeetingEvents, permissionReady } from "../meetingBridge";
+import { adapters, createMeetingStreamTicket, ensureMeetingReady, listenToMeetingEvents, permissionReady, stopMeeting } from "../meetingBridge";
 import { setCsrfToken } from "@/lib/auth-session";
 
 const listen = vi.hoisted(() => vi.fn());
@@ -92,5 +92,13 @@ describe("meeting bridge contracts", () => {
       meetingId: "m-1",
       failureReason: "final persistence failed",
     });
+  });
+
+  it("rejects malformed stop responses at the API boundary", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ status: "failed", failure_reason: 42 }), { status: 200 }),
+    ));
+
+    await expect(stopMeeting("meeting-1")).rejects.toThrow();
   });
 });
