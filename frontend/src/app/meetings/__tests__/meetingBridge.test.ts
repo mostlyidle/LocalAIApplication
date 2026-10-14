@@ -85,4 +85,12 @@ describe("meeting bridge contracts", () => {
     expect(adapters.transcript({ segment_id: "s1", source: "system", text: "hello", start_ms: 10, end_ms: 20 })).not.toBeNull();
     expect(adapters.transcript({ segment_id: "s1", source: "system", text: "hello", start_ms: 10 })).toBeNull();
   });
+
+  it("preserves a backend meeting failure reason", () => {
+    expect(adapters.meetingStatus({ status: "failed", meeting_id: "m-1", failure_reason: "final persistence failed" })).toEqual({
+      status: "failed",
+      meetingId: "m-1",
+      failureReason: "final persistence failed",
+    });
+  });
 });

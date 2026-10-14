@@ -360,7 +360,12 @@ async def _send_status(
     """Send a typed lifecycle status event."""
     await _send_event(
         websocket,
-        MeetingStatusEvent(type="status", status=meeting.status, meeting_id=meeting.id),
+        MeetingStatusEvent(
+            type="status",
+            status=meeting.status,
+            meeting_id=meeting.id,
+            failure_reason=meeting.failure_reason,
+        ),
     )
 
 
