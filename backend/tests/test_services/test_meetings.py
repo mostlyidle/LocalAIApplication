@@ -21,8 +21,8 @@ from app.models.schemas import (
     MeetingStartCommand,
     decode_audio_envelope,
 )
-from app.services.meetings import MeetingService
 from app.services.meeting_answers import MeetingAnswerService
+from app.services.meetings import MeetingService
 from app.services.transcription import FakeTranscriptionEngine, TranscriptionChunk
 
 
@@ -279,6 +279,33 @@ class TestMeetingService:
         assert stopped_again.stopped_at == stopped_at
         assert meeting.id not in service._sessions
 
+    async def test_stop_reports_final_processor_failure(self, db_session) -> None:
+        service = MeetingService(transcription_engine=FakeTranscriptionEngine())
+        meeting = await service.create_meeting(
+            db_session,
+            owner_id=LEGACY_ACCOUNT_ID,
+            consent_policy_version="v1",
+            consent_attested_at=datetime.now(UTC),
+        )
+        await service.claim_stream(db_session, meeting.id, "session")
+        await service.start_stream(db_session, meeting.id, "session")
+
+        async def fail_consumer(
+            header: AudioEnvelopeHeader, payload: bytes, offset_ms: int, final: bool
+        ) -> None:
+            raise RuntimeError("final persistence failed")
+
+        service.processor._sessions[meeting.id].consumer = fail_consumer
+        await service.accept_audio(
+            db_session, meeting.id, "session", _header(meeting.id, 0), b"\0" * 16
+        )
+
+        stopped = await service.stop_meeting(db_session, meeting.id)
+
+        assert stopped.status == MeetingStatus.FAILED.value
+        assert stopped.failure_reason == "final persistence failed"
+        assert stopped.failed_at is not None
+
     async def test_delete_cascades_transcript_and_questions(self, db_session):
         service = MeetingService(transcription_engine=FakeTranscriptionEngine())
         meeting = await service.create_meeting(
@@ -308,3 +335,24 @@ class TestMeetingService:
         assert await db_session.scalar(
             select(func.count(DetectedQuestion.id)).where(DetectedQuestion.meeting_id == meeting.id)
         ) == 0
+
+    async def test_delete_resets_audio_timeline(self, db_session, monkeypatch) -> None:
+        monkeypatch.setattr("app.services.meetings.settings.meeting_pcm_window_ms", 1)
+        engine = FakeTranscriptionEngine()
+        service = MeetingService(transcription_engine=engine)
+        meeting = await service.create_meeting(
+            db_session,
+            owner_id=LEGACY_ACCOUNT_ID,
+            consent_policy_version="v1",
+            consent_attested_at=datetime.now(UTC),
+        )
+        await service.claim_stream(db_session, meeting.id, "session")
+        await service.start_stream(db_session, meeting.id, "session")
+        await service.accept_audio(
+            db_session, meeting.id, "session", _header(meeting.id, 0), b"\0" * 16
+        )
+        await asyncio.wait_for(_wait_for_transcription_calls(engine, 1), timeout=1)
+
+        await service.delete_meeting(db_session, meeting.id)
+
+        assert meeting.id not in service.processor._consumed_duration_ns

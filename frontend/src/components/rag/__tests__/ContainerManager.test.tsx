@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   getFiles: vi.fn(),
   load: vi.fn(),
   retry: vi.fn(),
+  firstOnUploaded: undefined as (() => Promise<void>) | undefined,
 }));
 
 vi.mock("@/lib/api", () => ({
@@ -22,7 +23,10 @@ vi.mock("@/lib/api", () => ({
 }));
 
 vi.mock("../ContainerUploader", () => ({
-  ContainerUploader: () => <div>Container uploader</div>,
+  ContainerUploader: ({ onUploaded }: { onUploaded: () => Promise<void> }) => {
+    if (!mocks.firstOnUploaded) mocks.firstOnUploaded = onUploaded;
+    return <div>Container uploader</div>;
+  },
 }));
 
 const container = {
@@ -54,6 +58,7 @@ describe("ContainerManager", () => {
     mocks.load.mockResolvedValue({ queued: 1 });
     mocks.retry.mockResolvedValue(file);
     mocks.deleteFile.mockResolvedValue({ deleted: true });
+    mocks.firstOnUploaded = undefined;
   });
 
   it("creates a named container and selects it", async () => {
@@ -159,6 +164,34 @@ describe("ContainerManager", () => {
     await screen.findByText("container_other.txt");
     await act(async () => {
       resolveLoad({ queued: 1 });
+    });
+
+    expect(screen.queryByText("container_research.txt")).not.toBeInTheDocument();
+    expect(screen.getByText("container_other.txt")).toBeInTheDocument();
+    expect(props.onRefresh).not.toHaveBeenCalled();
+  });
+
+  it("ignores an upload completion from a previously selected container", async () => {
+    const other = { ...container, name: "container_other", display_name: "Other" };
+    mocks.getFiles.mockImplementation((name: string) =>
+      Promise.resolve([{ ...file, id: name, relative_path: `${name}.txt` }]),
+    );
+    const props = {
+      containers: [container, other],
+      onSelect: vi.fn(),
+      onRefresh: vi.fn().mockResolvedValue(undefined),
+    };
+    const { rerender } = render(
+      <ContainerManager {...props} selectedName={container.name} />,
+    );
+    await screen.findByText("container_research.txt");
+    const staleUploadCompletion = mocks.firstOnUploaded;
+    expect(staleUploadCompletion).toBeDefined();
+
+    rerender(<ContainerManager {...props} selectedName={other.name} />);
+    await screen.findByText("container_other.txt");
+    await act(async () => {
+      await staleUploadCompletion?.();
     });
 
     expect(screen.queryByText("container_research.txt")).not.toBeInTheDocument();

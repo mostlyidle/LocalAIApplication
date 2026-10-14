@@ -38,33 +38,53 @@ async def _execute_with_deadline(
 ) -> Any:
     """Run a statement without cancelling the driver before SQLite can interrupt it."""
     task = asyncio.create_task(session.execute(statement))
-    _, pending = await asyncio.wait({task}, timeout=timeout_seconds)
-    if not pending:
-        return task.result()
-
-    if sqlite_connection is not None:
-        try:
-            # aiosqlite's interrupt calls sqlite3.Connection.interrupt directly,
-            # so it can stop work already running on its worker thread.
-            await sqlite_connection.interrupt()
-        except Exception as exc:
-            logger.warning(
-                "sqlite_query_interrupt_failed",
-                database_connection=type(sqlite_connection).__name__,
-                error=str(exc),
-                exc_info=True,
-            )
     try:
-        await asyncio.wait_for(asyncio.shield(task), timeout=1)
-    except TimeoutError:
+        _, pending = await asyncio.wait({task}, timeout=timeout_seconds)
+        if not pending:
+            return task.result()
+
+        if sqlite_connection is not None:
+            try:
+                # aiosqlite's interrupt calls sqlite3.Connection.interrupt directly,
+                # so it can stop work already running on its worker thread.
+                await sqlite_connection.interrupt()
+            except Exception as exc:
+                logger.warning(
+                    "sqlite_query_interrupt_failed",
+                    database_connection=type(sqlite_connection).__name__,
+                    error=str(exc),
+                    exc_info=True,
+                )
+        try:
+            await asyncio.wait_for(asyncio.shield(task), timeout=1)
+        except TimeoutError:
+            task.cancel()
+            with contextlib.suppress(Exception, asyncio.CancelledError):
+                await task
+        except Exception:
+            # Retrieve an interrupted driver's exception before returning the timeout.
+            with contextlib.suppress(Exception, asyncio.CancelledError):
+                await task
+        raise TimeoutError
+    except asyncio.CancelledError:
+        if sqlite_connection is not None:
+            interrupt_task = asyncio.create_task(sqlite_connection.interrupt())
+            try:
+                await asyncio.shield(interrupt_task)
+            except asyncio.CancelledError:
+                with contextlib.suppress(Exception, asyncio.CancelledError):
+                    await interrupt_task
+            except Exception as exc:
+                logger.warning(
+                    "sqlite_query_interrupt_failed",
+                    database_connection=type(sqlite_connection).__name__,
+                    error=str(exc),
+                    exc_info=True,
+                )
         task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await task
-    except Exception:
-        # Retrieve an interrupted driver's exception before returning the timeout.
         with contextlib.suppress(Exception, asyncio.CancelledError):
             await task
-    raise TimeoutError
+        raise
 
 
 class _SQLiteValidationGenerator(SQLite.Generator):
