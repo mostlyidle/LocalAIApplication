@@ -968,7 +968,7 @@ Configure external MCP servers in `mcp_servers.json` (copy from `mcp_servers.jso
 }
 ```
 
-External MCP server tools are automatically discovered at application startup and made available to the LangGraph agents.
+External MCP server tools are automatically discovered at application startup, but remain operator-only. They are not exposed through authenticated HTTP routes or bound to shared-account agents because they do not enforce account ownership.
 
 ---
 
@@ -1136,7 +1136,7 @@ Or use the database selector dropdown on the SQL page after registering connecti
 
 1. Copy `mcp_servers.json.example` to `mcp_servers.json`
 2. Add your server configuration
-3. Restart the backend -- tools are discovered at startup
+3. Restart the backend -- tools are discovered at startup and remain operator-only
 
 ---
 

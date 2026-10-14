@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
@@ -17,6 +17,9 @@ from app.models.schemas import AudioEnvelopeHeader, MeetingServerEvent
 from app.services.meeting_answers import FakeAnswerGenerator, MeetingAnswerService
 from app.services.meetings import INTERRUPTED_MEETING_REASON, MeetingService
 from app.services.transcription import FakeTranscriptionEngine, TranscriptionChunk
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 def _header(
@@ -89,7 +92,9 @@ async def test_fake_engine_persists_system_transcript_question_and_answer(db_ses
     await service.stop_meeting(db_session, meeting.id)
 
 
-async def test_meeting_rag_receives_the_meeting_owner(db_session, monkeypatch):
+async def test_meeting_rag_receives_the_meeting_owner(
+    db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
     class OwnerAwareRetriever:
         def __init__(self) -> None:
             self.owners: list[str | None] = []

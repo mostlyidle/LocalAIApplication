@@ -5,6 +5,7 @@ Targets app/tools/web_tools.py for 23% → 80%+ coverage.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -20,6 +21,9 @@ from app.tools.web_tools import (
     web_multi_fetch_tool,
     web_search_links_tool,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 
 
 # =============================================================================
@@ -185,7 +189,7 @@ class TestFetchUrl:
         assert result["status_code"] == 200
         assert "Hello" in result["text"]
 
-    async def test_timeout_error(self):
+    async def test_timeout_error(self) -> None:
         """Timeout returns error dict, not exception."""
         mock_client = self._mock_stream_client(MagicMock())
         mock_client.stream.return_value.__aenter__.side_effect = httpx.TimeoutException(
@@ -234,7 +238,7 @@ class TestFetchUrl:
         mock_response.encoding = "utf-8"
         yielded_chunks: list[bytes] = []
 
-        async def chunks(chunk_size: int):
+        async def chunks(chunk_size: int) -> AsyncIterator[bytes]:
             for content in (b"x" * MAX_CONTENT_LENGTH, b"excess" * 1000):
                 yielded_chunks.append(content)
                 yield content
@@ -250,7 +254,7 @@ class TestFetchUrl:
         assert len(yielded_chunks) == 2
 
     @staticmethod
-    async def _chunks(content: bytes):
+    async def _chunks(content: bytes) -> AsyncIterator[bytes]:
         yield content
 
 

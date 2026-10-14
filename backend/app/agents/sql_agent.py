@@ -69,7 +69,7 @@ async def sql_agent_node(state: AgentState) -> dict[str, Any]:
     system_prompt = f"{system_prompt}\n\n{schema_context}"
 
     llm = llm_service.get_chat_model(temperature=0.0)
-    available_tools = sql_tools + state.get("external_tools", [])
+    available_tools = sql_tools
     llm_with_tools = llm.bind_tools(available_tools)
 
     messages = [SystemMessage(content=system_prompt)]
@@ -111,6 +111,7 @@ async def sql_agent_node(state: AgentState) -> dict[str, Any]:
                 try:
                     tool_result = await tool_fn.ainvoke(tool_args)
                 except Exception as exc:
+                    logger.exception("sql_tool_execution_failed", tool=tool_name)
                     tool_result = f"Tool error: {exc}"
 
             tool_calls_record.append(

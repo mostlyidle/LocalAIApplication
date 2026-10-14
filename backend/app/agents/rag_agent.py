@@ -6,7 +6,7 @@ import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from app.agents.memory_context import MEMORY_CONTEXT_INSTRUCTIONS
 from app.agents.registry import AgentExecution
@@ -46,7 +46,6 @@ async def rag_agent_node(state: AgentState) -> dict[str, Any]:
         memory_context=state.get("memory_context", ""),
         system_prompt=system_prompt,
     )
-    tool_calls_record: list[dict[str, Any]] = []
     if context.citations:
         system, user = prompts.render_messages(profile.name, "rag", context.prompt_values)
         system = system_prompt or system
@@ -60,33 +59,7 @@ async def rag_agent_node(state: AgentState) -> dict[str, Any]:
         messages.append(HumanMessage(content=user))
         with llm_service.inference_context(inference):
             model = llm_service.get_chat_model()
-            external_tools = state.get("external_tools", [])
-            if external_tools:
-                model = model.bind_tools(external_tools)
-            for _ in range(5):
-                response = await model.ainvoke(messages)
-                messages.append(response)
-                if not response.tool_calls:
-                    break
-                for call in response.tool_calls:
-                    tool = next(
-                        (item for item in external_tools if item.name == call["name"]), None
-                    )
-                    if tool is None:
-                        output = f"Unknown tool: {call['name']}"
-                    else:
-                        try:
-                            output = await tool.ainvoke(call["args"])
-                        except Exception as exc:
-                            output = f"Tool error: {exc}"
-                    tool_calls_record.append(
-                        {
-                            "tool_name": call["name"],
-                            "tool_input": call["args"],
-                            "tool_output": str(output)[:2000],
-                        }
-                    )
-                    messages.append(ToolMessage(content=str(output), tool_call_id=call["id"]))
+            response = await model.ainvoke(messages)
     else:
         context.memory_context = ""
         response = AIMessage(content="I could not find relevant evidence in the selected collection.")
@@ -104,7 +77,7 @@ async def rag_agent_node(state: AgentState) -> dict[str, Any]:
     return {
         "messages": [response],
         "current_agent": "rag",
-        "tool_calls": state.get("tool_calls", []) + tool_calls_record,
+        "tool_calls": state.get("tool_calls", []),
         "memory_context": context.memory_context,
         "metadata": {**state.get("metadata", {}), "agent_used": "rag", "retrieval": context.retrieval, "execution": result.model_dump(mode="json")},
     }

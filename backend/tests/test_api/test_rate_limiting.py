@@ -94,7 +94,7 @@ class TestGetClientIp:
         request = _build_request(client_ip="10.0.0.5")
         assert _get_client_ip(request) == "10.0.0.5"
 
-    def test_ignores_untrusted_forwarded_ip(self):
+    def test_ignores_untrusted_forwarded_ip(self) -> None:
         """A caller cannot change its rate limit key by supplying a proxy header."""
         from app.api.middleware.rate_limiting import _get_client_ip
 

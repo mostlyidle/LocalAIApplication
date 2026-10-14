@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi import HTTPException
 from qdrant_client import AsyncQdrantClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from app.api.middleware.error_handler import NotFoundError
 from app.agents.registry import AgentExecution, AgentRegistry
@@ -132,7 +132,9 @@ async def test_rag_context_rejects_another_accounts_collection(
 
 
 async def test_hybrid_search_rejects_another_accounts_collection(
-    db_session: AsyncSession, async_engine, monkeypatch: pytest.MonkeyPatch
+    db_session: AsyncSession,
+    async_engine: AsyncEngine,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     db_session.add(RagCollection(name="private-rag", owner_id="another-account"))
     await db_session.commit()
