@@ -99,6 +99,10 @@ class PromptStore:
     def _render(
         self, agent_name: str, target: str, message_type: str, values: Mapping[str, object]
     ) -> str:
+        if message_type == "system":
+            override = self._system_overrides.get((target, agent_name))
+            if override is not None:
+                return override.strip()
         template = self._template(agent_name, target, message_type)
         try:
             return template.render(dict(values)).strip()
