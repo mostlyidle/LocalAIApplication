@@ -22,6 +22,9 @@ vi.mock("lucide-react", () => {
     RotateCcw: icon,
     Archive: icon,
     Plus: icon,
+    ChevronDownIcon: icon,
+    ChevronUpIcon: icon,
+    CheckIcon: icon,
   };
 });
 

@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
 // Mock lucide-react
 vi.mock("lucide-react", () => {
   const icon = (props: Record<string, unknown>) => <span {...props} />;
-  return { Database: icon, Loader2: icon };
+  return { Database: icon, Loader2: icon, ChevronDownIcon: icon, ChevronUpIcon: icon, CheckIcon: icon };
 });
 
 // Mock child components
@@ -162,9 +163,8 @@ describe("SQLPage", () => {
     });
 
     // Change to demo connection
-    fireEvent.change(screen.getByLabelText("Database connection"), {
-      target: { value: "demo" },
-    });
+    await userEvent.click(screen.getByRole("combobox", { name: "Database connection" }));
+    await userEvent.click(await screen.findByRole("option", { name: "demo" }));
 
     fireEvent.click(screen.getByTestId("nl-query"));
 
