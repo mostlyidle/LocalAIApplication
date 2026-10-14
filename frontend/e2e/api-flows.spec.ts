@@ -47,7 +47,8 @@ test("SQL sends the question and selected connection and displays both result fo
     json: { sql: "SELECT 42", result: { columns: ["value"], rows: [[42]], row_count: 1 }, execution_time_ms: 1 },
   }));
   await page.goto("/sql");
-  await page.getByLabel("Database connection").selectOption("secondary");
+  await page.getByRole("combobox", { name: "Database connection" }).click();
+  await page.getByRole("option", { name: "secondary", exact: true }).click();
   await page.getByPlaceholder("e.g. Show me the top 5 customers by total spending").fill("Show customers");
   const questionRequest = page.waitForRequest("**/api/v1/sql/query");
   await page.getByRole("button", { name: "Ask AI" }).click();
