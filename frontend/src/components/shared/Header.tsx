@@ -74,7 +74,7 @@ export function Header() {
   const { theme, setTheme } = useTheme();
   const { account, signOut } = useAuth();
 
-  const title = pageTitles[pathname] ?? "Local AI";
+  const title = pageTitles[pathname] ?? "Mallow";
 
   return (
     <header className="flex h-16 shrink-0 items-center gap-3 border-b bg-card/80 px-4 sm:px-6">

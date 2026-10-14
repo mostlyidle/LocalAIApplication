@@ -105,10 +105,10 @@ describe("Header", () => {
     expect(screen.getByText(title)).toBeDefined();
   });
 
-  it("falls back to Local AI for unknown paths", () => {
+  it("falls back to Mallow for unknown paths", () => {
     mockPathname.mockReturnValue("/unknown");
     render(<Header />);
-    expect(screen.getByText("Local AI")).toBeDefined();
+    expect(screen.getByText("Mallow")).toBeDefined();
   });
 
   it("renders the sidebar trigger", () => {

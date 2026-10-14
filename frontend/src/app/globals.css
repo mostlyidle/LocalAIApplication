@@ -3,6 +3,8 @@
 @import "shadcn/tailwind.css";
 @import "./tokens.css";
 
+/* Hallmark · macrostructure: Workbench · theme: Bubble · anchor: Mallow lavender */
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -76,7 +78,7 @@
   --accent: var(--color-paper-3);
   --accent-foreground: var(--color-ink);
   --destructive: var(--color-error);
-  --destructive-foreground: var(--color-paper);
+  --destructive-foreground: var(--color-error-ink);
   --border: var(--color-rule);
   --input: var(--color-rule-2);
   --ring: var(--color-focus);
