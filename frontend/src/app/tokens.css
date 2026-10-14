@@ -21,6 +21,9 @@
   --color-error-ink: oklch(97% 0.014 295);
   --color-mascot-fur: oklch(62% 0.09 50);
   --color-mascot-muzzle: oklch(92% 0.025 70);
+  --color-mascot-outline: oklch(23% 0.020 285);
+  --color-mascot-cheek: oklch(94% 0.030 355);
+  --color-mascot-badge: oklch(93% 0.028 292);
 
   --font-display: ui-rounded, "Avenir Next", system-ui, sans-serif;
   --font-body: "Avenir Next", ui-rounded, system-ui, sans-serif;
@@ -92,9 +95,6 @@
   --color-warning: oklch(80% 0.12 75);
   --color-error: oklch(65% 0.16 20);
   --color-error-ink: oklch(23% 0.020 285);
-  --color-mascot-fur: oklch(67% 0.09 50);
-  --color-mascot-muzzle: oklch(87% 0.025 70);
-
   --shadow-card: 0 1px 2px oklch(7% 0.012 285 / 0.24);
   --violet-soft: oklch(31% 0.045 292);
   --violet-ink: oklch(84% 0.07 292);

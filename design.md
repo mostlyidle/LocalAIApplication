@@ -47,10 +47,14 @@ meanings. Accents stay on their own surfaces; they never blend into a gradient.
 - `--color-error-ink`: `oklch(97% 0.014 295)` (light) / `oklch(23% 0.020 285)` (dark)
 - `--color-mascot-fur`: `oklch(62% 0.09 50)`
 - `--color-mascot-muzzle`: `oklch(92% 0.025 70)`
+- `--color-mascot-outline`: `oklch(23% 0.020 285)`
+- `--color-mascot-cheek`: `oklch(94% 0.030 355)`
+- `--color-mascot-badge`: `oklch(93% 0.028 292)`
 - Axes: light / rounded-sans / cool-violet
 
 Dark mode uses plum-tinted surfaces and lighter lavender, sea-glass, and
-apricot accents. Pure black and pure white are not base surfaces.
+apricot accents. The mascot keeps the same fur, muzzle, outline, cheeks, and
+lavender badge in both themes. Pure black and pure white are not base surfaces.
 
 ## Typography
 
@@ -97,8 +101,9 @@ The working product name is **Mallow**, with “Local AI studio” as the
 descriptive line. The mascot is a small, friendly cartoon otter with a soft
 rounded face, small round ears, a broad muzzle, bright eyes, and a gentle smile.
 Avoid pointed ears or sharp angles that make it read as a cat or fox. The shared
-mark is inline SVG so fur and line colors follow light and dark themes; the
-browser icon uses the same silhouette, expression, and palette. Keep its face
+mark is inline SVG with a fixed character palette that stays consistent against
+light and dark app surfaces; the browser icon uses the same silhouette,
+expression, and palette. Keep its face
 readable at sidebar and favicon sizes; do not add decorative emoji.
 
 ## What pages must share
@@ -133,6 +138,9 @@ semantic variables.
   --color-error-ink: oklch(97% 0.014 295);
   --color-mascot-fur: oklch(62% 0.09 50);
   --color-mascot-muzzle: oklch(92% 0.025 70);
+  --color-mascot-outline: oklch(23% 0.020 285);
+  --color-mascot-cheek: oklch(94% 0.030 355);
+  --color-mascot-badge: oklch(93% 0.028 292);
   --font-display: ui-rounded, "Avenir Next", system-ui, sans-serif;
   --font-body: "Avenir Next", ui-rounded, system-ui, sans-serif;
   --spacing-xs: 0.5rem;
@@ -166,7 +174,10 @@ semantic variables.
     "focus": { "$value": "oklch(35% 0.13 292)", "$type": "color" },
     "error-ink": { "$value": "oklch(97% 0.014 295)", "$type": "color" },
     "mascot-fur": { "$value": "oklch(62% 0.09 50)", "$type": "color" },
-    "mascot-muzzle": { "$value": "oklch(92% 0.025 70)", "$type": "color" }
+    "mascot-muzzle": { "$value": "oklch(92% 0.025 70)", "$type": "color" },
+    "mascot-outline": { "$value": "oklch(23% 0.020 285)", "$type": "color" },
+    "mascot-cheek": { "$value": "oklch(94% 0.030 355)", "$type": "color" },
+    "mascot-badge": { "$value": "oklch(93% 0.028 292)", "$type": "color" }
   },
   "font": {
     "display": { "$value": "ui-rounded, Avenir Next, system-ui, sans-serif", "$type": "fontFamily" },
