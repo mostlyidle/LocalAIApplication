@@ -225,7 +225,7 @@ async def test_optional_rag_failure_degrades_without_blocking_answer(monkeypatch
             score_threshold: float | None = None,
             owner_id: str | None = None,
         ) -> list[dict[str, Any]]:
-            raise RuntimeError("Chroma is unavailable")
+            raise RuntimeError("Qdrant is unavailable")
 
     monkeypatch.setattr("app.services.meeting_answers.settings.meeting_enable_rag", True)
     generator = FakeAnswerGenerator("Answer without retrieval")

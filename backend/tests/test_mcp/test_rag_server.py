@@ -64,7 +64,7 @@ class TestSearchKnowledgeBase:
         with patch(
             "app.services.hybrid_vector_store.hybrid_vector_store_service.search",
             new_callable=AsyncMock,
-            side_effect=RuntimeError("ChromaDB unavailable"),
+            side_effect=RuntimeError("Qdrant unavailable"),
         ):
             result = await search_knowledge_base("query")
 

@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from app.services.laya_rag import LayaRagService
 
 class HybridVectorStoreService(VectorStoreService):
-    """Drop-in vector-store API backed by Qdrant, BM25, and bounded profiles."""
+    """Vector-store API backed by Qdrant, BM25, and bounded profiles."""
 
     def __init__(self) -> None:
         prompt_dir = Path(__file__).parents[1] / "prompts"
@@ -76,7 +76,7 @@ class HybridVectorStoreService(VectorStoreService):
         asset_id = str(first_metadata.get("document_id") or ids[0].rsplit("_", 1)[0])
         revision = self._embedding_revision(identity)
         return await self._rag.upsert(
-            collection=collection or settings.chroma_collection_name,
+            collection=collection or settings.qdrant_collection_name,
             chunks=texts,
             embeddings=embeddings,
             asset_id=asset_id,
@@ -97,7 +97,7 @@ class HybridVectorStoreService(VectorStoreService):
         rewrite_model: str | None = None,
         owner_id: str | None = None,
     ) -> list[dict[str, Any]]:
-        selected_collection = collection or settings.chroma_collection_name
+        selected_collection = collection or settings.qdrant_collection_name
         if owner_id is not None:
             from app.api.middleware.error_handler import NotFoundError
             from app.services.database import get_app_session_factory
@@ -478,7 +478,7 @@ class HybridVectorStoreService(VectorStoreService):
         return await self._rag.delete_asset(collection, asset_id)
 
     async def get_collection_count(self, name: str | None = None) -> int:
-        return await self._rag.get_collection_count(name or settings.chroma_collection_name)
+        return await self._rag.get_collection_count(name or settings.qdrant_collection_name)
 
 
 hybrid_vector_store_service = HybridVectorStoreService()

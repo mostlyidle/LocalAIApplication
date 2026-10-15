@@ -48,7 +48,7 @@ fi
 
 # ── Data directories ───────────────────────────────────────────────────
 info "Creating data directories..."
-mkdir -p data/uploads data/chroma data/fastembed
+mkdir -p data/uploads data/fastembed
 
 # ── Backend setup ──────────────────────────────────────────────────────
 info "Installing backend dependencies..."

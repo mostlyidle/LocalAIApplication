@@ -30,7 +30,7 @@ setup: ## Install all dependencies and pull Ollama models
 	@test -f .env || cp .env.example .env
 	@test -f $(FRONTEND_DIR)/.env.local || echo "NEXT_PUBLIC_API_URL=http://localhost:8000" > $(FRONTEND_DIR)/.env.local
 	@echo "==> Creating data directories..."
-	mkdir -p data/uploads data/chroma data/fastembed
+	mkdir -p data/uploads data/fastembed
 	@echo "==> Running database migrations..."
 	uv run --project $(BACKEND_DIR) alembic -c $(BACKEND_DIR)/alembic.ini upgrade head
 	@echo "==> Setup complete!"
@@ -130,7 +130,7 @@ clean: ## Remove caches, build artifacts, temp files
 
 clean-data: ## Remove all runtime data (uploads, vector store, databases)
 	rm -rf data/
-	mkdir -p data/uploads data/chroma data/fastembed
+	mkdir -p data/uploads data/fastembed
 	@echo "Data directories reset."
 
 # ---------------------------------------------------------------------------
@@ -145,7 +145,7 @@ docker-down: ## Stop all Docker Compose services
 	docker compose --profile full down
 	@echo "==> All services stopped."
 
-docker-infra: ## Start infrastructure only (Ollama + Qdrant + ChromaDB migration source)
+docker-infra: ## Start infrastructure only (Ollama + Qdrant)
 	docker compose --profile infra up -d
 	@echo "==> Infrastructure services starting."
 

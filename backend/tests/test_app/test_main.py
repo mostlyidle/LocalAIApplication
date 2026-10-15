@@ -82,7 +82,6 @@ class TestLifespan:
     ) -> None:
         """Lifespan startup should create data directories."""
         upload_dir = tmp_path / "uploads"
-        chroma_dir = tmp_path / "chroma"
 
         with (
             patch("app.main.settings") as mock_settings,
@@ -99,7 +98,6 @@ class TestLifespan:
             patch("app.services.database.close_app_db", new_callable=AsyncMock),
         ):
             mock_settings.upload_dir = str(upload_dir)
-            mock_settings.chroma_persist_dir = str(chroma_dir)
             mock_settings.api_port = 8000
             mock_settings.log_level = "warning"
             mock_settings.finnhub_api_key = None
@@ -116,7 +114,6 @@ class TestLifespan:
             fake_app = FastAPI()
             async with lifespan(fake_app):
                 assert upload_dir.exists()
-                assert chroma_dir.exists()
 
     async def test_lifespan_initializes_db(
         self,
@@ -141,7 +138,6 @@ class TestLifespan:
             patch("app.services.database.close_app_db", new_callable=AsyncMock),
         ):
             mock_settings.upload_dir = str(tmp_path / "uploads")
-            mock_settings.chroma_persist_dir = str(tmp_path / "chroma")
             mock_settings.api_port = 8000
             mock_settings.log_level = "warning"
             mock_settings.finnhub_api_key = None
@@ -183,7 +179,6 @@ class TestLifespan:
             patch("app.services.database.close_app_db", new_callable=AsyncMock),
         ):
             mock_settings.upload_dir = str(tmp_path / "uploads")
-            mock_settings.chroma_persist_dir = str(tmp_path / "chroma")
             mock_settings.api_port = 8000
             mock_settings.log_level = "warning"
             mock_settings.finnhub_api_key = None
@@ -228,7 +223,6 @@ class TestLifespan:
             patch("app.services.database.close_app_db", mock_close_app),
         ):
             mock_settings.upload_dir = str(tmp_path / "uploads")
-            mock_settings.chroma_persist_dir = str(tmp_path / "chroma")
             mock_settings.api_port = 8000
             mock_settings.log_level = "warning"
             mock_settings.finnhub_api_key = None

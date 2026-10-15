@@ -29,7 +29,6 @@ from sqlalchemy.ext.asyncio import (
 # ---------------------------------------------------------------------------
 os.environ.setdefault("APP_DATABASE_URL", "sqlite+aiosqlite://")
 os.environ.setdefault("SQL_DATABASE_URL", "sqlite+aiosqlite://")
-os.environ.setdefault("CHROMA_PERSIST_DIR", "/tmp/test_chroma")
 os.environ.setdefault("UPLOAD_DIR", "/tmp/test_uploads")
 os.environ.setdefault("LOG_LEVEL", "warning")
 
@@ -212,5 +211,4 @@ def golden_envelope() -> bytes:
 @pytest.fixture(autouse=True)
 def _ensure_tmp_dirs() -> None:
     """Ensure temporary test directories exist."""
-    Path("/tmp/test_chroma").mkdir(parents=True, exist_ok=True)
     Path("/tmp/test_uploads").mkdir(parents=True, exist_ok=True)

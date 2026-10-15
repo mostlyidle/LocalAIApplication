@@ -39,6 +39,7 @@ class Settings(BaseSettings):
 
     # ── Hybrid vector store ─────────────────────────────────────────────
     qdrant_url: str = "http://localhost:6333"
+    qdrant_collection_name: str = "documents"
     fastembed_cache_path: Path = Path("./data/fastembed")
     rag_bm25_language: str = "english"
 
@@ -67,12 +68,6 @@ class Settings(BaseSettings):
     # ── Databases ───────────────────────────────────────────────────────
     sql_database_url: str = "sqlite+aiosqlite:///./data/demo.db"
     app_database_url: str = "sqlite+aiosqlite:///./data/app.db"
-
-    # ── ChromaDB ────────────────────────────────────────────────────────
-    chroma_persist_dir: str = "./data/chroma"
-    chroma_collection_name: str = "documents"
-    chroma_host: str | None = None
-    chroma_port: int = 8000
 
     # ── Document Upload ─────────────────────────────────────────────────
     max_upload_size_mb: int = 50
@@ -125,12 +120,6 @@ class Settings(BaseSettings):
     @property
     def upload_path(self) -> Path:
         path = Path(self.upload_dir)
-        path.mkdir(parents=True, exist_ok=True)
-        return path
-
-    @property
-    def chroma_path(self) -> Path:
-        path = Path(self.chroma_persist_dir)
         path.mkdir(parents=True, exist_ok=True)
         return path
 

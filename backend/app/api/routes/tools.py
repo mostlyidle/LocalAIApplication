@@ -222,7 +222,7 @@ async def execute_tool(
 async def required_readiness_check() -> HealthResponse:
     """Check only bounded services required before a meeting can start.
 
-    Optional Ollama and Chroma probes intentionally belong only to ``/health``;
+    Optional Ollama and Qdrant probes intentionally belong only to ``/health``;
     they must not delay the launcher's required ``meeting_ready`` gate.
     """
 

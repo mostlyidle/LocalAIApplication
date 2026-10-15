@@ -18,7 +18,7 @@ from app.config import Settings
 _CONFTEST_ENV_KEYS = [
     "APP_DATABASE_URL",
     "SQL_DATABASE_URL",
-    "CHROMA_PERSIST_DIR",
+    "QDRANT_COLLECTION_NAME",
     "UPLOAD_DIR",
     "LOG_LEVEL",
     "RATE_LIMIT_DEFAULT",
@@ -62,10 +62,9 @@ class TestCodeDefaults:
         assert "sqlite" in s.sql_database_url
         assert "sqlite" in s.app_database_url
 
-    def test_chroma_defaults(self):
+    def test_qdrant_defaults(self):
         s = _clean_settings()
-        assert s.chroma_persist_dir == "./data/chroma"
-        assert s.chroma_collection_name == "documents"
+        assert s.qdrant_collection_name == "documents"
 
     def test_upload_defaults(self):
         s = _clean_settings()
@@ -134,12 +133,6 @@ class TestComputedProperties:
     def test_upload_path_creates_directory(self, tmp_path):
         s = Settings(upload_dir=str(tmp_path / "uploads"))
         path = s.upload_path
-        assert isinstance(path, Path)
-        assert path.exists()
-
-    def test_chroma_path_creates_directory(self, tmp_path):
-        s = Settings(chroma_persist_dir=str(tmp_path / "chroma"))
-        path = s.chroma_path
         assert isinstance(path, Path)
         assert path.exists()
 
