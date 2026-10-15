@@ -226,6 +226,7 @@ export const documentListSchema = z.array(z.object({
   filename: z.string(),
   format: z.string(),
   size_bytes: z.number(),
+  content_sha256: z.string().nullable().optional(),
   status: z.enum(["pending", "processing", "completed", "failed"]),
   created_at: z.string(),
 })).transform((documents) => ({ documents }));

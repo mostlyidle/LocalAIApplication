@@ -71,6 +71,13 @@ describe("SchemaBrowser", () => {
     });
   });
 
+  it("explains when a database has no tables", async () => {
+    mockGetSQLSchema.mockResolvedValue({ tables: [] });
+    render(<SchemaBrowser />);
+
+    expect(await screen.findByText(/No tables found in this database/)).toBeInTheDocument();
+  });
+
   it("shows column count badges", async () => {
     mockGetSQLSchema.mockResolvedValue(sampleSchema);
     render(<SchemaBrowser />);

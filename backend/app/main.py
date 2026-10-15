@@ -92,8 +92,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.agent_registry.apply_configurations(list(configurations))
 
     from app.services.hybrid_vector_store import hybrid_vector_store_service
+    from app.services.laya_rag import LayaRagService
 
     hybrid_vector_store_service.configure_profiles(app.state.agent_registry, prompts)
+    laya_rag_service = LayaRagService(
+        base_url=settings.ollama_base_url,
+        model=settings.laya_model,
+        timeout_ms=settings.laya_request_timeout_ms,
+    )
+    app.state.laya_rag_service = laya_rag_service
+    hybrid_vector_store_service.configure_laya_service(laya_rag_service)
+    await laya_rag_service.start(
+        enabled=(
+            settings.laya_rag_evidence_mode != "off"
+            or settings.laya_rag_rewrite_mode != "off"
+        )
+    )
 
     from app.services.memory_recall_worker import run_recall_worker
 
@@ -146,6 +160,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await asyncio.gather(app.state.rag_container_worker_task, return_exceptions=True)
 
     await mcp_client.close()
+    await app.state.laya_rag_service.close()
     await app.state.market_data.close()
     await app.state.comfyui.close()
     await hybrid_vector_store_service.close()

@@ -1,0 +1,19 @@
+{
+  "model": "laya:latest",
+  "model_digest": "aaba5574a1e14592cb20c64b96292ffa524b3f9ca27263687b87161eacb8d31d",
+  "tokenizer_server_parity_verified": false,
+  "checks": {
+    "rewrite": {
+      "schema_version": "rewrite-v1",
+      "thresholds": {},
+      "approved_profiles": [],
+      "approved_prompt_digests": []
+    },
+    "evidence": {
+      "schema_version": "evidence-v1",
+      "thresholds": {},
+      "approved_profiles": [],
+      "approved_prompt_digests": []
+    }
+  }
+}

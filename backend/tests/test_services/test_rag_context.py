@@ -9,8 +9,8 @@ from fastapi import HTTPException
 from qdrant_client import AsyncQdrantClient
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from app.api.middleware.error_handler import NotFoundError
 from app.agents.registry import AgentExecution, AgentRegistry
+from app.api.middleware.error_handler import NotFoundError
 from app.models.db_models import RagCollection
 from app.models.profile_schemas import TaskRequest
 from app.prompt_store import PromptStore
@@ -197,6 +197,366 @@ async def test_hybrid_search_uses_configured_custom_rag_profile() -> None:
     assert result.retrieval["mode"] == "missing_collection"
     assert "You rewrite retrieval queries for a grounded RAG system." in rewrite_prompt
     assert "Original question" in rewrite_prompt
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected_applied", "expected_rewrite_call"),
+    [("enforce", True, False), ("observe", False, True), ("off", False, True)],
+)
+async def test_laya_rewrite_gate_only_skips_when_enforcement_is_approved(
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    expected_applied: bool,
+    expected_rewrite_call: bool,
+) -> None:
+    registry, prompts = profiles()
+    service = HybridVectorStoreService.__new__(HybridVectorStoreService)
+    service._prompt_dir = Path(__file__).resolve().parents[2] / "app" / "prompts"
+    service._profiles = registry
+    service._prompts = prompts
+    service._rag = SimpleNamespace(capabilities=AsyncMock(return_value=None))
+    decision = SimpleNamespace(
+        check="rewrite",
+        choice="skip",
+        probability=0.96,
+        probabilities={"skip": 0.96, "run": 0.02, "uncertain": 0.02},
+        elapsed_ms=12.0,
+        schema_version="rewrite-v1",
+        reason="evaluated",
+    )
+    laya = SimpleNamespace(
+        check_rewrite=AsyncMock(return_value=decision),
+        can_apply=lambda *_args, **_kwargs: (True, "threshold_met"),
+        model_digest="installed-digest",
+    )
+    service.configure_laya_service(laya)
+    rewrite = AsyncMock(return_value=(['First rewrite', 'Second rewrite'], None))
+    monkeypatch.setattr("app.services.hybrid_vector_store.settings.laya_rag_rewrite_mode", mode)
+    with patch.object(service, "_rewrite_queries", rewrite):
+        result = await service.search_with_provenance(
+            query="A specific question",
+            collection="missing",
+            top_k=3,
+            agent_name="rag_v2",
+        )
+
+    assert rewrite.await_count == int(expected_rewrite_call)
+    assert laya.check_rewrite.await_count == int(mode != "off")
+    assert result.retrieval["laya"]["rewrite"]["applied"] is expected_applied
+    assert result.retrieval["laya"]["rewrite"]["mode"] == mode
+
+
+async def test_laya_rewrite_skip_embeds_original_query_only_and_zeros_rewrite_weight(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services.fastembed_queries import (
+        LOADER_EMBEDDING_MODEL,
+        LOADER_EMBEDDING_REVISION,
+    )
+
+    registry, prompts = profiles()
+    service = HybridVectorStoreService.__new__(HybridVectorStoreService)
+    service._prompt_dir = Path(__file__).resolve().parents[2] / "app" / "prompts"
+    service._profiles = registry
+    service._prompts = prompts
+    service._loader_queries = SimpleNamespace(embed=AsyncMock(return_value=[[0.1, 0.2]]))
+    service._rag = SimpleNamespace(
+        capabilities=AsyncMock(
+            return_value=SimpleNamespace(
+                loader_owned=True,
+                dense_model=LOADER_EMBEDDING_MODEL,
+                embedding_revision=LOADER_EMBEDDING_REVISION,
+            )
+        ),
+        search=AsyncMock(return_value=SimpleNamespace(passages=[], retrieval={"mode": "hybrid_rrf"})),
+    )
+    decision = SimpleNamespace(
+        check="rewrite", choice="skip", probability=0.96,
+        probabilities={"skip": 0.96, "run": 0.02, "uncertain": 0.02},
+        elapsed_ms=12.0, schema_version="rewrite-v1", reason="evaluated",
+    )
+    service.configure_laya_service(
+        SimpleNamespace(
+            check_rewrite=AsyncMock(return_value=decision),
+            can_apply=lambda *_args, **_kwargs: (True, "threshold_met"),
+            model_digest="installed-digest",
+        )
+    )
+    monkeypatch.setattr("app.services.hybrid_vector_store.settings.laya_rag_rewrite_mode", "enforce")
+
+    await service.search_with_provenance(
+        query="A specific question",
+        collection="available",
+        top_k=3,
+        agent_name="rag_v2",
+    )
+
+    service._loader_queries.embed.assert_awaited_once_with(["A specific question"])
+    search_kwargs = service._rag.search.call_args.kwargs
+    assert search_kwargs["rewrite_embeddings"] == []
+    assert search_kwargs["rewrite_queries"] == []
+    assert search_kwargs["rewrite_dense_total_weight"] == 0
+
+
+async def test_laya_rewrite_gate_does_not_run_for_profiles_without_rewrites(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry, prompts = profiles()
+    service = HybridVectorStoreService.__new__(HybridVectorStoreService)
+    service._prompt_dir = Path(__file__).resolve().parents[2] / "app" / "prompts"
+    service._profiles = registry
+    service._prompts = prompts
+    service._rag = SimpleNamespace(capabilities=AsyncMock(return_value=None))
+    laya = SimpleNamespace(check_rewrite=AsyncMock())
+    service.configure_laya_service(laya)
+    rewrite = AsyncMock(return_value=([], None))
+    monkeypatch.setattr("app.services.hybrid_vector_store.settings.laya_rag_rewrite_mode", "enforce")
+
+    with patch.object(service, "_rewrite_queries", rewrite):
+        result = await service.search_with_provenance(
+            query="A specific question",
+            collection="missing",
+            top_k=3,
+            agent_name="rag",
+        )
+
+    laya.check_rewrite.assert_not_awaited()
+    rewrite.assert_not_awaited()
+    assert result.retrieval["laya"]["rewrite"]["reason"] == "profile_has_no_rewrites"
+
+
+async def test_laya_evidence_override_uses_all_final_bounded_passages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry, prompts = profiles()
+    profile = registry.get("rag")
+    request = TaskRequest(
+        prompt="What is the warranty duration?",
+        agent_name="rag",
+        inference={"context_window": 4096, "max_output_tokens": 128},
+    )
+    execution = AgentExecution(profile, registry.resolve_inference(profile, request))
+    passages = [
+        {
+            "content": "A payment methods overview.",
+            "metadata": {"asset_id": "policy", "chunk_index": 0, "filename": "policy.pdf"},
+        },
+        {
+            "content": "A later section lists unrelated service contacts.",
+            "metadata": {"asset_id": "policy", "chunk_index": 1, "filename": "policy.pdf"},
+        },
+    ]
+    search = SimpleNamespace(passages=passages, retrieval={"mode": "hybrid_rrf"})
+    decision = SimpleNamespace(
+        check="evidence", choice="unsupported", probability=0.97,
+        probabilities={"supported": 0.01, "unsupported": 0.97, "uncertain": 0.02},
+        elapsed_ms=15.0, input_bytes=600, schema_version="evidence-v1", reason="evaluated",
+    )
+    checked: dict[str, object] = {}
+
+    def can_apply(_check: str, **kwargs: object) -> tuple[bool, str]:
+        checked.update(kwargs)
+        return True, "threshold_met"
+
+    laya = SimpleNamespace(
+        check_evidence=AsyncMock(return_value=decision),
+        can_apply=can_apply,
+        model_digest="installed-digest",
+    )
+    monkeypatch.setattr("app.services.hybrid_vector_store.settings.laya_rag_evidence_mode", "enforce")
+    with (
+        patch(
+            "app.services.hybrid_vector_store.hybrid_vector_store_service.search_with_provenance",
+            AsyncMock(return_value=search),
+        ),
+        patch("app.services.hybrid_vector_store.hybrid_vector_store_service._laya", laya),
+    ):
+        context = await prepare_rag_context(request, execution, prompts)
+
+    laya.check_evidence.assert_awaited_once_with(
+        request.prompt, [context.prompt_values["passages"]]
+    )
+    assert "A payment methods overview." in context.prompt_values["passages"]
+    assert "A later section lists unrelated service contacts." in context.prompt_values["passages"]
+    assert checked["context_independent"] is True
+    assert context.answer_override == (
+        "I couldn't find enough supporting evidence in the retrieved passages to answer this question."
+    )
+    assert context.citations == []
+    evidence_meta = context.retrieval["laya"]["evidence"]
+    assert evidence_meta["candidate_citations"][1]["chunk_index"] == 1
+    assert evidence_meta["coverage"]["submitted_complete"] is True
+
+
+async def test_laya_evidence_does_not_run_when_retrieval_has_no_passages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry, prompts = profiles()
+    request = TaskRequest(prompt="What is the warranty duration?", agent_name="rag")
+    profile = registry.get("rag")
+    execution = AgentExecution(profile, registry.resolve_inference(profile, request))
+    laya = SimpleNamespace(check_evidence=AsyncMock())
+    monkeypatch.setattr("app.services.hybrid_vector_store.settings.laya_rag_evidence_mode", "enforce")
+    with (
+        patch(
+            "app.services.hybrid_vector_store.hybrid_vector_store_service.search_with_provenance",
+            AsyncMock(return_value=SimpleNamespace(passages=[], retrieval={"mode": "hybrid_rrf"})),
+        ),
+        patch("app.services.hybrid_vector_store.hybrid_vector_store_service._laya", laya),
+    ):
+        context = await prepare_rag_context(request, execution, prompts)
+
+    laya.check_evidence.assert_not_awaited()
+    assert context.answer_override is None
+    assert context.retrieval["laya"]["evidence"]["reason"] == "no_evidence"
+    assert context.retrieval["laya"]["evidence"]["applied"] is False
+
+
+async def test_laya_evidence_observes_with_the_default_explicit_system_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry, prompts = profiles()
+    request = TaskRequest(
+        prompt="What is the warranty duration?",
+        agent_name="rag",
+        inference={"context_window": 4096, "max_output_tokens": 128},
+    )
+    profile = registry.get("rag")
+    execution = AgentExecution(profile, registry.resolve_inference(profile, request))
+    search = SimpleNamespace(passages=[{"content": "Payment methods."}], retrieval={})
+    decision = SimpleNamespace(
+        choice="unsupported",
+        probability=0.97,
+        elapsed_ms=15.0,
+        input_bytes=300,
+        schema_version="evidence-v1",
+        reason="evaluated",
+    )
+    laya = SimpleNamespace(
+        check_evidence=AsyncMock(return_value=decision),
+        can_apply=lambda *_args, **_kwargs: (False, "prompt_unverified"),
+        model_digest="installed-digest",
+    )
+    monkeypatch.setattr("app.services.hybrid_vector_store.settings.laya_rag_evidence_mode", "enforce")
+    with (
+        patch(
+            "app.services.hybrid_vector_store.hybrid_vector_store_service.search_with_provenance",
+            AsyncMock(return_value=search),
+        ),
+        patch("app.services.hybrid_vector_store.hybrid_vector_store_service._laya", laya),
+    ):
+        context = await prepare_rag_context(
+            request,
+            execution,
+            prompts,
+            system_prompt=prompts.system_prompt(profile.name, "rag"),
+        )
+
+    laya.check_evidence.assert_awaited_once()
+    assert context.answer_override is None
+    assert context.retrieval["laya"]["evidence"]["reason"] == "prompt_unverified"
+
+
+async def test_laya_evidence_does_not_suppress_context_dependent_requests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry, prompts = profiles()
+    request = TaskRequest(
+        prompt="What about the warranty?",
+        agent_name="rag",
+        inference={"context_window": 4096, "max_output_tokens": 128},
+    )
+    profile = registry.get("rag")
+    execution = AgentExecution(profile, registry.resolve_inference(profile, request))
+    search = SimpleNamespace(passages=[{"content": "Payment methods."}], retrieval={})
+    decision = SimpleNamespace(
+        check="evidence", choice="unsupported", probability=0.97,
+        probabilities={"supported": 0.01, "unsupported": 0.97, "uncertain": 0.02},
+        elapsed_ms=15.0, input_bytes=300, schema_version="evidence-v1", reason="evaluated",
+    )
+    laya = SimpleNamespace(
+        check_evidence=AsyncMock(return_value=decision),
+        can_apply=lambda *_args, **_kwargs: (True, "threshold_met"),
+        model_digest="installed-digest",
+    )
+    monkeypatch.setattr("app.services.hybrid_vector_store.settings.laya_rag_evidence_mode", "enforce")
+    with (
+        patch(
+            "app.services.hybrid_vector_store.hybrid_vector_store_service.search_with_provenance",
+            AsyncMock(return_value=search),
+        ),
+        patch("app.services.hybrid_vector_store.hybrid_vector_store_service._laya", laya),
+    ):
+        context = await prepare_rag_context(
+            request,
+            execution,
+            prompts,
+            history=["Earlier turn: Tell me about this warranty."],
+            memory_context="A saved preference.",
+        )
+
+    laya.check_evidence.assert_not_awaited()
+    assert context.answer_override is None
+    assert context.citations
+    assert context.memory_context == "A saved preference."
+
+
+async def test_laya_evidence_negative_triggers_one_rewrite_rescue(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry, prompts = profiles()
+    request = TaskRequest(
+        prompt="What is the warranty duration?",
+        agent_name="rag_v2",
+        inference={"context_window": 4096, "max_output_tokens": 128},
+    )
+    profile = registry.get("rag_v2")
+    execution = AgentExecution(profile, registry.resolve_inference(profile, request))
+    initial = SimpleNamespace(
+        passages=[{"content": "Initial unrelated passage."}],
+        retrieval={
+            "skipped_by_laya": True,
+            "laya": {"rewrite": {"applied": True}},
+        },
+    )
+    rescued = SimpleNamespace(
+        passages=[
+            {
+                "content": "Warranty coverage lasts 24 months.",
+                "metadata": {"asset_id": "terms", "chunk_index": 4},
+            }
+        ],
+        retrieval={"skipped_by_laya": False, "laya": {"rewrite": {"reason": "rescue_retrieval"}}},
+    )
+    search = AsyncMock(side_effect=[initial, rescued])
+    decision = SimpleNamespace(
+        check="evidence", choice="unsupported", probability=0.97,
+        probabilities={"supported": 0.01, "unsupported": 0.97, "uncertain": 0.02},
+        elapsed_ms=15.0, input_bytes=300, schema_version="evidence-v1", reason="evaluated",
+    )
+    laya = SimpleNamespace(
+        check_evidence=AsyncMock(return_value=decision),
+        can_apply=lambda *_args, **_kwargs: (True, "threshold_met"),
+        model_digest="installed-digest",
+    )
+    monkeypatch.setattr("app.services.hybrid_vector_store.settings.laya_rag_evidence_mode", "enforce")
+    with (
+        patch(
+            "app.services.hybrid_vector_store.hybrid_vector_store_service.search_with_provenance",
+            search,
+        ),
+        patch("app.services.hybrid_vector_store.hybrid_vector_store_service._laya", laya),
+    ):
+        context = await prepare_rag_context(request, execution, prompts)
+
+    assert search.await_count == 2
+    assert search.await_args_list[1].kwargs["_bypass_laya_rewrite"] is True
+    laya.check_evidence.assert_awaited_once()
+    assert context.answer_override is None
+    assert len(context.citations) == 1
+    evidence_meta = context.retrieval["laya"]["evidence"]
+    assert evidence_meta["rescue"]["triggered"] is True
+    assert evidence_meta["rescue"]["passages"] == 1
 
 
 @pytest.mark.parametrize("model, revision, succeeds, historical", [

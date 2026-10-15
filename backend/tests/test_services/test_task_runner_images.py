@@ -77,7 +77,7 @@ async def test_image_analysis_uses_profile_model_and_uploaded_image_bytes(
         )
 
     get_model.assert_called_once()
-    assert get_model.call_args.kwargs["model"] == "qwen2.5vl:7b"
+    assert get_model.call_args.kwargs["model"] == "qwen3-vl:4b"
     assert result.agent == "image_analysis"
     assert result.answer == "A blue swatch."
     assert result.artifacts["asset_id"] == document.id
@@ -356,3 +356,72 @@ async def test_rag_task_preserves_hybrid_citation_provenance(
     ]
     model_messages = model.ainvoke.call_args.args[0]
     assert memory in model_messages[1].content
+
+
+async def test_rag_task_honors_laya_fixed_response_without_generation() -> None:
+    from app.services.rag_context import RagContext
+
+    runner = _runner()
+    fixed_response = "I couldn't find enough supporting evidence."
+    context = RagContext(
+        prompt_values={"prompt": "Question", "passages": "", "history": ""},
+        citations=[],
+        retrieval={"laya": {"evidence": {"applied": True}}},
+        answer_override=fixed_response,
+    )
+    with (
+        patch(
+            "app.services.rag_context.prepare_rag_context",
+            AsyncMock(return_value=context),
+        ),
+        patch("app.services.task_runner.llm_service.get_chat_model") as generate,
+    ):
+        result = await runner.run(
+            TaskRequest(prompt="Question", agent_name="rag"),
+            request_id="laya-fixed-response",
+        )
+
+    generate.assert_not_called()
+    assert result.answer == fixed_response
+    assert result.artifacts["citations"] == []
+
+
+async def test_rag_task_keeps_streaming_grounded_answers() -> None:
+    from app.services.rag_context import RagContext
+
+    async def stream(_messages):
+        yield SimpleNamespace(content="The policy says ")
+        yield SimpleNamespace(content="coverage lasts 24 months.")
+
+    runner = _runner()
+    callback = AsyncMock()
+    context = RagContext(
+        prompt_values={
+            "prompt": "How long is coverage?",
+            "passages": "Coverage lasts 24 months.",
+            "history": "",
+        },
+        citations=[{"asset_id": "policy", "chunk_index": 0}],
+        retrieval={"mode": "hybrid_rrf"},
+    )
+    with (
+        patch(
+            "app.services.rag_context.prepare_rag_context",
+            AsyncMock(return_value=context),
+        ),
+        patch(
+            "app.services.task_runner.llm_service.get_chat_model",
+            return_value=SimpleNamespace(astream=stream),
+        ),
+    ):
+        result = await runner.run(
+            TaskRequest(prompt="How long is coverage?", agent_name="rag"),
+            request_id="rag-streaming",
+            on_token=callback,
+        )
+
+    assert result.answer == "The policy says coverage lasts 24 months."
+    assert [call.args[0] for call in callback.await_args_list] == [
+        "The policy says ",
+        "coverage lasts 24 months.",
+    ]

@@ -111,6 +111,7 @@ describe("ContainerManager", () => {
       />,
     );
 
+    await user.click(screen.getByRole("tab", { name: /Files/ }));
     await user.click(await screen.findByRole("button", { name: "Retry project/notes.txt" }));
     await waitFor(() => expect(mocks.retry).toHaveBeenCalledWith(container.name, file.id));
 
@@ -130,6 +131,7 @@ describe("ContainerManager", () => {
       onRefresh: vi.fn().mockResolvedValue(undefined),
     };
     const { rerender } = render(<ContainerManager {...props} selectedName={container.name} />);
+    await userEvent.click(screen.getByRole("tab", { name: /Files/ }));
     await waitFor(() => expect(mocks.getFiles).toHaveBeenCalledWith(container.name));
 
     rerender(<ContainerManager {...props} selectedName={other.name} />);
@@ -157,10 +159,13 @@ describe("ContainerManager", () => {
     const { rerender } = render(
       <ContainerManager {...props} selectedName={container.name} />,
     );
+    await userEvent.click(screen.getByRole("tab", { name: /Files/ }));
     await screen.findByText("container_research.txt");
+    await userEvent.click(screen.getByRole("tab", { name: "Manage" }));
     await userEvent.setup().click(screen.getByRole("button", { name: "Load 1 staged file" }));
 
     rerender(<ContainerManager {...props} selectedName={other.name} />);
+    await userEvent.click(screen.getByRole("tab", { name: /Files/ }));
     await screen.findByText("container_other.txt");
     await act(async () => {
       resolveLoad({ queued: 1 });
@@ -184,6 +189,7 @@ describe("ContainerManager", () => {
     const { rerender } = render(
       <ContainerManager {...props} selectedName={container.name} />,
     );
+    await userEvent.click(screen.getByRole("tab", { name: /Files/ }));
     await screen.findByText("container_research.txt");
     const staleUploadCompletion = mocks.firstOnUploaded;
     expect(staleUploadCompletion).toBeDefined();

@@ -143,7 +143,7 @@ export async function getConversation(id: string) {
 }
 
 export async function deleteConversation(id: string) {
-  return apiFetch<{ deleted: boolean }>(`/chat/conversations/${id}`, { method: "DELETE" });
+  return apiFetch<{ status: "deleted"; conversation_id: string }>(`/chat/conversations/${id}`, { method: "DELETE" });
 }
 
 export async function getAgentCatalog() {

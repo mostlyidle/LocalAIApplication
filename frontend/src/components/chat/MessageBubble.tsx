@@ -28,6 +28,7 @@ export function MessageBubble({
   agentDisplayNames,
 }: MessageBubbleProps) {
   const isUser = message.role === "user";
+  const hasNoResponse = !isUser && message.content.trim() === "No response generated.";
   const memorySources = Array.isArray(message.execution?.artifacts?.memory_sources)
     ? (message.execution.artifacts.memory_sources as Record<string, unknown>[]).filter(
         (source) =>
@@ -68,6 +69,13 @@ export function MessageBubble({
         {isUser ? (
           <div className="whitespace-pre-wrap text-base leading-relaxed sm:text-sm">
             {message.content}
+          </div>
+        ) : hasNoResponse ? (
+          <div role="status" className="space-y-1 rounded-lg bg-muted/70 p-3 text-sm">
+            <p className="font-medium">No answer was saved for this turn.</p>
+            <p className="text-muted-foreground">
+              Try again. If you included an image, attach it again before resending.
+            </p>
           </div>
         ) : (
           <MarkdownContent content={message.content} className="text-base leading-relaxed sm:text-sm" />

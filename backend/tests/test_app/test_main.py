@@ -105,6 +105,11 @@ class TestLifespan:
             mock_settings.finnhub_api_key = None
             mock_settings.market_data_cache_seconds = 60
             mock_settings.comfyui_url = "http://localhost:8188"
+            mock_settings.ollama_base_url = "http://localhost:11434"
+            mock_settings.laya_model = "laya:latest"
+            mock_settings.laya_request_timeout_ms = 250
+            mock_settings.laya_rag_evidence_mode = "off"
+            mock_settings.laya_rag_rewrite_mode = "off"
 
             from app.main import lifespan
 
@@ -142,6 +147,11 @@ class TestLifespan:
             mock_settings.finnhub_api_key = None
             mock_settings.market_data_cache_seconds = 60
             mock_settings.comfyui_url = "http://localhost:8188"
+            mock_settings.ollama_base_url = "http://localhost:11434"
+            mock_settings.laya_model = "laya:latest"
+            mock_settings.laya_request_timeout_ms = 250
+            mock_settings.laya_rag_evidence_mode = "off"
+            mock_settings.laya_rag_rewrite_mode = "off"
 
             from app.main import lifespan
 
@@ -179,6 +189,11 @@ class TestLifespan:
             mock_settings.finnhub_api_key = None
             mock_settings.market_data_cache_seconds = 60
             mock_settings.comfyui_url = "http://localhost:8188"
+            mock_settings.ollama_base_url = "http://localhost:11434"
+            mock_settings.laya_model = "laya:latest"
+            mock_settings.laya_request_timeout_ms = 250
+            mock_settings.laya_rag_evidence_mode = "off"
+            mock_settings.laya_rag_rewrite_mode = "off"
 
             from app.main import lifespan
 
@@ -219,6 +234,11 @@ class TestLifespan:
             mock_settings.finnhub_api_key = None
             mock_settings.market_data_cache_seconds = 60
             mock_settings.comfyui_url = "http://localhost:8188"
+            mock_settings.ollama_base_url = "http://localhost:11434"
+            mock_settings.laya_model = "laya:latest"
+            mock_settings.laya_request_timeout_ms = 250
+            mock_settings.laya_rag_evidence_mode = "off"
+            mock_settings.laya_rag_rewrite_mode = "off"
 
             from app.main import lifespan
 

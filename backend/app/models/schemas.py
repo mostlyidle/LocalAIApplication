@@ -144,6 +144,7 @@ class DocumentListItem(BaseModel):
     filename: str
     format: DocumentFormat
     size_bytes: int
+    content_sha256: str | None = None
     status: DocumentStatus
     created_at: datetime
 

@@ -7,7 +7,7 @@
   "default_for_target": true,
   "inference": {
     "default_model": "qwen2.5-coder:7b",
-    "allowed_models": ["qwen2.5-coder:7b", "qwen2.5-coder:14b"],
+    "allowed_models": ["qwen2.5-coder:7b", "qwen2.5:7b"],
     "defaults": {
       "model": "qwen2.5-coder:7b",
       "temperature": 0.2,

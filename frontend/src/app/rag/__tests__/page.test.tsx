@@ -22,8 +22,6 @@ vi.mock("@/lib/api", () => ({
   getRAGContainers: vi.fn(),
   searchRAG: vi.fn(),
   deleteRAGCollection: vi.fn(),
-  getDocuments: vi.fn(),
-  ingestRAG: vi.fn(),
   getRAGContainerFiles: vi.fn(),
   createRAGContainer: vi.fn(),
   uploadRAGContainerFiles: vi.fn(),
@@ -39,8 +37,6 @@ const mockGetCollections = api.getRAGCollections as ReturnType<typeof vi.fn>;
 const mockGetContainers = api.getRAGContainers as ReturnType<typeof vi.fn>;
 const mockSearchRAG = api.searchRAG as ReturnType<typeof vi.fn>;
 const mockDeleteCollection = api.deleteRAGCollection as ReturnType<typeof vi.fn>;
-const mockGetDocuments = api.getDocuments as ReturnType<typeof vi.fn>;
-const mockIngestRAG = api.ingestRAG as ReturnType<typeof vi.fn>;
 
 async function selectOption(label: string, option: string) {
   await userEvent.click(await screen.findByRole("combobox", { name: label }));
@@ -57,12 +53,6 @@ describe("RAG Page", () => {
       ],
     });
     mockGetContainers.mockResolvedValue([]);
-    mockGetDocuments.mockResolvedValue({
-      documents: [
-        { id: "d1", filename: "report.pdf", format: "pdf", size_bytes: 10240, status: "completed" },
-        { id: "d2", filename: "notes.md", format: "md", size_bytes: 2048, status: "completed" },
-      ],
-    });
   });
 
   it("renders the page title", async () => {
@@ -93,6 +83,23 @@ describe("RAG Page", () => {
     expect(screen.getByText("3 chunks")).toBeInTheDocument();
   });
 
+  it("keeps the leftover E2E collection out of user-facing index choices", async () => {
+    mockGetCollections.mockResolvedValue({
+      collections: [
+        { name: "localai_rag_e2e", count: 1 },
+        { name: "reports", count: 3 },
+      ],
+    });
+
+    await act(async () => {
+      render(<RAGPage />);
+    });
+    await userEvent.click(await screen.findByRole("combobox", { name: "Search index" }));
+
+    expect(screen.queryByRole("option", { name: "localai_rag_e2e" })).not.toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "reports" })).toBeInTheDocument();
+  });
+
   it("shows empty state when no collections", async () => {
     mockGetCollections.mockResolvedValue({ collections: [] });
 
@@ -101,7 +108,7 @@ describe("RAG Page", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText(/No collections yet/i)).toBeInTheDocument();
+      expect(screen.getByText(/No additional collections/i)).toBeInTheDocument();
     });
   });
 
@@ -117,7 +124,7 @@ describe("RAG Page", () => {
     await waitFor(() => {
       expect(screen.getByRole("alert")).toHaveTextContent("Could not load collections: Network error");
     });
-    expect(screen.queryByText(/No collections yet/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/No additional collections/i)).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
     await userEvent.click(await screen.findByRole("combobox", { name: "Search index" }));
@@ -305,127 +312,4 @@ describe("RAG Page", () => {
     expect(screen.getByRole("button", { name: /Search/i })).toBeDisabled();
   });
 
-  // --- Ingest UI Tests ---
-
-  it("renders Ingest Documents section with document list", async () => {
-    await act(async () => {
-      render(<RAGPage />);
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText("Ingest Documents")).toBeInTheDocument();
-      expect(screen.getByText("report.pdf")).toBeInTheDocument();
-      expect(screen.getByText("notes.md")).toBeInTheDocument();
-    });
-  });
-
-  it("shows empty state when no documents are uploaded", async () => {
-    mockGetDocuments.mockResolvedValue({ documents: [] });
-
-    await act(async () => {
-      render(<RAGPage />);
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText(/No documents uploaded yet/i)).toBeInTheDocument();
-    });
-  });
-
-  it("shows Ingest button for each document", async () => {
-    await act(async () => {
-      render(<RAGPage />);
-    });
-
-    await waitFor(() => {
-      const ingestButtons = screen.getAllByRole("button", { name: /Ingest/i });
-      expect(ingestButtons).toHaveLength(2);
-    });
-  });
-
-  it("calls ingestRAG with document id and collection when Ingest is clicked", async () => {
-    mockIngestRAG.mockResolvedValue({ message: "ok", chunks: 5 });
-
-    await act(async () => {
-      render(<RAGPage />);
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText("report.pdf")).toBeInTheDocument();
-    });
-
-    const ingestButtons = screen.getAllByRole("button", { name: /Ingest/i });
-    await userEvent.click(ingestButtons[0]);
-
-    await waitFor(() => {
-      expect(mockIngestRAG).toHaveBeenCalledWith("d1", "documents");
-    });
-  });
-
-  it("shows error when ingest fails", async () => {
-    mockIngestRAG.mockRejectedValue(new Error("Ingest failed"));
-
-    await act(async () => {
-      render(<RAGPage />);
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText("report.pdf")).toBeInTheDocument();
-    });
-
-    const ingestButtons = screen.getAllByRole("button", { name: /Ingest/i });
-    await userEvent.click(ingestButtons[0]);
-
-    await waitFor(() => {
-      expect(screen.getByText("Ingest failed")).toBeInTheDocument();
-    });
-  });
-
-  it("refreshes collections after successful ingest", async () => {
-    mockIngestRAG.mockResolvedValue({ message: "ok", chunks: 5 });
-
-    await act(async () => {
-      render(<RAGPage />);
-    });
-
-    await waitFor(() => {
-      expect(screen.getByText("report.pdf")).toBeInTheDocument();
-    });
-
-    // Update collections response for the reload
-    mockGetCollections.mockResolvedValue({
-      collections: [
-        { name: "documents", count: 15 },
-        { name: "reports", count: 3 },
-      ],
-    });
-
-    const ingestButtons = screen.getAllByRole("button", { name: /Ingest/i });
-    await userEvent.click(ingestButtons[0]);
-
-    await waitFor(() => {
-      // Collections should have been reloaded
-      expect(mockGetCollections).toHaveBeenCalledTimes(2); // initial + after ingest
-    });
-  });
-
-  it("shows a retryable document loading error instead of an empty state", async () => {
-    mockGetDocuments
-      .mockRejectedValueOnce(new Error("Network error"))
-      .mockResolvedValueOnce({ documents: [] });
-
-    await act(async () => {
-      render(<RAGPage />);
-    });
-
-    await waitFor(() => {
-      expect(screen.getByRole("alert")).toHaveTextContent("Could not load documents: Network error");
-    });
-    expect(screen.queryByText(/No documents uploaded yet/i)).not.toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
-    await waitFor(() => {
-      expect(screen.getByText(/No documents uploaded yet/i)).toBeInTheDocument();
-    });
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  });
 });

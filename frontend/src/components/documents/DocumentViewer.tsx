@@ -25,11 +25,13 @@ interface AnalysisData {
 
 interface DocumentViewerProps {
   document: Document;
+  duplicateCount?: number;
+  duplicateStatusSummary?: string;
   onDelete: (id: string) => void;
   onAnalyze: (id: string, prompt?: string) => Promise<AnalysisData>;
 }
 
-export function DocumentViewer({ document: doc, onDelete, onAnalyze }: DocumentViewerProps) {
+export function DocumentViewer({ document: doc, duplicateCount = 1, duplicateStatusSummary, onDelete, onAnalyze }: DocumentViewerProps) {
   const [prompt, setPrompt] = useState("");
   const [analysis, setAnalysis] = useState<AnalysisData | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -96,31 +98,43 @@ export function DocumentViewer({ document: doc, onDelete, onAnalyze }: DocumentV
       : `${(doc.sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
 
   return (
-    <Card>
+    <Card className="min-w-0 overflow-hidden">
       <CardHeader className="pb-3">
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-2">
-            <FileText className="h-5 w-5 text-muted-foreground" />
-            <CardTitle className="text-sm">{doc.filename}</CardTitle>
+        <div className="flex min-w-0 items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-2">
+            <FileText className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
+            <CardTitle className="min-w-0 break-words text-sm [overflow-wrap:anywhere]">
+              {doc.filename}
+            </CardTitle>
           </div>
           <Button
             variant="ghost"
             size="icon"
-            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+            aria-label={duplicateCount > 1
+              ? `Delete one of ${duplicateCount} identical uploads: ${doc.filename}`
+              : `Delete ${doc.filename}`}
+            className="h-9 w-9 shrink-0 text-muted-foreground hover:text-destructive"
             onClick={() => onDelete(doc.id)}
           >
-            <Trash2 className="h-3.5 w-3.5" />
+            <Trash2 className="h-4 w-4" aria-hidden="true" />
           </Button>
         </div>
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className="min-w-0 space-y-3">
         <div className="flex flex-wrap gap-2 text-xs">
           <Badge variant="secondary">{doc.format}</Badge>
           <Badge variant="outline">{sizeLabel}</Badge>
-          <div className="flex items-center gap-1">
-            <div className={`h-1.5 w-1.5 rounded-full ${statusColor}`} />
-            <span className="text-muted-foreground">{doc.status}</span>
-          </div>
+          {duplicateCount > 1 ? (
+            <Badge variant="outline">{duplicateCount} identical uploads</Badge>
+          ) : (
+            <div className="flex items-center gap-1">
+              <div className={`h-1.5 w-1.5 rounded-full ${statusColor}`} />
+              <span className="text-muted-foreground">{doc.status}</span>
+            </div>
+          )}
+          {duplicateCount > 1 && duplicateStatusSummary && (
+            <span className="text-muted-foreground">{duplicateStatusSummary}</span>
+          )}
           {doc.pageCount && (
             <span className="text-muted-foreground">{doc.pageCount} pages</span>
           )}
@@ -140,7 +154,7 @@ export function DocumentViewer({ document: doc, onDelete, onAnalyze }: DocumentV
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             placeholder="Ask about this document... (optional)"
-            className="min-h-[60px] resize-none text-xs"
+            className="min-h-[60px] w-full min-w-0 resize-y text-sm"
             rows={2}
           />
           <Button
@@ -156,13 +170,13 @@ export function DocumentViewer({ document: doc, onDelete, onAnalyze }: DocumentV
             )}
             Analyze
           </Button>
-          <div className="grid grid-cols-2 gap-2">
-            <Button asChild size="sm" variant="outline" className="min-h-10">
+          <div className="grid grid-cols-1 gap-2">
+            <Button asChild size="sm" variant="outline" className="min-h-10 w-full whitespace-normal px-3 text-center leading-snug">
               <Link href={`/chat?documentId=${encodeURIComponent(doc.id)}`}>
                 <Search className="mr-2 size-3.5" aria-hidden="true" /> Ask in Chat
               </Link>
             </Button>
-            <Button type="button" size="sm" variant="outline" className="min-h-10" onClick={() => void openIndexDialog()}>
+            <Button type="button" size="sm" variant="outline" className="min-h-10 w-full whitespace-normal px-3 text-center leading-snug" onClick={() => void openIndexDialog()}>
               <Database className="mr-2 size-3.5" aria-hidden="true" /> Add to Knowledge Base
             </Button>
           </div>
@@ -187,7 +201,9 @@ export function DocumentViewer({ document: doc, onDelete, onAnalyze }: DocumentV
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add to Knowledge Base</DialogTitle>
-            <DialogDescription>Choose the private container that should index {doc.filename}.</DialogDescription>
+              <DialogDescription>
+                Choose the private container that should index <span className="break-all">{doc.filename}</span>.
+              </DialogDescription>
           </DialogHeader>
           {containers.length > 0 ? (
             <label className="grid gap-2 text-sm font-medium" htmlFor={`rag-container-${doc.id}`}>

@@ -111,7 +111,7 @@ bash scripts/setup.sh
 
 The script requires `ollama`, `uv`, `pnpm`, and `node`. If Ollama is not
 running, it starts `ollama serve` itself and then pulls `llama3.1:8b`,
-`nomic-embed-text`, and `llama3.2-vision:11b`. Model pulls can take a long time.
+`nomic-embed-text`, and `qwen3-vl:4b`. Model pulls can take a long time.
 It does **not** provision the meeting ASR model.
 
 The setup script writes `.env` at the repository root, but the Makefile starts
@@ -208,9 +208,12 @@ ollama serve
 In another terminal, pull only what you need:
 
 ```bash
-ollama pull llama3.1:8b       # chat, SQL, and meeting answer suggestions
-ollama pull nomic-embed-text  # document embeddings for RAG
-ollama pull llama3.2-vision:11b  # optional image/vision features
+ollama pull laya:latest          # optional local RAG decision checks
+ollama pull llama3.1:8b          # chat, SQL, web, and meeting answer suggestions
+ollama pull qwen2.5:7b           # documents, RAG, and stock research
+ollama pull qwen3-vl:4b  # image analysis
+ollama pull qwen2.5-coder:7b     # software engineer agent
+ollama pull nomic-embed-text     # document embeddings for RAG
 ```
 
 RAG uses Qdrant for dense and BM25 retrieval. Start Qdrant before ingesting or
@@ -519,7 +522,11 @@ In another terminal, pull the models you want:
 
 ```bash
 ollama pull llama3.1:8b
+ollama pull qwen2.5:7b
+ollama pull qwen3-vl:4b
+ollama pull qwen2.5-coder:7b
 ollama pull nomic-embed-text
+ollama pull laya:latest
 ```
 
 ### 2. Backend
@@ -567,7 +574,7 @@ frontend browser endpoints are in `frontend/.env.local`. The checked-in
 |------------------------|----------------------------|--------------------------------------|
 | `OLLAMA_BASE_URL`      | `http://localhost:11434`   | Ollama server address                |
 | `OLLAMA_CHAT_MODEL`    | `llama3.1:8b`              | Model for chat and SQL generation    |
-| `OLLAMA_VISION_MODEL`  | `llama3.2-vision:11b`      | Model for image understanding        |
+| `OLLAMA_VISION_MODEL`  | `qwen3-vl:4b`              | Model for image understanding        |
 | `OLLAMA_EMBEDDING_MODEL` | `nomic-embed-text`       | Model for document embeddings        |
 | `OLLAMA_REQUEST_TIMEOUT` | `120`                    | Seconds before LLM request timeout   |
 | `OLLAMA_NUM_PARALLEL`  | `2`                        | Concurrent Ollama requests           |
@@ -1378,7 +1385,7 @@ Server -> Client (streaming):
 3. **Set `OLLAMA_NUM_PARALLEL=2`** for moderate concurrency. Don't exceed available memory.
 4. **Batch RAG ingestion** -- ingest multiple documents before searching for best indexing performance.
 5. **Keep prompts concise** -- local models perform best with focused, clear queries.
-6. **Monitor memory** -- `llama3.1:8b` uses ~5GB, `llama3.2-vision:11b` uses ~8GB. Running both simultaneously requires 16GB+ unified memory.
+6. **Monitor memory** -- model residency depends on model size and context. Running chat and vision models simultaneously can use substantially more unified memory.
 
 ---
 

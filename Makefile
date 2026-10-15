@@ -20,9 +20,12 @@ setup: ## Install all dependencies and pull Ollama models
 	@echo "==> Installing frontend dependencies..."
 	cd $(FRONTEND_DIR) && pnpm install
 	@echo "==> Pulling Ollama models..."
+	ollama pull laya:latest
 	ollama pull llama3.1:8b
+	ollama pull qwen2.5:7b
+	ollama pull qwen3-vl:4b
+	ollama pull qwen2.5-coder:7b
 	ollama pull nomic-embed-text
-	ollama pull llama3.2-vision:11b
 	@echo "==> Copying environment files..."
 	@test -f .env || cp .env.example .env
 	@test -f $(FRONTEND_DIR)/.env.local || echo "NEXT_PUBLIC_API_URL=http://localhost:8000" > $(FRONTEND_DIR)/.env.local

@@ -67,7 +67,14 @@ if ! curl -sf http://localhost:11434/api/tags >/dev/null 2>&1; then
     sleep 3
 fi
 
-MODELS=("llama3.1:8b" "nomic-embed-text" "llama3.2-vision:11b")
+MODELS=(
+    "laya:latest"
+    "llama3.1:8b"
+    "nomic-embed-text"
+    "qwen2.5:7b"
+    "qwen3-vl:4b"
+    "qwen2.5-coder:7b"
+)
 
 for model in "${MODELS[@]}"; do
     if ollama list 2>/dev/null | grep -q "$model"; then

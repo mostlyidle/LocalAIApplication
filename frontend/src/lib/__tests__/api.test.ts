@@ -125,13 +125,25 @@ describe("API Client", () => {
 
   describe("Chat endpoints", () => {
     it("sends the session CSRF token with mutations", async () => {
-      const spy = mockFetchSuccess({ deleted: true });
+      const spy = mockFetchSuccess({ status: "deleted", conversation_id: "c1" });
       globalThis.fetch = spy;
       setCsrfToken("session-csrf");
 
       await deleteConversation("c1");
 
       expect(spy.mock.calls[0][1].headers["X-CSRF-Token"]).toBe("session-csrf");
+    });
+
+    it("deletes a conversation by id", async () => {
+      const spy = mockFetchSuccess({ status: "deleted", conversation_id: "c1" });
+      globalThis.fetch = spy;
+
+      await expect(deleteConversation("c1")).resolves.toEqual({
+        status: "deleted",
+        conversation_id: "c1",
+      });
+      expect(spy.mock.calls[0][0]).toContain("/chat/conversations/c1");
+      expect(spy.mock.calls[0][1].method).toBe("DELETE");
     });
 
     it("sendMessage posts to /chat with message and conversationId", async () => {
@@ -213,12 +225,13 @@ describe("API Client", () => {
     });
 
     it("deleteConversation sends DELETE request", async () => {
-      const spy = mockFetchSuccess({ deleted: true });
+      const spy = mockFetchSuccess({ status: "deleted", conversation_id: "1" });
       globalThis.fetch = spy;
 
       const result = await deleteConversation("1");
 
-      expect(result.deleted).toBe(true);
+      expect(result.status).toBe("deleted");
+      expect(result.conversation_id).toBe("1");
       expect(spy.mock.calls[0][1].method).toBe("DELETE");
     });
   });

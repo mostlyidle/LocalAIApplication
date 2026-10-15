@@ -10,6 +10,10 @@ Provides:
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
+import math
+import re
 import uuid
 from pathlib import Path
 from typing import Any
@@ -36,8 +40,8 @@ from app.dependencies import (
 from app.models.db_models import Document, RagCollection, RagContainerFile
 from app.models.enums import DocumentFormat, DocumentStatus
 from app.models.schemas import (
-    DocumentAnalyzeRequest,
     DocumentAnalysisResult,
+    DocumentAnalyzeRequest,
     DocumentListItem,
     DocumentUploadResponse,
     ExtractedTable,
@@ -48,6 +52,136 @@ from app.services.vector_store import VectorStoreService  # noqa: TC001
 
 logger = structlog.get_logger(__name__)
 router = APIRouter()
+
+_DOCUMENT_ANSWER_CONTEXT_LIMIT = 20_000
+_DOCUMENT_QUERY_STOP_WORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "by",
+        "for",
+        "from",
+        "how",
+        "in",
+        "is",
+        "it",
+        "of",
+        "on",
+        "or",
+        "the",
+        "to",
+        "was",
+        "what",
+        "when",
+        "where",
+        "which",
+        "who",
+        "with",
+    }
+)
+
+
+def _sha256_file(path: str) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _select_document_context(
+    text: str,
+    blocks: list[dict[str, Any]],
+    prompt: str,
+) -> str:
+    """Choose relevant excerpts across a long document for question answering.
+
+    Args:
+        text: Full extracted document text.
+        blocks: Parser blocks, including page metadata where available.
+        prompt: The user's question about the document.
+
+    Returns:
+        The full text when it fits the model budget, otherwise ranked excerpts
+        that preserve source page labels and nearby headings.
+    """
+    if len(text) <= _DOCUMENT_ANSWER_CONTEXT_LIMIT:
+        return text
+
+    passages: list[dict[str, Any]] = []
+    source_blocks = blocks or [{"text": part} for part in re.split(r"\n\s*\n", text)]
+    for block in source_blocks:
+        block_text = str(block.get("text", "")).strip()
+        if not block_text:
+            continue
+        for start in range(0, len(block_text), 3_600):
+            passage: dict[str, Any] = {
+                "text": block_text[start : start + 4_000],
+                "page": block.get("page"),
+                "section": block.get("section"),
+            }
+            passage["tokens"] = set(re.findall(r"[a-z0-9]+", passage["text"].casefold()))
+            passages.append(passage)
+
+    if not passages:
+        return text[:_DOCUMENT_ANSWER_CONTEXT_LIMIT]
+
+    query_tokens = set(re.findall(r"[a-z0-9]+", prompt.casefold())) - _DOCUMENT_QUERY_STOP_WORDS
+    document_frequency = {
+        token: sum(token in passage["tokens"] for passage in passages)
+        for token in query_tokens
+    }
+    ranked = []
+    for index, passage in enumerate(passages):
+        score = sum(
+            math.log1p(len(passages) / document_frequency[token])
+            for token in query_tokens
+            if document_frequency[token] and token in passage["tokens"]
+        )
+        if score:
+            ranked.append((score, index))
+    ranked.sort(reverse=True)
+
+    if ranked:
+        selected: list[int] = []
+        seen: set[int] = set()
+        for _, index in ranked[:8]:
+            for candidate in (index - 1, index, index + 1):
+                if 0 <= candidate < len(passages) and candidate not in seen:
+                    selected.append(candidate)
+                    seen.add(candidate)
+    else:
+        # Keep some coverage across the document if the question uses different terms.
+        sample_count = min(12, len(passages))
+        selected = sorted({
+            round(index * (len(passages) - 1) / max(sample_count - 1, 1))
+            for index in range(sample_count)
+        })
+
+    excerpts: list[str] = []
+    remaining = _DOCUMENT_ANSWER_CONTEXT_LIMIT
+    for index in selected:
+        passage = passages[index]
+        label = ""
+        if passage.get("page") is not None:
+            label = f"Page {passage['page']}"
+        if passage.get("section"):
+            label = f"{label} · {passage['section']}" if label else str(passage["section"])
+        content = f"[{label}]\n{passage['text']}" if label else passage["text"]
+        if len(content) > remaining:
+            content = content[:remaining]
+        if content:
+            excerpts.append(content)
+            remaining -= len(content) + 2
+        if remaining <= 0:
+            break
+
+    return "\n\n".join(excerpts)
 
 
 # ---------------------------------------------------------------------------
@@ -102,6 +236,7 @@ async def upload_document(
         filename=filename,
         format=doc_format.value,
         size_bytes=size_bytes,
+        content_sha256=hashlib.sha256(content).hexdigest(),
         storage_path=str(storage_path),
         status=DocumentStatus.PENDING,
     )
@@ -173,7 +308,7 @@ async def analyze_document(
             task = TaskRequest(
                 prompt=body.prompt,
                 agent_name=profile.name,
-                context=parsed.text[:100_000],
+                context=_select_document_context(parsed.text, parsed.blocks, body.prompt),
             )
             answer = (
                 await request.app.state.task_runner.run(
@@ -243,12 +378,25 @@ async def list_documents(
     result = await db.execute(stmt)
     docs = result.scalars().all()
 
+    hashes_updated = False
+    for doc in docs:
+        if doc.content_sha256 is not None:
+            continue
+        try:
+            doc.content_sha256 = await asyncio.to_thread(_sha256_file, doc.storage_path)
+            hashes_updated = True
+        except OSError:
+            logger.warning("document_hash_unavailable", document_id=doc.id)
+    if hashes_updated:
+        await db.commit()
+
     return [
         DocumentListItem(
             id=doc.id,
             filename=doc.filename,
             format=DocumentFormat(doc.format),
             size_bytes=doc.size_bytes,
+            content_sha256=doc.content_sha256,
             status=DocumentStatus(doc.status),
             created_at=doc.created_at,
         )

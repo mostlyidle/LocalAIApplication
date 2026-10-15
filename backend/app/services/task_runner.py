@@ -254,9 +254,13 @@ class TaskRunner:
         )
         self._memory_context.set(context.memory_context)
         answer = (
-            await self._answer(execution, prompt_values=context.prompt_values)
-            if context.citations
-            else "I could not find relevant evidence in the selected collection."
+            context.answer_override
+            if context.answer_override is not None
+            else (
+                await self._answer(execution, prompt_values=context.prompt_values)
+                if context.citations
+                else "I could not find relevant evidence in the selected collection."
+            )
         )
         return AgentResult(
             agent=execution.profile.name,

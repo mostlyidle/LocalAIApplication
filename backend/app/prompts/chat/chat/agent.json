@@ -6,7 +6,7 @@
   "default_for_target": true,
   "inference": {
     "default_model": "llama3.1:8b",
-    "allowed_models": ["llama3.1:8b", "mistral:7b"],
+    "allowed_models": ["llama3.1:8b", "qwen2.5:7b", "qwen2.5-coder:7b"],
     "defaults": {
       "model": "llama3.1:8b", "temperature": 0.7, "max_output_tokens": 4096,
       "context_window": 8192, "seed": 0, "top_p": 0.9, "top_k": 40,
