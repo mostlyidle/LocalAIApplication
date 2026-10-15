@@ -47,9 +47,8 @@ running macOS 13.0 or later**. Install the following software before cloning:
 | Rust stable and Cargo | Build the Tauri host | `brew install rust` |
 | Ollama | Optional chat, SQL, answer suggestions, and RAG | `brew install ollama` |
 
-The backend declares Python `>=3.12`. Use Python 3.12 or 3.13; **Python 3.14 is
-not supported by the current ChromaDB migration dependency**. Next.js 16 requires Node.js
-20.9 or later.
+The backend declares Python `>=3.12`. Use Python 3.12 or 3.13; Python 3.14 has
+not been verified. Next.js 16 requires Node.js 20.9 or later.
 
 Install the Homebrew prerequisites in one command (after installing Homebrew):
 
@@ -121,7 +120,7 @@ make the backend configuration explicit:
 
 ```bash
 test -f backend/.env || cp .env.example backend/.env
-mkdir -p backend/data/uploads backend/data/chroma backend/data/fastembed
+mkdir -p backend/data/uploads backend/data/fastembed
 ```
 
 If you already have a `backend/.env`, do not overwrite your custom settings;
@@ -150,8 +149,8 @@ MEETING_ENABLE_RAG=false
 
 `backend/.env` is ignored by Git. Never put API keys or other secrets in
 `GUIDE.md` or commit a personal `.env` file. The complete list of supported
-settings is in [.env.example](.env.example). In particular, relative database,
-upload, and Chroma paths are relative to `backend/` when using `make dev` or
+settings is in [.env.example](.env.example). In particular, relative database
+and upload paths are relative to `backend/` when using `make dev` or
 `make dev-desktop`.
 
 ### Required meeting ASR model (provision before the meeting)
@@ -274,7 +273,7 @@ ASR provisioning, and one-time dependencies first:
 
 ```bash
 test -f backend/.env || cp .env.example backend/.env
-mkdir -p backend/data/uploads backend/data/chroma
+mkdir -p backend/data/uploads
 cd backend && uv sync
 cd ../frontend && pnpm install
 cd ../
@@ -325,7 +324,7 @@ curl -sS http://127.0.0.1:8000/api/v1/health/ready | python3 -m json.tool
 Proceed with a meeting only when `meeting_ready` is `true` and both
 `services[].name == "local_asr"` and `services[].name == "app_database"` are
 healthy. HTTP 200 alone is not enough. For a complete status view, including
-optional Ollama and Chroma checks, use:
+optional Ollama and Qdrant checks, use:
 
 ```bash
 curl -sS http://127.0.0.1:8000/api/v1/health | python3 -m json.tool
@@ -333,7 +332,7 @@ curl -sS http://127.0.0.1:8000/api/v1/health | python3 -m json.tool
 
 The desktop launcher's readiness request has bounded timeouts and a 20-second
 polling budget. `local_asr` errors usually identify a missing, incomplete, or
-incorrectly named model directory. `ollama` and `chromadb` may be unhealthy in
+incorrectly named model directory. `ollama` and `qdrant` may be unhealthy in
 the full health response without preventing capture.
 
 ---
@@ -382,11 +381,11 @@ workflow, put the settings in `backend/.env` (or export them) rather than relyin
 
 ```bash
 test -f backend/.env || cp .env.example backend/.env
-mkdir -p backend/data/uploads backend/data/chroma
+mkdir -p backend/data/uploads
 ```
 
-For this launcher, relative backend paths such as `./data/app.db`, `./data/uploads`, and
-`./data/chroma` resolve under `backend/`.
+For this launcher, relative backend paths such as `./data/app.db` and
+`./data/uploads` resolve under `backend/`.
 
 ### Offline local transcription
 
@@ -532,7 +531,7 @@ ollama pull laya:latest
 ### 2. Backend
 
 ```bash
-mkdir -p backend/data/uploads backend/data/chroma
+mkdir -p backend/data/uploads
 test -f backend/.env || cp .env.example backend/.env
 
 cd backend
@@ -600,8 +599,8 @@ frontend browser endpoints are in `frontend/.env.local`. The checked-in
 
 | Variable              | Default | Description                                    |
 |-----------------------|---------|------------------------------------------------|
-| `CHROMA_PERSIST_DIR`  | `./data/chroma` | Legacy Chroma source for explicit migrations |
 | `QDRANT_URL`          | `http://localhost:6333` | Qdrant endpoint for hybrid retrieval |
+| `QDRANT_COLLECTION_NAME` | `documents` | Default collection for RAG tools |
 | `FASTEMBED_CACHE_PATH` | `./data/fastembed` | Local BM25/query model cache directory |
 | `RAG_BM25_LANGUAGE`   | `english` | BM25 language used for new collections |
 | `RAG_CHUNK_SIZE`      | `1000`  | Characters per document chunk                  |
@@ -767,25 +766,6 @@ into a new collection to establish a verified embedding identity before new writ
 3. Select documents and click **Ingest** to add them to a collection
 4. Use the search bar to query your knowledge base
 
-#### Migrating an existing Chroma collection
-
-The application never migrates collections at startup. Inspect the old index,
-then review a dry-run before running a copy:
-
-```bash
-cd backend
-uv run python -m app.rag_migrate inventory --source-path ./data/chroma
-uv run python -m app.rag_migrate migrate \
-  --source-path ./data/chroma \
-  --source-collection documents \
-  --destination-collection documents
-```
-
-Migration is dry-run by default. After reviewing the report and confirming the
-source path, collection, Qdrant endpoint, and Ollama model, append `--execute`
-to the second command. The source remains intact; failed copies keep their
-destination for inspection, so a retry needs a fresh destination collection.
-
 ### Web Research Agent
 
 Scrape and summarize web content locally without API keys.
@@ -876,7 +856,7 @@ application, full-stack, and observability profiles.
 
 | Profile  | Services                            | Use Case                               |
 |----------|-------------------------------------|----------------------------------------|
-| `infra`  | Ollama + Qdrant + ChromaDB migration source | Run infrastructure in containers |
+| `infra`  | Ollama + Qdrant | Run infrastructure in containers |
 | `app`    | Backend + Frontend                  | Run application in containers          |
 | `full`   | All application and infrastructure services | Full containerized deployment |
 | `observability` | Prometheus + Grafana | Scrape backend HTTP metrics and view dashboards |
@@ -921,7 +901,6 @@ Docker uses `.env.docker` which differs from `.env.example` in:
 | Frontend  | 3000      | 3000           |
 | Backend   | 8000      | 8000           |
 | Qdrant    | 6333      | 6333           |
-| ChromaDB (migration source) | 8100 | 8000 |
 | Prometheus (optional) | 9090 | 9090 |
 | Grafana (optional) | 3001 | 3000 |
 
@@ -1035,7 +1014,6 @@ backend/tests/
   test_services/
     test_llm.py            # LLM service wrapper
     test_embeddings.py     # Embedding service
-    test_vector_store.py   # ChromaDB operations
     test_document_parser.py # Document parsing pipeline
     test_ocr.py            # OCR engine
     test_database.py       # Database engine/session management
@@ -1244,7 +1222,7 @@ curl http://localhost:6333/healthz
 ```
 
 For native development, ensure `QDRANT_URL=http://localhost:6333`; Docker uses
-`QDRANT_URL=http://qdrant:6333`. Chroma remains available as a migration source.
+`QDRANT_URL=http://qdrant:6333`.
 
 ### Frontend WebSocket Not Connecting
 
@@ -1256,17 +1234,6 @@ NEXT_PUBLIC_WS_URL=ws://localhost:8000
 ```
 
 If using the Next.js proxy, set it to empty string. For direct backend connection, use `ws://localhost:8000`.
-
-### Python 3.14 Compatibility
-
-ChromaDB does not support Python 3.14. If you see import errors:
-
-**Fix**: Use Python 3.12 or 3.13:
-```bash
-brew install python@3.13
-uv python pin 3.13
-uv sync
-```
 
 ### Port Already in Use
 
@@ -1429,5 +1396,5 @@ LocalAIApplication/
     app.db                 # Chat history database
     demo.db                # SQL agent target database
     uploads/               # Uploaded documents
-    chroma/                # Vector store
+    fastembed/              # Local retrieval model cache
 ```

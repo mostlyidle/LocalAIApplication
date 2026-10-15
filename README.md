@@ -1,6 +1,6 @@
 # Local AI Application
 
-A local AI workspace with a chat UI, FastAPI backend, Ollama models, document parsing, hybrid RAG, and specialist agents. The Docker Compose stack includes the app, Ollama, Qdrant, and ChromaDB (for migration workflows).
+A local AI workspace with a chat UI, FastAPI backend, Ollama models, document parsing, hybrid RAG, and specialist agents. The Docker Compose stack includes the app, Ollama, and Qdrant.
 
 For the detailed Apple Silicon and native development guide, see [GUIDE.md](GUIDE.md).
 
@@ -45,7 +45,7 @@ NEXT_PUBLIC_WS_URL=
 BACKEND_URL=http://backend:8000
 ```
 
-Empty browser URLs use the public site's same-origin `/api` and WebSocket paths. Route HTTP API requests through the frontend (Next.js rewrites them to the backend), and route `/api/v1/chat/stream` WebSocket upgrades directly to the backend. Set `CORS_ORIGINS` and `MEETING_ALLOWED_ORIGINS` to the exact public `https://` origin and keep `AUTH_COOKIE_SECURE=true`. For a native Tauri client, set `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_WS_URL` to the public HTTPS/WSS API origin because it cannot use browser same-origin routing. Do not publish Ollama, Qdrant, ChromaDB, or the backend directly.
+Empty browser URLs use the public site's same-origin `/api` and WebSocket paths. Route HTTP API requests through the frontend (Next.js rewrites them to the backend), and route `/api/v1/chat/stream` WebSocket upgrades directly to the backend. Set `CORS_ORIGINS` and `MEETING_ALLOWED_ORIGINS` to the exact public `https://` origin and keep `AUTH_COOKIE_SECURE=true`. For a native Tauri client, set `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_WS_URL` to the public HTTPS/WSS API origin because it cannot use browser same-origin routing. Do not publish Ollama, Qdrant, or the backend directly.
 
 Accounts are operator-managed. After the stack is running, create one with:
 

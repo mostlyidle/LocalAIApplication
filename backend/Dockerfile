@@ -63,7 +63,7 @@ COPY --from=builder /app/alembic.ini ./
 COPY --from=builder /app/pyproject.toml ./
 
 # Create data directories
-RUN mkdir -p data/uploads data/chroma
+RUN mkdir -p data/uploads
 
 # Ensure the venv python is used
 ENV PATH="/app/.venv/bin:$PATH"

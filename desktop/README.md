@@ -50,11 +50,11 @@ and replace the ASR placeholder before starting:
 
 ```sh
 cp .env.example backend/.env
-mkdir -p backend/data/uploads backend/data/chroma
+mkdir -p backend/data/uploads
 ${EDITOR:-vi} backend/.env
 ```
 
-Relative backend paths such as `./data/app.db`, `./data/uploads`, and `./data/chroma` resolve
+Relative backend paths such as `./data/app.db` and `./data/uploads` resolve
 under `backend/` for this launcher.
 
 The frontend defaults to the local backend and does not require an additional env file for

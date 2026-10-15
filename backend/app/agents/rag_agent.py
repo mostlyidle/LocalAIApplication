@@ -30,7 +30,11 @@ async def rag_agent_node(state: AgentState) -> dict[str, Any]:
     inference = profile.inference.defaults.model_copy(update={"model": settings.ollama_chat_model})
     execution = AgentExecution(profile, inference)
     prompts = PromptStore(Path(__file__).parents[1] / "prompts")
-    request = TaskRequest(prompt=state["user_input"], agent_name=profile.name, collection=settings.chroma_collection_name)
+    request = TaskRequest(
+        prompt=state["user_input"],
+        agent_name=profile.name,
+        collection=settings.qdrant_collection_name,
+    )
     history = [
         f"{message.type}: {str(message.content)[:1200]}"
         for message in state["messages"][:-1][-8:]

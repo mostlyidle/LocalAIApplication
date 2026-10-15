@@ -39,7 +39,7 @@ class RetrievalQuestion(BaseModel):
 
 
 class RetrievalDataset(BaseModel):
-    """Validated benchmark corpus, independent of persisted Chroma data."""
+    """Validated benchmark corpus, independent of persisted vector-store data."""
 
     documents: list[RetrievalDocument] = Field(min_length=1)
     questions: list[RetrievalQuestion] = Field(min_length=1)

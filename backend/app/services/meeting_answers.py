@@ -110,7 +110,7 @@ class FakeAnswerGenerator:
 
 
 class MeetingAnswerService:
-    """Combine optional Chroma retrieval with local Ollama generation."""
+    """Combine optional Qdrant retrieval with local Ollama generation."""
 
     def __init__(
         self,

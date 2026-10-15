@@ -73,7 +73,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Ensure data directories exist
     Path(settings.upload_dir).mkdir(parents=True, exist_ok=True)
-    Path(settings.chroma_persist_dir).mkdir(parents=True, exist_ok=True)
 
     # Initialize the application database tables (creates if not exist)
     from app.services.database import init_app_db

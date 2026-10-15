@@ -32,7 +32,7 @@ async def ingest_document(
 
     Args:
         file_path: Path to the document file.
-        collection: Target collection name (default: settings.chroma_collection_name).
+        collection: Target collection name (default: settings.qdrant_collection_name).
         document_id: Optional ID for the document (auto-generated if not provided).
 
     Returns:
@@ -70,12 +70,12 @@ async def ingest_document(
         "document_ingested",
         document_id=doc_id,
         chunks=count,
-        collection=collection or settings.chroma_collection_name,
+        collection=collection or settings.qdrant_collection_name,
     )
     return {
         "document_id": doc_id,
         "chunk_count": count,
-        "collection": collection or settings.chroma_collection_name,
+        "collection": collection or settings.qdrant_collection_name,
     }
 
 

@@ -14,7 +14,7 @@ class TestHealthEndpoint:
     async def test_required_readiness_ignores_unresponsive_optional_providers(
         self, client: AsyncClient
     ):
-        """Required readiness succeeds without probing Ollama or Chroma."""
+        """Required readiness succeeds without probing optional services."""
 
         class FakeConnection:
             async def __aenter__(self):
@@ -100,7 +100,7 @@ class TestHealthEndpoint:
     async def test_health_unhealthy_when_all_down(self, client: AsyncClient):
         """When all services fail, status should be 'unhealthy'."""
         mock_vs = AsyncMock()
-        mock_vs.list_collections = AsyncMock(side_effect=RuntimeError("ChromaDB offline"))
+        mock_vs.list_collections = AsyncMock(side_effect=RuntimeError("Qdrant offline"))
 
         with (
             patch("app.api.routes.tools.httpx.AsyncClient") as mock_httpx_class,

@@ -2,13 +2,13 @@
 # Docker Compose — Local AI Application
 # =============================================================================
 # Profiles:
-#   - infra:   Infrastructure (Ollama + Qdrant + Chroma migration source)
+#   - infra:   Infrastructure (Ollama + Qdrant)
 #   - app:     Backend + Frontend (requires infra or native services)
 #   - full:    Everything together
 #   - observability: Optional Prometheus + Grafana
 #
 # Usage:
-#   make docker-infra    # Start only Ollama + ChromaDB
+#   make docker-infra    # Start Ollama + Qdrant
 #   make docker-up       # Start all services
 #   make docker-down     # Stop all services
 # Host ports bind to loopback for local use. Remote access requires a TLS reverse
@@ -36,28 +36,6 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
-
-  chromadb:
-    image: chromadb/chroma:latest
-    container_name: local-ai-chromadb
-    profiles: ["infra", "full"]
-    ports:
-      - "127.0.0.1:8100:8000"
-    volumes:
-      - chroma_data:/chroma/chroma
-    environment:
-      - IS_PERSISTENT=TRUE
-      - ANONYMIZED_TELEMETRY=FALSE
-    restart: unless-stopped
-    healthcheck:
-      test:
-        - CMD-SHELL
-        - >-
-          perl -MIO::Socket::INET -e '$$s=IO::Socket::INET->new(PeerAddr=>"127.0.0.1",PeerPort=>8000,Proto=>"tcp",Timeout=>2) or exit 1; print $$s "GET /api/v2/heartbeat HTTP/1.0\r\nHost: localhost\r\nConnection: close\r\n\r\n"; local $$/; $$r=<$$s>; exit($$r =~ / 200 / ? 0 : 1)'
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 10s
 
   qdrant:
     image: qdrant/qdrant:v1.19.2
@@ -121,9 +99,6 @@ services:
       ollama:
         condition: service_healthy
         required: false
-      chromadb:
-        condition: service_healthy
-        required: false
       qdrant:
         condition: service_started
         required: false
@@ -161,7 +136,6 @@ services:
 
 volumes:
   ollama_data:
-  chroma_data:
   qdrant_data:
   backend_data:
   prometheus_data:

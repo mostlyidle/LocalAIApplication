@@ -143,8 +143,6 @@
   <circle cx="1552" cy="731" r="16" fill="#f4d5df"/><text x="1580" y="737" class="h">Local file storage</text><text x="1542" y="771" class="small">Uploads · parsed files · FastEmbed cache</text><text x="1542" y="795" class="small">ASR model provisioned by operator</text><text x="1542" y="819" class="small">Read-only workspace mount for code agent</text><text x="1542" y="839" class="tiny">No cloud file service</text>
   <rect x="1520" y="873" width="314" height="137" rx="20" class="card"/>
   <text x="1542" y="908" class="h">SQL target databases</text><text x="1542" y="941" class="small">Configured / registered by operator or account</text><text x="1542" y="965" class="small">Separate from the app’s SQLite database</text><text x="1542" y="991" class="tiny">SQLAlchemy · read-only default</text>
-  <rect x="1520" y="1036" width="314" height="137" rx="20" class="goldbox"/>
-  <text x="1542" y="1071" class="h">Chroma · migration source</text><text x="1542" y="1104" class="small">Legacy collections only for explicit</text><text x="1542" y="1128" class="small">dry-run / copy migration to Qdrant</text><text x="1542" y="1153" class="tiny">chroma_data · not runtime RAG</text>
   </g>
 
   <!-- External services -->
