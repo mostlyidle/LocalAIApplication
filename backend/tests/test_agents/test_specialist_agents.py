@@ -552,6 +552,26 @@ class TestRAGAgent:
         assert "could not find" in result["messages"][0].content
         assert result["metadata"]["execution"]["artifacts"]["citations"] == []
 
+    async def test_laya_fixed_response_never_invokes_answer_model(self) -> None:
+        from app.agents.rag_agent import rag_agent_node
+        from app.services.rag_context import RagContext
+
+        context = RagContext(
+            prompt_values={"prompt": "Question", "passages": "", "history": ""},
+            citations=[],
+            retrieval={"laya": {"evidence": {"applied": True}}},
+            answer_override="I couldn't find enough supporting evidence.",
+        )
+        with (
+            patch("app.agents.rag_agent.prepare_rag_context", AsyncMock(return_value=context)),
+            patch("app.agents.rag_agent.llm_service.get_chat_model") as generate,
+        ):
+            result = await rag_agent_node(_make_state(user_input="Question"))
+
+        generate.assert_not_called()
+        assert result["messages"][0].content == context.answer_override
+        assert result["metadata"]["execution"]["artifacts"]["citations"] == []
+
 
 # =============================================================================
 # Web Agent

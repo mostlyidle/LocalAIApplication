@@ -19,6 +19,7 @@ export function useDocuments() {
         filename: doc.filename,
         format: doc.format,
         sizeBytes: doc.size_bytes,
+        contentSha256: doc.content_sha256,
         status: doc.status,
         wordCount: 0,
         createdAt: doc.created_at,

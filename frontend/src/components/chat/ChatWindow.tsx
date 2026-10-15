@@ -2,7 +2,7 @@
 
 import { useRef, useEffect, useState, type FormEvent, type ChangeEvent, type ReactNode } from "react";
 import Link from "next/link";
-import { Send, Plus, Loader2, X, Image as ImageIcon, History, Sparkles, Lightbulb, BookOpen, ListChecks, PenLine, SlidersHorizontal, Search } from "lucide-react";
+import { Send, Plus, Loader2, X, Image as ImageIcon, History, Sparkles, Lightbulb, BookOpen, ListChecks, PenLine, SlidersHorizontal, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -18,6 +18,7 @@ import {
   getAgentCatalogWithArchived,
   getConversation,
   getConversations,
+  deleteConversation,
   getDocuments,
   updateConversationMemorySettings,
   uploadDocument,
@@ -104,6 +105,9 @@ export function ChatWindow() {
   const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
   const [historyHasMore, setHistoryHasMore] = useState(false);
   const [historyOffset, setHistoryOffset] = useState(0);
+  const [conversationToDelete, setConversationToDelete] = useState<{ id: string; title: string } | null>(null);
+  const [deletingConversationId, setDeletingConversationId] = useState<string | null>(null);
+  const [deleteConversationError, setDeleteConversationError] = useState("");
   const [conversationError, setConversationError] = useState("");
   const [conversations, setConversations] = useState<Awaited<ReturnType<typeof getConversations>>["conversations"]>([]);
   const [restoringConversation, setRestoringConversation] = useState(false);
@@ -273,6 +277,24 @@ export function ChatWindow() {
     setRecallSettingError("");
     setConversationError("");
     if (conversationStorageKey) window.localStorage.removeItem(conversationStorageKey);
+  };
+
+  const handleDeleteConversation = async () => {
+    if (!conversationToDelete || isStreaming || restoringConversation) return;
+    const target = conversationToDelete;
+    setDeletingConversationId(target.id);
+    setDeleteConversationError("");
+    try {
+      await deleteConversation(target.id);
+      setConversations((current) => current.filter((conversation) => conversation.id !== target.id));
+      setHistoryOffset((current) => Math.max(0, current - 1));
+      if (target.id === conversationId) startNewConversation();
+      setConversationToDelete(null);
+    } catch {
+      setDeleteConversationError("Could not delete this conversation. Please try again.");
+    } finally {
+      setDeletingConversationId(null);
+    }
   };
 
   const handleRecallExclusionChange = async (exclude: boolean) => {
@@ -601,20 +623,43 @@ export function ChatWindow() {
             {!historyLoading && conversations.length > 0 && filteredConversations.length === 0 && (
               <p className="px-2 py-1 text-sm text-muted-foreground">No conversations match that search.</p>
             )}
-            {filteredConversations.map((conversation) => (
-              <button
-                key={conversation.id}
-                type="button"
-                onClick={() => void selectConversation(conversation.id)}
-                disabled={restoringConversation || isStreaming}
-                className={`flex min-h-11 w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm hover:bg-muted disabled:opacity-50 ${conversation.id === conversationId ? "bg-muted" : ""}`}
-              >
-                <span className="truncate">{conversation.title || "Untitled conversation"}</span>
-                <span className="shrink-0 text-xs text-muted-foreground">
-                  {conversation.message_count} · {new Date(conversation.last_message_at).toLocaleDateString()}
-                </span>
-              </button>
-            ))}
+            {filteredConversations.map((conversation) => {
+              const title = conversation.title || "Untitled conversation";
+              return (
+                <div
+                  key={conversation.id}
+                  className={`flex items-center gap-1 rounded-lg hover:bg-muted focus-within:bg-muted ${conversation.id === conversationId ? "bg-muted" : ""}`}
+                >
+                  <button
+                    type="button"
+                    aria-label={`Open ${title}`}
+                    onClick={() => void selectConversation(conversation.id)}
+                    disabled={restoringConversation || isStreaming || deletingConversationId !== null}
+                    className="flex min-h-11 min-w-0 flex-1 items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm disabled:opacity-50"
+                  >
+                    <span className="truncate">{title}</span>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {conversation.message_count} · {new Date(conversation.last_message_at).toLocaleDateString()}
+                    </span>
+                  </button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Delete ${title}`}
+                    title={`Delete ${title}`}
+                    onClick={() => {
+                      setDeleteConversationError("");
+                      setConversationToDelete({ id: conversation.id, title });
+                    }}
+                    disabled={restoringConversation || isStreaming || deletingConversationId !== null}
+                    className="mr-1 text-muted-foreground hover:text-destructive"
+                  >
+                    <Trash2 aria-hidden="true" />
+                  </Button>
+                </div>
+              );
+            })}
             {historyHasMore && (
               <button
                 type="button"
@@ -628,6 +673,44 @@ export function ChatWindow() {
           </div>
         </SheetContent>
       </Sheet>
+      <Dialog
+        open={conversationToDelete !== null}
+        onOpenChange={(open) => {
+          if (!open && deletingConversationId === null) {
+            setConversationToDelete(null);
+            setDeleteConversationError("");
+          }
+        }}
+      >
+        <DialogContent className="rounded-2xl bg-card" showCloseButton={deletingConversationId === null}>
+          <div>
+            <DialogTitle className="pr-6 text-xl font-bold">Delete conversation?</DialogTitle>
+            <DialogDescription className="mt-2">
+              This permanently deletes “{conversationToDelete?.title}” and its messages. This action cannot be undone.
+            </DialogDescription>
+          </div>
+          {deleteConversationError && <p role="alert" className="text-sm text-destructive">{deleteConversationError}</p>}
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setConversationToDelete(null)}
+              disabled={deletingConversationId !== null}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => void handleDeleteConversation()}
+              disabled={deletingConversationId !== null}
+            >
+              {deletingConversationId !== null && <Loader2 className="animate-spin" aria-hidden="true" />}
+              {deletingConversationId !== null ? "Deleting…" : "Delete conversation"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
       {conversationError && <p role="alert" className="border-b px-4 py-2 text-xs text-destructive">{conversationError}</p>}
       {/* Messages area */}
       <ScrollArea ref={scrollRef} className="min-h-0 flex-1 px-4 py-5 sm:px-6">

@@ -24,14 +24,15 @@ Start the full stack:
 docker compose --profile full up -d --build
 ```
 
-Pull models for the examples below. Pull only the models you plan to use:
+The app's local agents, RAG embeddings, and Laya checks use this model set. Skip any already installed:
 
 ```bash
 docker compose exec ollama ollama pull llama3.1:8b
-docker compose exec ollama ollama pull llama3.2:3b
-docker compose exec ollama ollama pull gemma3:4b
+docker compose exec ollama ollama pull qwen2.5:7b
+docker compose exec ollama ollama pull qwen3-vl:4b
 docker compose exec ollama ollama pull qwen2.5-coder:7b
 docker compose exec ollama ollama pull nomic-embed-text
+docker compose exec ollama ollama pull laya:latest
 ```
 
 Open the app at <http://localhost:3000>. The API is at <http://localhost:8000>; interactive API docs are at <http://localhost:8000/docs>.
@@ -125,13 +126,13 @@ chat '{"agent_name":"chat","content":"Explain hybrid retrieval in simple terms."
 Supply text directly with `context`, or upload a file using the command above and pass its `asset_id`.
 
 ```bash
-task '{"agent_name":"document_analytics","prompt":"Extract the invoice total and due date.","context":"Invoice 1042. Total: $84.25. Due: November 15, 2026.","inference":{"model":"llama3.2:3b"}}'
+task '{"agent_name":"document_analytics","prompt":"Extract the invoice total and due date.","context":"Invoice 1042. Total: $84.25. Due: November 15, 2026.","inference":{"model":"qwen2.5:7b"}}'
 ```
 
 ### Image analysis
 
 ```bash
-task '{"agent_name":"image_analysis","prompt":"Describe the main objects and colors.","asset_id":"<DOCUMENT_ID>","inference":{"model":"gemma3:4b"}}'
+task '{"agent_name":"image_analysis","prompt":"Describe the main objects and colors.","asset_id":"<DOCUMENT_ID>","inference":{"model":"qwen3-vl:4b"}}'
 ```
 
 ### Image fraud screening
@@ -162,8 +163,8 @@ DOCUMENT_ID="<returned-id>"
 curl -sS "$API/rag/ingest" -H 'Content-Type: application/json' \
   -d "{\"document_id\":\"$DOCUMENT_ID\",\"collection\":\"manuals\"}"
 
-task '{"agent_name":"rag","prompt":"What is the warranty period?","collection":"manuals","inference":{"model":"llama3.2:3b"}}'
-task '{"agent_name":"rag_v2","prompt":"What is the warranty period?","collection":"manuals","inference":{"model":"llama3.2:3b"}}'
+task '{"agent_name":"rag","prompt":"What is the warranty period?","collection":"manuals","inference":{"model":"qwen2.5:7b"}}'
+task '{"agent_name":"rag_v2","prompt":"What is the warranty period?","collection":"manuals","inference":{"model":"qwen2.5:7b"}}'
 ```
 
 `rag` uses hybrid dense and BM25 retrieval. `rag_v2` also uses query rewrites. Both return citations when relevant passages are found.
@@ -198,7 +199,7 @@ curl -sS "$API/sql/query" -H 'Content-Type: application/json' \
 Set `FINNHUB_API_KEY` in `.env.docker` to enable live market data.
 
 ```bash
-task '{"agent_name":"stock_research","symbol":"AAPL","prompt":"Summarize recent performance and key risks.","inference":{"model":"llama3.2:3b"}}'
+task '{"agent_name":"stock_research","symbol":"AAPL","prompt":"Summarize recent performance and key risks.","inference":{"model":"qwen2.5:7b"}}'
 ```
 
 ### Web research

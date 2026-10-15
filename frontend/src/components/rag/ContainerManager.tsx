@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   createRAGContainer,
   deleteRAGContainer,
@@ -196,11 +197,13 @@ export function ContainerManager({ containers, selectedName, onSelect, onRefresh
           <div>
             <label htmlFor="rag-container-select" className="mb-1 block text-sm font-medium">Container</label>
             <Select value={active?.name ?? ""} onValueChange={onSelect}>
-              <SelectTrigger id="rag-container-select" className="w-full"><SelectValue placeholder="Select a container" /></SelectTrigger>
+            <SelectTrigger id="rag-container-select" className="w-full min-w-0 [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:overflow-hidden"><SelectValue placeholder="Select a container" /></SelectTrigger>
               <SelectContent position="popper" align="start">
                 {containers.map((container) => (
-                  <SelectItem key={container.name} value={container.name}>
-                    {container.display_name} ({container.file_count} files)
+                  <SelectItem key={container.name} value={container.name} className="whitespace-normal">
+                    <span className="min-w-0 break-words [overflow-wrap:anywhere]">
+                      {container.display_name} ({container.file_count} files)
+                    </span>
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -236,67 +239,74 @@ export function ContainerManager({ containers, selectedName, onSelect, onRefresh
               </div>
             )}
 
-            <ContainerUploader containerName={active.name} onUploaded={async () => {
-              const operationName = active.name;
-              if (selectedNameRef.current !== operationName) return;
-              await refreshFiles(operationName);
-              if (selectedNameRef.current !== operationName) return;
-              await onRefresh();
-              setNotice("Files staged. Load index when ready.");
-            }} />
+            <Tabs defaultValue="manage" className="space-y-4">
+              <TabsList className="grid w-full max-w-sm grid-cols-2">
+                <TabsTrigger value="manage">Manage</TabsTrigger>
+                <TabsTrigger value="files">Files ({active.file_count})</TabsTrigger>
+              </TabsList>
+              <TabsContent value="manage" className="space-y-4">
+                <ContainerUploader containerName={active.name} onUploaded={async () => {
+                  const operationName = active.name;
+                  if (selectedNameRef.current !== operationName) return;
+                  await refreshFiles(operationName);
+                  if (selectedNameRef.current !== operationName) return;
+                  await onRefresh();
+                  setNotice("Files staged. Load index when ready.");
+                }} />
 
-            <div className="flex flex-wrap items-center gap-2">
-              <Button type="button" onClick={() => { void handleLoad(); }} disabled={active.staged_file_count === 0 || isLoading}>
-                {isLoading && <Loader2 aria-hidden="true" className="mr-2 size-4 animate-spin" />}
-                Load {active.staged_file_count} staged {active.staged_file_count === 1 ? "file" : "files"}
-              </Button>
-              <Button type="button" variant="outline" onClick={() => { void handleDeleteContainer(); }} disabled={isWorking}>
-                <Trash2 aria-hidden="true" className="mr-2 size-4" /> Delete container
-              </Button>
-            </div>
-
-            <div className="space-y-2" aria-label={`${active.display_name} files`}>
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold">Files</h3>
-                {failures > 0 && <span className="text-xs text-destructive">{failures} need retry</span>}
-              </div>
-              {isLoadingFiles ? (
-                <p role="status" className="text-sm text-muted-foreground">Loading files…</p>
-              ) : files.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No files staged yet.</p>
-              ) : (
-                <ul className="max-h-64 space-y-2 overflow-y-auto">
-                  {files.map((file) => (
-                    <li key={file.id} className="flex min-w-0 items-start gap-2 rounded-lg border p-3">
-                      <div className="min-w-0 flex-1">
-                        <p className="break-all text-sm font-medium">{file.relative_path}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {statusLabel(file.status)} · {formatSize(file.size_bytes)}
-                          {file.chunk_count > 0 && ` · ${file.chunk_count} chunks`}
-                        </p>
-                        {file.last_error && <p className="mt-1 text-xs text-destructive">{file.last_error}</p>}
-                      </div>
-                      {file.status === "failed" && (
-                        <Button type="button" variant="outline" size="icon" aria-label={`Retry ${file.relative_path}`} onClick={() => { void handleRetry(file); }}>
-                          <RotateCcw aria-hidden="true" className="size-4" />
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button type="button" onClick={() => { void handleLoad(); }} disabled={active.staged_file_count === 0 || isLoading}>
+                    {isLoading && <Loader2 aria-hidden="true" className="mr-2 size-4 animate-spin" />}
+                    Load {active.staged_file_count} staged {active.staged_file_count === 1 ? "file" : "files"}
+                  </Button>
+                  <Button type="button" variant="outline" onClick={() => { void handleDeleteContainer(); }} disabled={isWorking}>
+                    <Trash2 aria-hidden="true" className="mr-2 size-4" /> Delete container
+                  </Button>
+                </div>
+              </TabsContent>
+              <TabsContent value="files" className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold">Files</h3>
+                  {failures > 0 && <span className="text-xs text-destructive">{failures} need retry</span>}
+                </div>
+                {isLoadingFiles ? (
+                  <p role="status" className="text-sm text-muted-foreground">Loading files…</p>
+                ) : files.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No files staged yet.</p>
+                ) : (
+                  <ul className="max-h-64 space-y-2 overflow-y-auto">
+                    {files.map((file) => (
+                      <li key={file.id} className="flex min-w-0 items-start gap-2 rounded-lg border p-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="break-words text-sm font-medium [overflow-wrap:anywhere]">{file.relative_path}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {statusLabel(file.status)} · {formatSize(file.size_bytes)}
+                            {file.chunk_count > 0 && ` · ${file.chunk_count} chunks`}
+                          </p>
+                          {file.last_error && <p className="mt-1 text-xs text-destructive">{file.last_error}</p>}
+                        </div>
+                        {file.status === "failed" && (
+                          <Button type="button" variant="outline" size="icon" aria-label={`Retry ${file.relative_path}`} onClick={() => { void handleRetry(file); }}>
+                            <RotateCcw aria-hidden="true" className="size-4" />
+                          </Button>
+                        )}
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          aria-label={`Remove ${file.relative_path} from container`}
+                          disabled={file.status === "processing" || file.status === "deleting"}
+                          onClick={() => { void handleRemoveFile(file); }}
+                        >
+                          <Trash2 aria-hidden="true" className="size-4" />
                         </Button>
-                      )}
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        aria-label={`Remove ${file.relative_path} from container`}
-                        disabled={file.status === "processing" || file.status === "deleting"}
-                        onClick={() => { void handleRemoveFile(file); }}
-                      >
-                        <Trash2 aria-hidden="true" className="size-4" />
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <p className="text-xs text-muted-foreground">Removing a file from container keeps its uploaded source in Documents.</p>
-            </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <p className="text-xs text-muted-foreground">Removing a file from container keeps its uploaded source in Documents.</p>
+              </TabsContent>
+            </Tabs>
           </div>
         )}
       </CardContent>

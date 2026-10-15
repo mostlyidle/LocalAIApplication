@@ -46,7 +46,9 @@ async def rag_agent_node(state: AgentState) -> dict[str, Any]:
         memory_context=state.get("memory_context", ""),
         system_prompt=system_prompt,
     )
-    if context.citations:
+    if context.answer_override is not None:
+        response = AIMessage(content=context.answer_override)
+    elif context.citations:
         system, user = prompts.render_messages(profile.name, "rag", context.prompt_values)
         system = system_prompt or system
         messages = [SystemMessage(content=system)]
@@ -61,7 +63,6 @@ async def rag_agent_node(state: AgentState) -> dict[str, Any]:
             model = llm_service.get_chat_model()
             response = await model.ainvoke(messages)
     else:
-        context.memory_context = ""
         response = AIMessage(content="I could not find relevant evidence in the selected collection.")
     artifacts = {
         "citations": context.citations,

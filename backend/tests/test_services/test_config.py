@@ -10,7 +10,6 @@ import pytest
 
 from app.config import Settings
 
-
 # =============================================================================
 # Helper to get clean Settings isolated from env and .env file
 # =============================================================================
@@ -56,7 +55,7 @@ class TestCodeDefaults:
         assert s.ollama_num_parallel == 2
         # These use the code defaults now
         assert s.ollama_chat_model == "llama3.1:8b"
-        assert s.ollama_vision_model == "llama3.2-vision:11b"
+        assert s.ollama_vision_model == "qwen3-vl:4b"
 
     def test_database_urls_have_sqlite(self):
         s = _clean_settings()
@@ -86,6 +85,13 @@ class TestCodeDefaults:
         assert s.rag_chunk_overlap == 200
         assert s.rag_top_k == 5
         assert s.rag_score_threshold == 0.4
+
+    def test_laya_rag_checks_are_disabled_by_default(self):
+        s = _clean_settings()
+        assert s.laya_model == "laya:latest"
+        assert s.laya_rag_evidence_mode == "off"
+        assert s.laya_rag_rewrite_mode == "off"
+        assert s.laya_request_timeout_ms == 250
 
     def test_sql_agent_defaults(self):
         s = _clean_settings()

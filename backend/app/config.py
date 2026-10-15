@@ -26,12 +26,16 @@ class Settings(BaseSettings):
     # ── Ollama ──────────────────────────────────────────────────────────
     ollama_base_url: str = "http://localhost:11434"
     ollama_chat_model: str = "llama3.1:8b"
-    ollama_vision_model: str = "llama3.2-vision:11b"
+    ollama_vision_model: str = "qwen3-vl:4b"
     ollama_embedding_model: str = "nomic-embed-text"
     ollama_embedding_revision: str = "nomic-embed-text-v1"
     ollama_embedding_dimension: int = 768
     ollama_request_timeout: int = 120
     ollama_num_parallel: int = 2
+    laya_model: str = "laya:latest"
+    laya_rag_evidence_mode: Literal["off", "observe", "enforce"] = "off"
+    laya_rag_rewrite_mode: Literal["off", "observe", "enforce"] = "off"
+    laya_request_timeout_ms: int = Field(default=250, ge=10, le=5_000)
 
     # ── Hybrid vector store ─────────────────────────────────────────────
     qdrant_url: str = "http://localhost:6333"

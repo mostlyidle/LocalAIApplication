@@ -48,6 +48,13 @@ describe("MessageBubble", () => {
     expect(screen.getByText("Hello there")).toBeInTheDocument();
   });
 
+  it("explains how to retry a turn without a saved response", () => {
+    render(<MessageBubble message={makeMessage({ content: "No response generated." })} />);
+
+    expect(screen.getByText("No answer was saved for this turn.")).toBeInTheDocument();
+    expect(screen.getByText(/attach it again before resending/i)).toBeInTheDocument();
+  });
+
   it("renders user message aligned right", () => {
     const { container } = render(
       <MessageBubble message={makeMessage({ role: "user" })} />

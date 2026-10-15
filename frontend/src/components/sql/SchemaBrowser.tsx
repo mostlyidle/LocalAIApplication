@@ -68,6 +68,10 @@ export function SchemaBrowser({ database, onInsertText }: SchemaBrowserProps = {
           </div>
         ) : error ? (
           <p className="text-xs text-destructive">{error}</p>
+        ) : tables.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No tables found in this database. Select a database with tables to browse its schema.
+          </p>
         ) : (
           <ScrollArea className="max-h-96">
             <div className="space-y-1">

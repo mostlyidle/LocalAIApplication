@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { FileText, FileUp } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -9,6 +10,24 @@ import { DocumentViewer } from "@/components/documents/DocumentViewer";
 
 export default function DocumentsPage() {
   const { documents, isLoading, error, upload, remove, analyze } = useDocuments();
+  const documentGroups = useMemo(() => {
+    const groups = new Map<string, typeof documents>();
+    for (const document of documents) {
+      const key = document.contentSha256 ?? document.id;
+      groups.set(key, [...(groups.get(key) ?? []), document]);
+    }
+    return Array.from(groups.values()).flatMap((copies) => {
+      const [document] = copies;
+      if (!document) return [];
+      const statusCounts = (["completed", "processing", "pending", "failed"] as const)
+        .map((status) => {
+          const count = copies.filter((copy) => copy.status === status).length;
+          return count > 0 ? `${count} ${status}` : null;
+        })
+        .filter((status): status is string => status !== null);
+      return [{ document, duplicateCount: copies.length, statusSummary: statusCounts.join(" · ") }];
+    });
+  }, [documents]);
 
   return (
     <div className="container mx-auto max-w-5xl px-4 py-6 sm:p-8">
@@ -50,10 +69,12 @@ export default function DocumentsPage() {
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {documents.map((doc) => (
+          {documentGroups.map(({ document, duplicateCount, statusSummary }) => (
             <DocumentViewer
-              key={doc.id}
-              document={doc}
+              key={document.contentSha256 ?? document.id}
+              document={document}
+              duplicateCount={duplicateCount}
+              duplicateStatusSummary={statusSummary}
               onDelete={remove}
               onAnalyze={analyze}
             />

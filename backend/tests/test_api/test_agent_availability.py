@@ -11,9 +11,9 @@ from app.prompt_store import PromptStore
 
 
 @pytest.mark.parametrize("inventory, expected", [
-    ([{"name": "llama3.2:3b"}], {"qwen2.5:7b": False, "llama3.2:3b": True}),
-    ([], {"qwen2.5:7b": False, "llama3.2:3b": False}),
-    (None, {"qwen2.5:7b": None, "llama3.2:3b": None}),
+    ([{"name": "llama3.1:8b"}], {"qwen2.5:7b": False, "llama3.1:8b": True}),
+    ([], {"qwen2.5:7b": False, "llama3.1:8b": False}),
+    (None, {"qwen2.5:7b": None, "llama3.1:8b": None}),
 ])
 async def test_catalog_separates_profile_enablement_from_model_availability(client, inventory, expected) -> None:
     directory = Path(__file__).resolve().parents[2] / "app" / "prompts"

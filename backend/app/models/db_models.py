@@ -449,6 +449,7 @@ class Document(Base):
     filename: Mapped[str] = mapped_column(String(255))
     format: Mapped[str] = mapped_column(String(20))
     size_bytes: Mapped[int] = mapped_column(Integer)
+    content_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     storage_path: Mapped[str] = mapped_column(String(512))
     status: Mapped[str] = mapped_column(String(20), default="pending")
     page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)

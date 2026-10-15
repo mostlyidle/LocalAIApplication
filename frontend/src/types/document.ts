@@ -3,6 +3,7 @@ export interface Document {
   filename: string;
   format: string;
   sizeBytes: number;
+  contentSha256?: string | null;
   status: "pending" | "processing" | "completed" | "failed";
   pageCount?: number;
   wordCount: number;

@@ -10,9 +10,8 @@ import {
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { FileText, TableIcon, Info } from "lucide-react";
+import { MarkdownContent } from "@/components/chat/MarkdownContent";
 
 interface ExtractedTable {
   page?: number | null;
@@ -40,12 +39,14 @@ export function ExtractionResults({
   return (
     <div className="space-y-4">
       {answer && (
-        <Card>
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">Answer</CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className="whitespace-pre-wrap text-sm leading-relaxed">{answer}</p>
+          <CardContent className="min-w-0">
+            <div className="max-h-96 min-w-0 overflow-x-hidden overflow-y-auto">
+              <MarkdownContent content={answer} className="text-sm leading-relaxed" />
+            </div>
           </CardContent>
         </Card>
       )}
@@ -73,26 +74,31 @@ export function ExtractionResults({
 
       {/* Extracted text */}
       {text && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="flex items-center gap-2 text-sm">
-              <FileText className="h-4 w-4" />
-              Extracted Text
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <ScrollArea className="max-h-64">
-              <pre className="whitespace-pre-wrap text-xs leading-relaxed text-muted-foreground">
-                {text.length > 5000 ? `${text.slice(0, 5000)}...` : text}
-              </pre>
-            </ScrollArea>
-          </CardContent>
+        <Card className="min-w-0 overflow-hidden">
+          <details>
+            <summary className="flex min-h-16 cursor-pointer list-none flex-wrap items-center justify-between gap-2 px-6 py-4">
+              <span className="flex items-center gap-2 text-sm font-semibold">
+                <FileText className="h-4 w-4 shrink-0" aria-hidden="true" />
+                Extracted text preview
+              </span>
+              <span className="text-xs text-muted-foreground">
+                Expand to view the first 5,000 characters
+              </span>
+            </summary>
+            <CardContent className="min-w-0 pt-0">
+              <div className="max-h-64 overflow-x-hidden overflow-y-auto rounded-lg border bg-muted/40 p-3">
+                <pre className="whitespace-pre-wrap break-words text-xs leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">
+                  {text.length > 5000 ? `${text.slice(0, 5000)}...` : text}
+                </pre>
+              </div>
+            </CardContent>
+          </details>
         </Card>
       )}
 
       {/* Extracted tables */}
       {tables.map((table, idx) => (
-        <Card key={idx}>
+        <Card key={idx} className="min-w-0 overflow-hidden">
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-sm">
               <TableIcon className="h-4 w-4" />
@@ -104,8 +110,8 @@ export function ExtractionResults({
               )}
             </CardTitle>
           </CardHeader>
-          <CardContent className="p-0">
-            <ScrollArea className="max-h-64">
+          <CardContent className="min-w-0 p-0">
+            <div className="max-h-64 overflow-auto">
               <Table>
                 {table.headers.length > 0 && (
                   <TableHeader>
@@ -135,26 +141,26 @@ export function ExtractionResults({
                   Showing 50 of {table.rows.length} rows
                 </p>
               )}
-            </ScrollArea>
+            </div>
           </CardContent>
         </Card>
       ))}
 
       {/* Metadata */}
       {Object.keys(metadata).length > 0 && (
-        <Card>
+        <Card className="min-w-0 overflow-hidden">
           <CardHeader className="pb-2">
             <CardTitle className="flex items-center gap-2 text-sm">
               <Info className="h-4 w-4" />
               Metadata
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+          <CardContent className="min-w-0">
+            <div className="grid min-w-0 grid-cols-[minmax(0,auto)_minmax(0,1fr)] gap-x-4 gap-y-1">
               {Object.entries(metadata).map(([key, value]) => (
                 <div key={key} className="contents">
-                  <span className="truncate text-xs font-medium">{key}</span>
-                  <span className="truncate text-xs text-muted-foreground">
+                  <span className="break-words text-xs font-medium [overflow-wrap:anywhere]">{key}</span>
+                  <span className="min-w-0 break-words text-xs text-muted-foreground [overflow-wrap:anywhere]">
                     {typeof value === "object"
                       ? JSON.stringify(value)
                       : String(value)}

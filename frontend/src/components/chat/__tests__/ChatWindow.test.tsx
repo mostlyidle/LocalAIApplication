@@ -13,6 +13,7 @@ const mockConnect = vi.fn();
 const mockLoadConversation = vi.fn();
 const mockGetConversation = vi.fn();
 const mockGetConversations = vi.fn();
+const mockDeleteConversation = vi.fn();
 const mockCreateMemory = vi.fn();
 const mockUpdateConversationMemorySettings = vi.fn();
 const localStorageValues = new Map<string, string>();
@@ -59,6 +60,7 @@ vi.mock("@/lib/api", () => ({
   getRAGCollections: (...args: unknown[]) => mockGetRAGCollections(...args),
   getConversation: (...args: unknown[]) => mockGetConversation(...args),
   getConversations: (...args: unknown[]) => mockGetConversations(...args),
+  deleteConversation: (...args: unknown[]) => mockDeleteConversation(...args),
 }));
 
 vi.mock("@/components/shared/AuthProvider", () => ({
@@ -223,10 +225,89 @@ describe("ChatWindow", () => {
 
     render(<ChatWindow />);
     await userEvent.click(screen.getByRole("button", { name: "History" }));
-    await userEvent.click(await screen.findByRole("button", { name: /Project notes/ }));
+    await userEvent.click(await screen.findByRole("button", { name: "Open Project notes" }));
 
     await waitFor(() => expect(mockLoadConversation).toHaveBeenCalledWith([], "conversation-1"));
     expect(window.localStorage.getItem("local-ai-active-conversation:account-alice")).toBe("conversation-1");
+  });
+
+  it("deletes a saved conversation from history after confirmation", async () => {
+    const user = userEvent.setup();
+    mockGetConversations.mockResolvedValue({
+      conversations: [{
+        id: "conversation-1",
+        title: "Project notes",
+        created_at: "2026-10-12T10:00:00Z",
+        last_message_at: "2026-10-12T10:01:00Z",
+        message_count: 2,
+      }],
+    });
+    mockDeleteConversation.mockResolvedValue({
+      status: "deleted",
+      conversation_id: "conversation-1",
+    });
+
+    render(<ChatWindow />);
+    await user.click(screen.getByRole("button", { name: "History" }));
+    await user.click(await screen.findByRole("button", { name: "Delete Project notes" }));
+
+    expect(screen.getByRole("dialog")).toHaveTextContent("permanently delete");
+    expect(mockDeleteConversation).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Delete conversation" }));
+
+    await waitFor(() => expect(mockDeleteConversation).toHaveBeenCalledWith("conversation-1"));
+    await waitFor(() => expect(screen.queryByRole("button", { name: /Project notes/ })).not.toBeInTheDocument());
+  });
+
+  it("starts a new chat when deleting the active conversation", async () => {
+    const user = userEvent.setup();
+    mockChatState = { ...mockChatState, conversationId: "conversation-1" };
+    mockGetConversations.mockResolvedValue({
+      conversations: [{
+        id: "conversation-1",
+        title: "Active chat",
+        created_at: "2026-10-12T10:00:00Z",
+        last_message_at: "2026-10-12T10:01:00Z",
+        message_count: 2,
+      }],
+    });
+    mockDeleteConversation.mockResolvedValue({
+      status: "deleted",
+      conversation_id: "conversation-1",
+    });
+
+    render(<ChatWindow />);
+    await waitFor(() => expect(window.localStorage.getItem("local-ai-active-conversation:account-alice")).toBe("conversation-1"));
+    await user.click(screen.getByRole("button", { name: "History" }));
+    await user.click(await screen.findByRole("button", { name: "Delete Active chat" }));
+    await user.click(screen.getByRole("button", { name: "Delete conversation" }));
+
+    await waitFor(() => expect(mockClearMessages).toHaveBeenCalled());
+    expect(window.localStorage.getItem("local-ai-active-conversation:account-alice")).toBeNull();
+  });
+
+  it("keeps a conversation in history when deletion fails", async () => {
+    const user = userEvent.setup();
+    mockGetConversations.mockResolvedValue({
+      conversations: [{
+        id: "conversation-1",
+        title: "Project notes",
+        created_at: "2026-10-12T10:00:00Z",
+        last_message_at: "2026-10-12T10:01:00Z",
+        message_count: 2,
+      }],
+    });
+    mockDeleteConversation.mockRejectedValue(new Error("Request failed"));
+
+    render(<ChatWindow />);
+    await user.click(screen.getByRole("button", { name: "History" }));
+    await user.click(await screen.findByRole("button", { name: "Delete Project notes" }));
+    await user.click(screen.getByRole("button", { name: "Delete conversation" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not delete this conversation");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("button", { name: "Open Project notes" })).toBeInTheDocument();
   });
 
   it("loads older conversations a page at a time", async () => {
@@ -253,7 +334,7 @@ describe("ChatWindow", () => {
 
     expect(mockGetConversations).toHaveBeenNthCalledWith(1, 50, 0, "");
     expect(mockGetConversations).toHaveBeenNthCalledWith(2, 50, 50, "");
-    expect(await screen.findByRole("button", { name: /Older conversation/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Open Older conversation" })).toBeInTheDocument();
   });
 
   it("clears the active conversation pointer for a new chat", async () => {
@@ -313,7 +394,7 @@ describe("ChatWindow", () => {
         target: "image_analysis",
         description: "Describe uploaded images",
         default_for_target: true,
-        inference: { allowed_models: ["qwen2.5vl:7b"], defaults: { model: "qwen2.5vl:7b", temperature: 0.1 }, limits: { temperature: { minimum: 0, maximum: 2 } } },
+        inference: { allowed_models: ["qwen3-vl:4b"], defaults: { model: "qwen3-vl:4b", temperature: 0.1 }, limits: { temperature: { minimum: 0, maximum: 2 } } },
       },
     ] });
     render(<ChatWindow />);
@@ -330,7 +411,7 @@ describe("ChatWindow", () => {
         target: "stock_research",
         description: "Research equities",
         default_for_target: true,
-        inference: { allowed_models: ["qwen2.5:7b", "llama3.2:3b"], defaults: { model: "qwen2.5:7b", temperature: 0.2 }, limits: { temperature: { minimum: 0, maximum: 2 } } },
+        inference: { allowed_models: ["qwen2.5:7b", "llama3.1:8b"], defaults: { model: "qwen2.5:7b", temperature: 0.2 }, limits: { temperature: { minimum: 0, maximum: 2 } } },
       },
     ] });
     render(<ChatWindow />);
@@ -352,15 +433,15 @@ describe("ChatWindow", () => {
   });
 
   it.each([
-    { availability: { "qwen2.5:7b": false, "llama3.2:3b": true }, selected: "llama3.2:3b", label: "not installed", blocked: false },
-    { availability: { "qwen2.5:7b": false, "llama3.2:3b": false }, selected: "qwen2.5:7b", label: "not installed", blocked: true },
-    { availability: { "qwen2.5:7b": null, "llama3.2:3b": null }, selected: "qwen2.5:7b", label: "availability unknown", blocked: false },
+    { availability: { "qwen2.5:7b": false, "llama3.1:8b": true }, selected: "llama3.1:8b", label: "not installed", blocked: false },
+    { availability: { "qwen2.5:7b": false, "llama3.1:8b": false }, selected: "qwen2.5:7b", label: "not installed", blocked: true },
+    { availability: { "qwen2.5:7b": null, "llama3.1:8b": null }, selected: "qwen2.5:7b", label: "availability unknown", blocked: false },
   ])("shows actual model availability and chooses $selected ($label)", async ({ availability, selected, label, blocked }) => {
     mockGetRAGCollections.mockResolvedValue({ collections: [{ name: "documents", count: 0 }] });
     mockGetAgentCatalog.mockResolvedValue({ agents: [{
       name: "rag", target: "rag", description: "Answer from evidence", default_for_target: true,
       model_availability: availability,
-      inference: { allowed_models: ["qwen2.5:7b", "llama3.2:3b"], defaults: { model: "qwen2.5:7b", temperature: 0.2 }, limits: { temperature: { minimum: 0, maximum: 2 } } },
+      inference: { allowed_models: ["qwen2.5:7b", "llama3.1:8b"], defaults: { model: "qwen2.5:7b", temperature: 0.2 }, limits: { temperature: { minimum: 0, maximum: 2 } } },
     }] });
     render(<ChatWindow />);
     await userEvent.click(screen.getByRole("combobox", { name: "Agent profile" }));

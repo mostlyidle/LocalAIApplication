@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 from pathlib import Path
 from types import SimpleNamespace
@@ -99,6 +100,7 @@ class TestDocumentList:
         docs = resp.json()
         assert len(docs) == 1
         assert docs[0]["filename"] == "readme.md"
+        assert docs[0]["content_sha256"] == hashlib.sha256(content).hexdigest()
 
 
 class TestDocumentGetAndDelete:

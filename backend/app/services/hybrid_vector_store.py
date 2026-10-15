@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -20,8 +23,9 @@ from app.services.vector_store import VectorStoreService
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from app.agents.registry import AgentRegistry
+    from app.agents.registry import AgentManifest, AgentRegistry
     from app.prompt_store import PromptStore
+    from app.services.laya_rag import LayaRagService
 
 class HybridVectorStoreService(VectorStoreService):
     """Drop-in vector-store API backed by Qdrant, BM25, and bounded profiles."""
@@ -36,6 +40,7 @@ class HybridVectorStoreService(VectorStoreService):
         self._prompt_dir = prompt_dir
         self._profiles: AgentRegistry | None = None
         self._prompts: PromptStore | None = None
+        self._laya: LayaRagService | None = None
 
     async def close(self) -> None:
         await self._rag.close()
@@ -124,6 +129,7 @@ class HybridVectorStoreService(VectorStoreService):
         score_threshold: float | None = None,
         agent_name: str = "rag",
         rewrite_model: str | None = None,
+        _bypass_laya_rewrite: bool = False,
     ) -> RagSearchResult:
         profile = self.profile_registry().get(agent_name)
         if profile is None or profile.target != "rag" or profile.retrieval is None:
@@ -131,7 +137,46 @@ class HybridVectorStoreService(VectorStoreService):
         retrieval = profile.retrieval
         rewrites: list[str] = []
         rewrite_failure = None
-        if retrieval.query_rewrite.count:
+        rewrite_applied = False
+        initial_reason = "profile_has_no_rewrites"
+        if retrieval.query_rewrite.count and score_threshold is not None:
+            initial_reason = "score_threshold_compatibility"
+        laya_rewrite = self._laya_gate_metadata(
+            mode=settings.laya_rag_rewrite_mode, reason=initial_reason
+        )
+        if retrieval.query_rewrite.count and score_threshold is None:
+            mode = settings.laya_rag_rewrite_mode
+            laya = getattr(self, "_laya", None)
+            if _bypass_laya_rewrite:
+                laya_rewrite = self._laya_gate_metadata(
+                    mode=mode, reason="rescue_retrieval"
+                )
+            elif mode == "off":
+                laya_rewrite = self._laya_gate_metadata(mode=mode, reason="off")
+            elif (context_reason := self._rewrite_context_reason(query)) is not None:
+                laya_rewrite = self._laya_gate_metadata(mode=mode, reason=context_reason)
+            elif laya is None:
+                laya_rewrite = self._laya_gate_metadata(mode=mode, reason="not_ready")
+            else:
+                decision = await laya.check_rewrite(query)
+                eligible, policy_reason = laya.can_apply(
+                    "rewrite",
+                    profile=profile.name,
+                    prompt_digest=self._rewrite_configuration_digest(profile),
+                    decision=decision,
+                    input_covered=query.isascii() and len(query.encode("utf-8")) <= 512,
+                )
+                rewrite_applied = mode == "enforce" and eligible
+                laya_rewrite = self._laya_gate_metadata(
+                    mode=mode,
+                    reason=policy_reason,
+                    decision=decision,
+                    would_apply=eligible,
+                    applied=rewrite_applied,
+                    model_digest=laya.model_digest,
+                )
+
+        if retrieval.query_rewrite.count and not rewrite_applied:
             rewrites, rewrite_failure = await self._rewrite_queries(
                 query,
                 profile.name,
@@ -144,7 +189,11 @@ class HybridVectorStoreService(VectorStoreService):
         if capabilities is None:
             return RagSearchResult(
                 passages=[],
-                retrieval={"mode": "missing_collection", "strategy": "none"},
+                retrieval={
+                    "mode": "missing_collection",
+                    "strategy": "none",
+                    "laya": {"rewrite": laya_rewrite},
+                },
             )
         recorded_identity_only = False
         if (
@@ -183,6 +232,8 @@ class HybridVectorStoreService(VectorStoreService):
         dense_weight = weights.original_dense
         bm25_weight = weights.original_bm25
         rewrite_weight = weights.rewrite_dense_total
+        if rewrite_applied:
+            rewrite_weight = 0
         if score_threshold is not None:
             # Compatibility for callers that still request cosine threshold semantics.
             bm25_weight = 0
@@ -217,9 +268,69 @@ class HybridVectorStoreService(VectorStoreService):
             **result.retrieval,
             "agent_name": profile.name,
             "rewrite_failure": rewrite_failure,
+            "skipped_by_laya": rewrite_applied,
             "recorded_identity_only": recorded_identity_only,
+            "laya": {"rewrite": laya_rewrite},
         }
         return RagSearchResult(passages=passages, retrieval=metadata)
+
+    def _rewrite_configuration_digest(self, profile: AgentManifest) -> str:
+        """Fingerprint the retrieval profile and effective rewrite prompt templates."""
+        from app.prompt_store import PromptStore
+
+        prompts = getattr(self, "_prompts", None)
+        if prompts is None:
+            prompts = self._prompts = PromptStore(self._prompt_dir)
+        rewrite = profile.retrieval.query_rewrite
+        system, user = prompts.render_messages_for(
+            profile.name,
+            "rag",
+            "rewrite",
+            {"prompt": "__QUESTION__", "rewrite_count": rewrite.count},
+        )
+        material = {
+            "profile": profile.model_dump(mode="json"),
+            "rewrite_system": system,
+            "rewrite_user": user,
+        }
+        serialized = json.dumps(material, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+        return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _rewrite_context_reason(query: str) -> str | None:
+        if len(query.encode("utf-8")) > 512:
+            return "budget_exceeded"
+        if not query.isascii():
+            return "unsupported_language"
+        if re.search(
+            r"\b(?:it|this|that|they|them|those|these|same|former|latter|the first|the second)\b",
+            query.casefold(),
+        ):
+            return "context_dependent"
+        return None
+
+    @staticmethod
+    def _laya_gate_metadata(
+        *,
+        mode: str,
+        reason: str,
+        decision: object | None = None,
+        would_apply: bool = False,
+        applied: bool = False,
+        model_digest: str | None = None,
+    ) -> dict[str, object]:
+        return {
+            "mode": mode,
+            "outcome": getattr(decision, "choice", None) or "not_run",
+            "reason": reason,
+            "choice": getattr(decision, "choice", None),
+            "probability": getattr(decision, "probability", None),
+            "schema_version": getattr(decision, "schema_version", "rewrite-v1"),
+            "model_digest": model_digest,
+            "elapsed_ms": getattr(decision, "elapsed_ms", 0),
+            "would_apply": would_apply,
+            "applied": applied,
+        }
 
     async def _rewrite_queries(
         self, query: str, agent_name: str, count: int, max_output_tokens: int,
@@ -289,6 +400,15 @@ class HybridVectorStoreService(VectorStoreService):
         """Use the application registry and prompt sources for profile retrieval."""
         self._profiles = profiles
         self._prompts = prompts
+
+    @property
+    def laya_service(self) -> LayaRagService | None:
+        """Return the lifespan-owned local decision client when configured."""
+        return self._laya
+
+    def configure_laya_service(self, service: LayaRagService) -> None:
+        """Attach the one application-owned Laya client to shared RAG retrieval."""
+        self._laya = service
 
     @staticmethod
     def _chat_model(*, model: str, temperature: float, max_output_tokens: int, context_window: int):

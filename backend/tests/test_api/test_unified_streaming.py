@@ -11,7 +11,7 @@ from starlette.testclient import TestClient
 
 from app.agents.registry import AgentRegistry
 from app.main import create_app
-from app.models.profile_schemas import TaskRequest
+from app.models.profile_schemas import AgentResult, TaskRequest
 from app.prompt_store import PromptStore
 from tests.test_services.test_task_runner_images import _runner
 
@@ -52,6 +52,64 @@ def test_selected_graph_profile_streams_tokens_and_persists_final_state(
     persist.assert_awaited_once()
     assert persist.call_args.kwargs["assistant_content"] == "Hello world"
     assert persist.call_args.kwargs["execution_metadata"]["agent"] == profile
+
+
+def test_selected_rag_fixed_response_streams_once_and_persists(
+    authenticated_test_session,
+) -> None:
+    answer = (
+        "I couldn't find enough supporting evidence in the retrieved passages to answer this "
+        "question."
+    )
+    retrieval = {
+        "laya": {
+            "evidence": {
+                "choice": "unsupported",
+                "applied": True,
+                "answer_generation_avoided": True,
+            }
+        }
+    }
+    app = create_app()
+    from app.dependencies import get_websocket_session, websocket_session_is_active
+
+    app.dependency_overrides[get_websocket_session] = lambda: authenticated_test_session
+    app.dependency_overrides[websocket_session_is_active] = lambda: True
+    persist = AsyncMock(return_value=True)
+
+    with TestClient(app) as client:
+        directory = Path(__file__).resolve().parents[2] / "app" / "prompts"
+        app.state.agent_registry = AgentRegistry(directory, PromptStore(directory))
+        with (
+            patch.object(
+                app.state.task_runner,
+                "run",
+                AsyncMock(
+                    return_value=AgentResult(
+                        agent="rag",
+                        answer=answer,
+                        artifacts={"citations": [], "retrieval": retrieval},
+                    )
+                ),
+            ),
+            patch("app.api.routes.chat._load_ws_history", AsyncMock(return_value=[])),
+            patch("app.api.routes.chat._persist_ws_messages", persist),
+            client.websocket_connect(
+                "/api/v1/chat/stream", headers={"origin": "http://localhost:3000"}
+            ) as ws,
+        ):
+            ws.send_json(
+                {"type": "message", "content": "Ask about policy", "agent_name": "rag"}
+            )
+            token = ws.receive_json()
+            done = ws.receive_json()
+
+    assert token == {"type": "token", "content": answer}
+    assert done["type"] == "done"
+    assert done["metadata"]["execution"]["answer"] == answer
+    assert done["metadata"]["execution"]["artifacts"]["retrieval"] == retrieval
+    persist.assert_awaited_once()
+    assert persist.call_args.kwargs["assistant_content"] == answer
 
 
 async def test_specialist_streams_incrementally_and_clears_callback_between_requests() -> None:
