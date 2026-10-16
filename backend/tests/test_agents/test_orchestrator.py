@@ -161,6 +161,19 @@ class TestClassifyIntent:
         assert schema["properties"]["agent"]
         assert schema["required"] == ["agent"]
 
+    async def test_recent_events_can_route_to_web_without_a_url(self, mock_llm):
+        mock_llm.ainvoke.return_value.content = '{"agent": "web"}'
+        state = create_initial_state("Who played last night in the MLB playoffs?", "conv-1")
+
+        with patch("app.agents.orchestrator.llm_service") as mock_service:
+            mock_service.get_chat_model.return_value = mock_llm
+            result = await classify_intent(state)
+
+        assert result["next_agent"] == AgentType.WEB
+        prompt = mock_llm.ainvoke.call_args.args[0][0].content
+        assert "recent-events question" in prompt
+        assert "even without a URL" in prompt
+
     async def test_llm_failure_falls_back_to_chat(self, mock_llm):
         """If the LLM call throws, we gracefully fall back to chat."""
         mock_llm.ainvoke.side_effect = RuntimeError("Ollama offline")
