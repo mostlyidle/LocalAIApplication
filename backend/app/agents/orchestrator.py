@@ -46,17 +46,18 @@ Categories:
 - "sql" — The user wants to query a database, inspect schemas, write SQL, or analyze tabular data stored in a database.
 - "document" — The user wants to parse, analyze, extract text/tables from an uploaded file (PDF, DOCX, image, etc.), or asks about attached files.
 - "rag" — The user wants to search a knowledge base, find information across previously ingested documents, or asks you to remember/recall stored content.
-- "web" — The user wants to fetch, read, or summarize content from a URL or website.
+- "web" — The user wants to search for current information, answer a recent-events question, or fetch, read, or summarize website content.
 - "chat" — General conversation, greetings, coding help, math, knowledge questions, or anything that doesn't fit the above categories.
 
 Rules:
 1. Respond with ONLY a JSON object: {"agent": "<category>"}
 2. If the message mentions attachments or file paths AND asks to analyze them, choose "document".
 3. If the message mentions a URL (http/https), choose "web".
-4. If the message asks to search or query "the knowledge base", "documents", or "ingested files", choose "rag".
-5. If the message mentions database, SQL, tables (in a DB context), queries, or schema, choose "sql".
-6. When in doubt, choose "chat".
-7. Do NOT add any explanation — ONLY the JSON object."""
+4. If the user asks for recent or current facts that need outside sources, choose "web" even without a URL.
+5. If the message asks to search or query "the knowledge base", "documents", or "ingested files", choose "rag".
+6. If the message mentions database, SQL, tables (in a DB context), queries, or schema, choose "sql".
+7. When in doubt, choose "chat".
+8. Do NOT add any explanation — ONLY the JSON object."""
 
 VALID_AGENTS = {member.value for member in AgentType}
 

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
-from urllib.parse import urljoin, urlparse
+from urllib.parse import parse_qs, urljoin, urlparse, urlsplit
 
 import httpx
 import structlog
@@ -20,6 +20,9 @@ logger = structlog.get_logger(__name__)
 MAX_CONTENT_LENGTH = 500_000  # 500KB max page content
 REQUEST_TIMEOUT = 30.0
 MAX_URLS_PER_REQUEST = 5
+MAX_SEARCH_QUERY_LENGTH = 500
+MAX_SEARCH_RESULTS = 8
+SEARCH_URL = "https://html.duckduckgo.com/html/"
 
 
 async def fetch_url(url: str, timeout: float = REQUEST_TIMEOUT) -> dict[str, Any]:
@@ -180,6 +183,83 @@ async def web_search_links_tool(url: str) -> str:
     return "\n".join(lines)
 
 
+def extract_search_results(html: str) -> list[dict[str, str]]:
+    """Extract titles, snippets, and destination URLs from DuckDuckGo HTML results."""
+    from bs4 import BeautifulSoup
+
+    soup = BeautifulSoup(html, "html.parser")
+    results: list[dict[str, str]] = []
+    seen_urls: set[str] = set()
+    for result in soup.select(".result"):
+        anchor = result.select_one("a.result__a")
+        if anchor is None:
+            continue
+
+        href = str(anchor.get("href", ""))
+        parsed_href = urlsplit(href)
+        if parsed_href.hostname and (
+            parsed_href.hostname == "duckduckgo.com"
+            or parsed_href.hostname.endswith(".duckduckgo.com")
+        ):
+            href = parse_qs(parsed_href.query).get("uddg", [""])[0]
+        destination = urlparse(href)
+        if (
+            destination.scheme not in {"http", "https"}
+            or not destination.netloc
+            or href in seen_urls
+        ):
+            continue
+
+        snippet = result.select_one(".result__snippet")
+        results.append({
+            "title": anchor.get_text(" ", strip=True),
+            "snippet": snippet.get_text(" ", strip=True) if snippet else "",
+            "url": href,
+        })
+        seen_urls.add(href)
+        if len(results) == MAX_SEARCH_RESULTS:
+            break
+
+    return results
+
+
+@tool
+async def web_search_tool(query: str) -> str:
+    """Search the public web by topic and return result titles, snippets, and source URLs."""
+    query = query.strip()
+    if not query:
+        return "Search query cannot be empty."
+    if len(query) > MAX_SEARCH_QUERY_LENGTH:
+        return f"Search query is too long. Maximum length is {MAX_SEARCH_QUERY_LENGTH} characters."
+
+    try:
+        async with httpx.AsyncClient(
+            timeout=REQUEST_TIMEOUT,
+            headers={"User-Agent": "LocalAI-WebAgent/1.0"},
+        ) as client:
+            response = await client.get(SEARCH_URL, params={"q": query})
+    except httpx.TimeoutException:
+        return "Web search failed: Request timed out."
+    except httpx.RequestError as exc:
+        logger.warning("web_search_failed", error=type(exc).__name__)
+        return "Web search failed: Could not connect to the search service."
+
+    if response.status_code != 200:
+        return f"Web search returned HTTP {response.status_code}."
+
+    results = extract_search_results(response.text[:MAX_CONTENT_LENGTH])
+    if not results:
+        return f"No web results found for: {query}"
+
+    lines = [f"Web search results for: {query}"]
+    for item in results:
+        lines.extend((
+            f"\n[{item['title']}]({item['url']})",
+            item["snippet"] or "No summary was provided for this result.",
+        ))
+    return "\n".join(lines)
+
+
 @tool
 async def web_multi_fetch_tool(urls: list[str]) -> str:
     """Fetch multiple web pages concurrently and extract their text.
@@ -216,4 +296,4 @@ async def web_multi_fetch_tool(urls: list[str]) -> str:
 
 
 # All web tools for agent binding
-web_tools = [web_fetch_tool, web_search_links_tool, web_multi_fetch_tool]
+web_tools = [web_search_tool, web_fetch_tool, web_search_links_tool, web_multi_fetch_tool]

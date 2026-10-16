@@ -579,8 +579,60 @@ class TestRAGAgent:
 
 
 class TestWebAgent:
+    async def test_searches_topic_queries_and_summarizes_results(self) -> None:
+        search_response = _mock_llm_response(
+            "",
+            tool_calls=[{
+                "name": "web_search_tool",
+                "args": {"query": "Who played last night in the MLB playoffs?"},
+                "id": "tc-search",
+            }],
+        )
+        final_response = _mock_llm_response(
+            "The Dodgers played the Mets last night, and the Dodgers won 5–2."
+        )
+        request_history: list[list[Any]] = []
+
+        async def respond(messages: list[Any]) -> MagicMock:
+            request_history.append(list(messages))
+            return [search_response, final_response][len(request_history) - 1]
+
+        mock_chat_model = MagicMock()
+        mock_chat_model.ainvoke = AsyncMock(side_effect=respond)
+        mock_chat_model.bind_tools = MagicMock(return_value=mock_chat_model)
+        mock_service = MagicMock()
+        mock_service.get_chat_model = MagicMock(return_value=mock_chat_model)
+        mock_tool = AsyncMock()
+        mock_tool.name = "web_search_tool"
+        mock_tool.ainvoke = AsyncMock(return_value=(
+            "MLB.com: Dodgers beat Mets 5-2 in Game 3. "
+            "https://www.mlb.com/news/dodgers-mets-game-3"
+        ))
+
+        with (
+            patch("app.agents.web_agent.llm_service", mock_service),
+            patch("app.agents.web_agent.web_tools", [mock_tool]),
+        ):
+            from app.agents.web_agent import web_agent_node
+
+            result = await web_agent_node(
+                _make_state(user_input="Who played last night in the MLB playoffs?")
+            )
+
+        mock_tool.ainvoke.assert_awaited_once_with({
+            "query": "Who played last night in the MLB playoffs?"
+        })
+        request_messages = request_history[0]
+        assert "without a URL" in request_messages[0].content
+        assert any(
+            isinstance(message, ToolMessage)
+            and "Dodgers beat Mets 5-2" in message.content
+            for message in request_history[1]
+        )
+        assert result["messages"][0].content == final_response.content
+
     async def test_basic_response(self) -> None:
-        response = _mock_llm_response("I need a URL to fetch content.")
+        response = _mock_llm_response("I can search for that and summarize the sources.")
         mock_service = _mock_llm_service(response)
 
         with patch("app.agents.web_agent.llm_service", mock_service):

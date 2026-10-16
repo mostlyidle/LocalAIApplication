@@ -20,6 +20,7 @@ from app.tools.web_tools import (
     web_fetch_tool,
     web_multi_fetch_tool,
     web_search_links_tool,
+    web_search_tool,
 )
 
 if TYPE_CHECKING:
@@ -410,6 +411,30 @@ class TestWebSearchLinksTool:
         ):
             result = await web_search_links_tool.ainvoke({"url": "https://example.com"})
         assert "No links found" in result
+
+
+class TestWebSearchTool:
+    async def test_searches_query_and_returns_snippets_and_sources(self) -> None:
+        html = """
+        <div class="result">
+          <a class="result__a" href="https://www.mlb.com/news/playoff-game">Game recap</a>
+          <a class="result__snippet">The Dodgers beat the Mets 5-2.</a>
+        </div>
+        """
+        response = MagicMock(status_code=200, text=html)
+        client = MagicMock()
+        client.get = AsyncMock(return_value=response)
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=None)
+        with patch("app.tools.web_tools.httpx.AsyncClient", return_value=client):
+            result = await web_search_tool.ainvoke({"query": "MLB playoff results"})
+
+        assert "The Dodgers beat the Mets 5-2." in result
+        assert "https://www.mlb.com/news/playoff-game" in result
+        assert "Game recap" in result
+        client.get.assert_awaited_once_with(
+            "https://html.duckduckgo.com/html/", params={"q": "MLB playoff results"}
+        )
 
 
 # =============================================================================
