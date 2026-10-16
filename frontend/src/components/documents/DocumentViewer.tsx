@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { FileText, Trash2, Search, Loader2, Database } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -41,6 +41,7 @@ export function DocumentViewer({ document: doc, duplicateCount = 1, duplicateSta
   const [containerName, setContainerName] = useState("");
   const [isIndexing, setIsIndexing] = useState(false);
   const [indexError, setIndexError] = useState<string | null>(null);
+  const indexTriggerRef = useRef<HTMLButtonElement>(null);
 
   const handleAnalyze = async () => {
     setIsAnalyzing(true);
@@ -151,6 +152,7 @@ export function DocumentViewer({ document: doc, duplicateCount = 1, duplicateSta
 
         <div className="space-y-2">
           <Textarea
+            aria-label={`Question about ${doc.filename} (optional)`}
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             placeholder="Ask about this document... (optional)"
@@ -171,13 +173,13 @@ export function DocumentViewer({ document: doc, duplicateCount = 1, duplicateSta
             Analyze
           </Button>
           <div className="grid grid-cols-1 gap-2">
-            <Button asChild size="sm" variant="outline" className="min-h-10 w-full whitespace-normal px-3 text-center leading-snug">
+            <Button asChild size="sm" variant="outline" className="min-h-10 w-full whitespace-nowrap px-3 text-center leading-snug">
               <Link href={`/chat?documentId=${encodeURIComponent(doc.id)}`}>
                 <Search className="mr-2 size-3.5" aria-hidden="true" /> Ask in Chat
               </Link>
             </Button>
-            <Button type="button" size="sm" variant="outline" className="min-h-10 w-full whitespace-normal px-3 text-center leading-snug" onClick={() => void openIndexDialog()}>
-              <Database className="mr-2 size-3.5" aria-hidden="true" /> Add to Knowledge Base
+            <Button ref={indexTriggerRef} type="button" size="sm" variant="outline" className="min-h-10 w-full whitespace-nowrap px-3 text-center leading-snug" onClick={() => void openIndexDialog()}>
+              <Database className="mr-2 size-3.5" aria-hidden="true" /> Add to index
             </Button>
           </div>
         </div>
@@ -198,7 +200,7 @@ export function DocumentViewer({ document: doc, duplicateCount = 1, duplicateSta
         )}
       </CardContent>
       <Dialog open={indexDialogOpen} onOpenChange={setIndexDialogOpen}>
-        <DialogContent>
+        <DialogContent onCloseAutoFocus={(event) => { event.preventDefault(); indexTriggerRef.current?.focus(); }}>
           <DialogHeader>
             <DialogTitle>Add to Knowledge Base</DialogTitle>
               <DialogDescription>

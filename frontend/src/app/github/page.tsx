@@ -1,9 +1,12 @@
 "use client";
 
+/* Hallmark · genre: playful · macrostructure: Workbench · design-system: design.md · designed-as-app */
+
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ExternalLink, Github, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import * as api from "@/lib/api";
@@ -189,11 +192,12 @@ export default function GitHubProjectPage() {
             </div>}
           </CardContent>
         </Card>
-        <div className="flex gap-2" role="tablist" aria-label="Project activity">
-          <Button role="tab" aria-selected={activeTab === "issues"} variant={activeTab === "issues" ? "default" : "outline"} onClick={() => setActiveTab("issues")}>Issues ({overview.issues.length})</Button>
-          <Button role="tab" aria-selected={activeTab === "pulls"} variant={activeTab === "pulls" ? "default" : "outline"} onClick={() => setActiveTab("pulls")}>Pull requests ({overview.pull_requests.length})</Button>
-        </div>
-        <section className="space-y-3" aria-label={activeTab === "issues" ? "Open issues" : "Open pull requests"}>
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "issues" | "pulls")} className="gap-6">
+          <TabsList aria-label="Project activity" className="h-auto max-w-full flex-wrap justify-start gap-2 bg-transparent p-0">
+            <TabsTrigger value="issues" className="min-h-11 flex-none rounded-xl border-border bg-background px-4 py-2 data-[state=active]:border-transparent data-[state=active]:bg-primary data-[state=active]:text-primary-foreground dark:data-[state=active]:border-transparent dark:data-[state=active]:bg-primary dark:data-[state=active]:text-primary-foreground">Issues ({overview.issues.length})</TabsTrigger>
+            <TabsTrigger value="pulls" className="min-h-11 flex-none rounded-xl border-border bg-background px-4 py-2 data-[state=active]:border-transparent data-[state=active]:bg-primary data-[state=active]:text-primary-foreground dark:data-[state=active]:border-transparent dark:data-[state=active]:bg-primary dark:data-[state=active]:text-primary-foreground">Pull requests ({overview.pull_requests.length})</TabsTrigger>
+          </TabsList>
+          <TabsContent value={activeTab} className="space-y-3">
           {currentItems.length ? currentItems.map((item) => <Card key={item.number} className="rounded-2xl"><CardContent className="space-y-3 py-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0"><h2 className="font-semibold">{item.title} <span className="text-xs font-normal text-muted-foreground">#{item.number}</span></h2><p className="mt-1 text-xs text-muted-foreground">{item.author ? `@${item.author}` : "Unknown author"}{item.updated_at ? ` · updated ${new Date(item.updated_at).toLocaleDateString()}` : ""}{"draft" in item && item.draft ? " · draft" : ""}</p></div>
@@ -203,18 +207,19 @@ export default function GitHubProjectPage() {
             <div className="flex flex-wrap gap-2">{item.labels.map((label) => <span key={label} className="rounded-full bg-muted px-2 py-1 text-xs">{label}</span>)}</div>
             {activeTab === "issues" ? <div className="flex flex-wrap gap-2"><Button variant="outline" size="sm" onClick={() => void suggestTasks(item.number)} disabled={busy}><Sparkles className="size-4" /> Suggest planner tasks</Button><Button variant="outline" size="sm" onClick={() => { setCommentIssueNumber(item.number); setCommentBody(""); setCommentReviewed(false); }}>Write comment</Button></div> : <Button variant="outline" size="sm" onClick={() => void inspectPull(item.number)} disabled={busy}>View diff and checks</Button>}
           </CardContent></Card>) : <Card className="rounded-2xl"><CardContent className="py-8 text-center text-sm text-muted-foreground">No open {activeTab} in this repository.</CardContent></Card>}
-        </section>
+          </TabsContent>
+        </Tabs>
       </>}
 
       {commentIssueNumber !== null && overview && <Card className="rounded-2xl border-primary/30"><CardHeader><CardTitle>Comment on issue #{commentIssueNumber}</CardTitle><CardDescription>Review the exact comment and destination before posting to {overview.repository}.</CardDescription></CardHeader><CardContent className="space-y-3">
-        {!commentReviewed ? <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); setCommentReviewed(true); }}><label className="block space-y-1 text-sm font-medium">Comment<textarea required maxLength={10000} rows={4} value={commentBody} onChange={(event) => setCommentBody(event.target.value)} className="mt-1 w-full rounded-md border bg-background px-3 py-2 font-normal" /></label><div className="flex gap-2"><Button type="submit" disabled={!commentBody.trim()}>Review comment</Button><Button variant="outline" type="button" onClick={() => setCommentIssueNumber(null)}>Cancel</Button></div></form> : <div className="space-y-3 rounded-xl border p-4"><p className="text-xs font-semibold uppercase text-muted-foreground">Will post to {overview.repository} issue #{commentIssueNumber}</p><p className="whitespace-pre-wrap break-words text-sm">{commentBody.trim()}</p><div className="flex gap-2"><Button onClick={() => void createComment()} disabled={busy}>{busy ? <Loader2 className="animate-spin" /> : null}Post comment to GitHub</Button><Button variant="outline" onClick={() => setCommentReviewed(false)} disabled={busy}>Edit comment</Button></div></div>}
+        {!commentReviewed ? <form className="space-y-3" onSubmit={(event) => { event.preventDefault(); setCommentReviewed(true); }}><label className="block space-y-1 text-sm font-medium">Comment<textarea required maxLength={10000} rows={4} value={commentBody} onChange={(event) => setCommentBody(event.target.value)} className="mt-1 w-full rounded-md border bg-background px-3 py-2 font-normal" /></label><div className="flex flex-wrap gap-2"><Button type="submit" disabled={!commentBody.trim()}>Review comment</Button><Button variant="outline" type="button" onClick={() => setCommentIssueNumber(null)}>Cancel</Button></div></form> : <div className="space-y-3 rounded-xl border p-4"><p className="text-xs font-semibold uppercase text-muted-foreground">Will post to {overview.repository} issue #{commentIssueNumber}</p><p className="whitespace-pre-wrap break-words text-sm">{commentBody.trim()}</p><div className="flex flex-wrap gap-2"><Button onClick={() => void createComment()} disabled={busy}>{busy ? <Loader2 className="animate-spin" /> : null}Post comment to GitHub</Button><Button variant="outline" onClick={() => setCommentReviewed(false)} disabled={busy}>Edit comment</Button></div></div>}
       </CardContent></Card>}
 
       {proposal && <Card className="rounded-2xl border-primary/30"><CardHeader><CardTitle>Review planner suggestions</CardTitle><CardDescription>From {proposal.source_title}. GitHub text is treated as untrusted source material; nothing is saved until you accept an item.</CardDescription></CardHeader><CardContent className="space-y-4">
         {proposal.suggestions.length ? proposal.suggestions.map((suggestion, index) => <div key={`${proposal.source_id}-${index}`} className="space-y-3 rounded-xl border p-4">
           <p className="font-medium">{suggestion.title}</p>{suggestion.description && <p className="text-sm text-muted-foreground">{suggestion.description}</p>}
           <blockquote className="border-l-2 border-primary/50 pl-3 text-sm text-muted-foreground">“{suggestion.source_quote}”</blockquote>
-          <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-xs text-muted-foreground">{suggestion.priority} priority{suggestion.due_date ? ` · due ${suggestion.due_date}` : ""}</span><div className="flex gap-2"><Button onClick={() => void acceptSuggestion(suggestion)} disabled={busy}>Add to planner</Button><Button variant="outline" onClick={() => setProposal((current) => current ? { ...current, suggestions: current.suggestions.filter((item) => item !== suggestion) } : current)}>Ignore</Button></div></div>
+          <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-xs text-muted-foreground">{suggestion.priority} priority{suggestion.due_date ? ` · due ${suggestion.due_date}` : ""}</span><div className="flex flex-wrap gap-2"><Button onClick={() => void acceptSuggestion(suggestion)} disabled={busy}>Add to planner</Button><Button variant="outline" onClick={() => setProposal((current) => current ? { ...current, suggestions: current.suggestions.filter((item) => item !== suggestion) } : current)}>Ignore</Button></div></div>
         </div>) : <p className="text-sm text-muted-foreground">No clear action items were found in this issue.</p>}
       </CardContent></Card>}
 

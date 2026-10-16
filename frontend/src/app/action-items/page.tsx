@@ -1,5 +1,7 @@
 "use client";
 
+/* Hallmark · genre: playful · macrostructure: Workbench · design-system: design.md · designed-as-app */
+
 import { useCallback, useEffect, useState } from "react";
 import { Check, CircleCheck, ListTodo, Loader2, Pencil, Plus, Sparkles, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";

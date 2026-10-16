@@ -5,7 +5,7 @@ import { DocumentUploader } from "../DocumentUploader";
 // Mock lucide-react icons to simple elements
 vi.mock("lucide-react", () => ({
   Upload: (props: Record<string, unknown>) => <svg data-testid="upload-icon" {...props} />,
-  FileUp: (props: Record<string, unknown>) => <svg data-testid="fileup-icon" {...props} />,
+  LoaderCircle: (props: Record<string, unknown>) => <svg data-testid="loading-icon" {...props} />,
   X: (props: Record<string, unknown>) => <svg data-testid="x-icon" {...props} />,
 }));
 

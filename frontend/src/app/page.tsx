@@ -1,3 +1,5 @@
+/* Hallmark · genre: playful · macrostructure: Workbench · design-system: design.md · designed-as-app */
+
 import Link from "next/link";
 import {
   Activity,
@@ -51,7 +53,7 @@ export default function HomePage() {
     <div className="mx-auto max-w-6xl space-y-10 px-4 py-6 sm:px-8 sm:py-10">
       <section className="relative flex flex-col-reverse items-start gap-5 overflow-hidden rounded-3xl border bg-violet-soft/55 p-6 sm:flex-row sm:items-center sm:justify-between sm:p-10">
         <div className="relative max-w-xl">
-          <span className="mb-4 inline-flex items-center gap-2 rounded-full border border-primary/15 bg-card px-3 py-1.5 text-xs font-semibold text-primary">
+          <span className="mb-4 inline-flex items-center gap-2 rounded-full border border-primary/15 bg-card px-3 py-1.5 text-xs font-semibold text-violet-ink">
             <Sparkles className="size-3.5" aria-hidden="true" /> A little help, close to home
           </span>
           <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">A cozy place for big ideas.</h1>
@@ -62,9 +64,9 @@ export default function HomePage() {
             <Link href="/chat">Start a chat <ArrowRight className="size-4" aria-hidden="true" /></Link>
           </Button>
         </div>
-        <div aria-hidden="true" className="relative self-center sm:px-8">
+        <div aria-hidden="true" className="relative flex flex-col items-center gap-2 self-center sm:block sm:px-8">
           <BrandMark className="relative h-28 w-28 sm:h-40 sm:w-40" />
-          <span className="absolute -bottom-1 right-0 rotate-3 rounded-xl border bg-card px-3 py-2 text-sm font-semibold text-primary shadow-sm">Hello, curious human!</span>
+          <span className="rotate-3 rounded-xl border bg-card px-3 py-2 text-sm font-semibold text-violet-ink shadow-sm sm:absolute sm:-bottom-1 sm:right-0">Hello, curious human!</span>
         </div>
       </section>
 
@@ -89,7 +91,7 @@ export default function HomePage() {
                       <span className="block text-sm font-semibold">{item.title}</span>
                       <span className="mt-0.5 block text-xs leading-4 text-muted-foreground">{item.description}</span>
                     </span>
-                    <ArrowUpRight className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" aria-hidden="true" />
+                    <ArrowUpRight className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-violet-ink" aria-hidden="true" />
                   </Link>
                 ))}
               </div>

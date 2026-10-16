@@ -78,7 +78,7 @@ export function SchemaBrowser({ database, onInsertText }: SchemaBrowserProps = {
               {tables.map((table) => (
                 <div key={table.name}>
                   <div className="flex items-center gap-1 rounded px-1 hover:bg-accent">
-                    <button type="button" onClick={() => toggleTable(table.name)} aria-label={`${expanded.has(table.name) ? "Collapse" : "Expand"} ${table.name}`} className="grid size-7 shrink-0 place-items-center rounded">
+                    <button type="button" onClick={() => toggleTable(table.name)} aria-label={`${expanded.has(table.name) ? "Collapse" : "Expand"} ${table.name}`} className="grid size-7 shrink-0 place-items-center rounded pointer-coarse:min-h-11 pointer-coarse:min-w-11">
                     {expanded.has(table.name) ? (
                       <ChevronDown className="h-3 w-3" />
                     ) : (
@@ -86,7 +86,7 @@ export function SchemaBrowser({ database, onInsertText }: SchemaBrowserProps = {
                     )}
                     </button>
                     <Table2 className="h-3 w-3 text-muted-foreground" />
-                    <button type="button" onClick={() => { toggleTable(table.name); onInsertText?.(table.name); }} className="min-h-9 text-left font-mono text-xs font-medium hover:underline">
+                    <button type="button" onClick={() => { toggleTable(table.name); onInsertText?.(table.name); }} className="min-h-9 text-left font-mono text-xs font-medium hover:underline pointer-coarse:min-h-11 pointer-coarse:min-w-11">
                       {table.name}
                     </button>
                     <Badge variant="outline" className="ml-auto text-[10px]">
@@ -100,12 +100,12 @@ export function SchemaBrowser({ database, onInsertText }: SchemaBrowserProps = {
                           {col.primary_key && (
                             <Key className="h-2.5 w-2.5 text-peach-ink" />
                           )}
-                          <button type="button" onClick={() => onInsertText?.(col.name)} className={cn("min-h-7 font-mono hover:underline", col.primary_key && "font-semibold")}>
+                          <button type="button" onClick={() => onInsertText?.(col.name)} className={cn("min-h-7 font-mono hover:underline pointer-coarse:min-h-11 pointer-coarse:min-w-11", col.primary_key && "font-semibold")}>
                             {col.name}
                           </button>
                           <span className="text-muted-foreground">{col.type}</span>
                           {col.nullable && (
-                            <span className="text-muted-foreground/50">nullable</span>
+                            <span className="text-muted-foreground">nullable</span>
                           )}
                         </div>
                       ))}

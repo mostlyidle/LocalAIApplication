@@ -49,7 +49,7 @@ export function ResultsTable({ columns, rows, rowCount, sql, explanation }: Resu
 
         {columns.length > 0 && (
           <ScrollArea className="max-h-96">
-            <Table>
+            <Table className="tabular-nums">
               <TableHeader>
                 <TableRow>
                   {columns.map((col) => (

@@ -57,10 +57,10 @@ function SystemStatusPill() {
     : health === "disconnected" ? "Ollama Offline" : "Checking Ollama";
 
   return (
-    <div aria-live="polite" className="hidden items-center gap-2 rounded-full border bg-background/80 px-2.5 py-1 text-xs sm:flex">
+    <div aria-live="polite" className="hidden items-center gap-2 rounded-full border bg-background/80 px-2.5 py-1 text-xs lg:flex">
       <span aria-hidden="true" className={cn(
         "size-2 rounded-full",
-        health === "connected" && "animate-pulse bg-mint-ink",
+        health === "connected" && "bg-mint-ink",
         health === "disconnected" && "bg-destructive",
         health === "checking" && "bg-peach-ink",
       )} />
@@ -80,14 +80,14 @@ export function Header() {
     <header className="flex h-16 shrink-0 items-center gap-3 border-b bg-card/80 px-4 sm:px-6">
       <SidebarTrigger className="size-11" />
       <Separator orientation="vertical" className="data-[orientation=vertical]:h-5" />
-      <span className="text-sm font-semibold">{title}</span>
-      <div className="ml-auto flex items-center gap-2">
+      <span className="min-w-0 flex-1 truncate text-sm font-semibold" title={title}>{title}</span>
+      <div className="ml-auto flex shrink-0 items-center gap-2">
         <SystemStatusPill />
         {account && (
           <>
-            <span className="hidden items-center gap-2 text-sm font-medium sm:flex">
-              <span aria-hidden="true" className="grid size-8 place-items-center rounded-full bg-peach-soft text-peach-ink">{account.display_name.slice(0, 1).toUpperCase()}</span>
-              {account.display_name}
+            <span className="hidden max-w-40 items-center gap-2 text-sm font-medium xl:flex">
+              <span aria-hidden="true" className="grid size-8 shrink-0 place-items-center rounded-full bg-peach-soft text-peach-ink">{account.display_name.slice(0, 1).toUpperCase()}</span>
+              <span className="truncate" title={account.display_name}>{account.display_name}</span>
             </span>
             <Button
               variant="ghost"
