@@ -1,5 +1,7 @@
 "use client";
 
+/* Hallmark · genre: playful · macrostructure: Workbench · design-system: design.md · designed-as-app */
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Settings,
@@ -477,8 +479,9 @@ export default function SettingsPage() {
           <CardContent className="space-y-3">
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label className="text-xs">Connection Name</Label>
+                <Label htmlFor="connection-name" className="text-xs">Connection Name</Label>
                 <Input
+                  id="connection-name"
                   value={connName}
                   onChange={(e) => setConnName(e.target.value)}
                   placeholder="e.g. analytics"
@@ -486,8 +489,9 @@ export default function SettingsPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs">Database URL</Label>
+                <Label htmlFor="connection-url" className="text-xs">Database URL</Label>
                 <Input
+                  id="connection-url"
                   value={connUrl}
                   onChange={(e) => setConnUrl(e.target.value)}
                   placeholder="sqlite+aiosqlite:///path/to/db.sqlite"

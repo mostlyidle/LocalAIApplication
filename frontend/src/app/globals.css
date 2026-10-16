@@ -3,7 +3,7 @@
 @import "shadcn/tailwind.css";
 @import "./tokens.css";
 
-/* Hallmark · macrostructure: Workbench · theme: Bubble · anchor: Mallow lavender */
+/* Hallmark · genre: playful · macrostructure: Workbench · theme: Bubble · design-system: design.md · designed-as-app */
 
 @custom-variant dark (&:is(.dark *));
 
@@ -103,7 +103,8 @@
   button:not(:disabled), select:not(:disabled), summary {
     cursor: pointer;
   }
-  a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+  a:focus-visible, button:focus-visible, summary:focus-visible,
+  input:focus-visible, textarea:focus-visible, select:focus-visible {
     outline: 2px solid var(--ring);
     outline-offset: 3px;
   }
@@ -141,12 +142,27 @@
 }
 
 @media (pointer: coarse) {
+  [data-slot="tabs-list"] {
+    height: auto;
+  }
+
   [data-slot="button"],
+  button:not([data-slot]),
+  summary,
+  [data-slot="select-trigger"],
+  [data-slot="select-item"],
+  [data-slot="dropdown-menu-item"],
+  [data-slot="dropdown-menu-checkbox-item"],
+  [data-slot="dropdown-menu-radio-item"],
+  [data-slot="dropdown-menu-sub-trigger"],
+  [data-slot="tabs-trigger"],
   [data-slot="sidebar-menu-button"] {
     min-height: 44px;
   }
 
-  [data-slot="button"][data-size^="icon"] {
+  [data-slot="button"][data-size^="icon"],
+  button:not([data-slot]),
+  [data-slot="tabs-trigger"] {
     min-width: 44px;
   }
 }

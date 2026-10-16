@@ -1,5 +1,7 @@
 "use client";
 
+/* Hallmark · genre: playful · macrostructure: Catalogue · design-system: design.md · designed-as-app */
+
 import { useMemo } from "react";
 import { FileText, FileUp } from "lucide-react";
 import { Badge } from "@/components/ui/badge";

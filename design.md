@@ -92,6 +92,8 @@ single faint shadow or a tinted surface, not stacked shadows.
 
 - Primary actions use a lavender fill, dark plum text, rounded corners, and a
   direct verb label.
+- Links and accent-colored text use `--violet-ink` for readable contrast in both
+  themes; `--color-accent` is a fill, not a text color on paper surfaces.
 - Secondary actions use a tinted or outlined surface.
 - Buttons stay one line and at least 44px tall for touch.
 - Compact button variants expand to meet the touch target on coarse-pointer devices.

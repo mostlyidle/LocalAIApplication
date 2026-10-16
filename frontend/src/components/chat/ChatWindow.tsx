@@ -125,6 +125,9 @@ export function ChatWindow() {
   const historyRequestIdRef = useRef(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const historyTriggerRef = useRef<HTMLButtonElement>(null);
+  const historySearchRef = useRef<HTMLInputElement>(null);
+  const deleteTriggerRef = useRef<HTMLButtonElement | null>(null);
   const selectedProfile = agents.find((agent) => agent.name === selectedAgent && !agent.archived);
   const agentDisplayNames = Object.fromEntries(agents.map((agent) => [
     agent.name,
@@ -588,6 +591,7 @@ export function ChatWindow() {
             variant="ghost"
             size="sm"
             className="min-h-11 rounded-xl"
+            ref={historyTriggerRef}
             onClick={() => setHistoryOpen((open) => !open)}
             disabled={restoringConversation}
             aria-expanded={historyOpen}
@@ -603,7 +607,7 @@ export function ChatWindow() {
       </div>
       {recallSettingError && <p role="alert" className="border-b px-4 py-2 text-xs text-destructive">{recallSettingError}</p>}
       <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>
-        <SheetContent aria-label="Conversation history" className="gap-0 p-0 sm:max-w-md">
+        <SheetContent aria-label="Conversation history" className="gap-0 p-0 sm:max-w-md" onCloseAutoFocus={(event) => { event.preventDefault(); historyTriggerRef.current?.focus(); }}>
           <SheetHeader className="border-b">
             <SheetTitle>Conversation history</SheetTitle>
             <SheetDescription>Return to a conversation from your saved chats.</SheetDescription>
@@ -612,7 +616,7 @@ export function ChatWindow() {
             <label htmlFor="conversation-search" className="sr-only">Search conversations</label>
             <div className="flex items-center gap-2 rounded-lg border bg-card px-3">
               <Search className="size-4 text-muted-foreground" aria-hidden="true" />
-              <input id="conversation-search" value={historyQuery} onChange={(event) => setHistoryQuery(event.target.value)} placeholder="Search conversations" className="h-11 min-w-0 flex-1 bg-transparent text-sm outline-none" />
+              <input ref={historySearchRef} id="conversation-search" value={historyQuery} onChange={(event) => setHistoryQuery(event.target.value)} placeholder="Search conversations" className="h-11 min-w-0 flex-1 bg-transparent text-sm" />
             </div>
           </div>
           <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-3">
@@ -648,7 +652,8 @@ export function ChatWindow() {
                     size="icon"
                     aria-label={`Delete ${title}`}
                     title={`Delete ${title}`}
-                    onClick={() => {
+                    onClick={(event) => {
+                      deleteTriggerRef.current = event.currentTarget;
                       setDeleteConversationError("");
                       setConversationToDelete({ id: conversation.id, title });
                     }}
@@ -682,7 +687,10 @@ export function ChatWindow() {
           }
         }}
       >
-        <DialogContent className="rounded-2xl bg-card" showCloseButton={deletingConversationId === null}>
+        <DialogContent className="rounded-2xl bg-card" showCloseButton={deletingConversationId === null} onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          (deleteTriggerRef.current?.isConnected ? deleteTriggerRef.current : historySearchRef.current)?.focus();
+        }}>
           <div>
             <DialogTitle className="pr-6 text-xl font-bold">Delete conversation?</DialogTitle>
             <DialogDescription className="mt-2">

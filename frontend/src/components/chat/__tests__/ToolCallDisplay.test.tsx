@@ -41,8 +41,11 @@ describe("ToolCallDisplay", () => {
   it("expands on click to show input", () => {
     render(<ToolCallDisplay toolCall={makeToolCall()} />);
     const button = screen.getByRole("button");
+    expect(button).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(button);
-    expect(screen.getByText("Input")).toBeInTheDocument();
+    expect(button).toHaveAttribute("aria-expanded", "true");
+    const details = document.getElementById(button.getAttribute("aria-controls")!);
+    expect(details).toContainElement(screen.getByText("Input"));
     expect(screen.getByTestId("chevron-down")).toBeInTheDocument();
   });
 

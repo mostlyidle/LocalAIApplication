@@ -38,7 +38,7 @@ describe("QueryEditor", () => {
     const user = userEvent.setup();
     render(<QueryEditor {...props} />);
 
-    const textarea = screen.getByPlaceholderText(/top 5 customers/);
+    const textarea = screen.getByRole("textbox", { name: "Question for the SQL agent" });
     await user.type(textarea, "Show me all orders");
 
     const form = textarea.closest("form")!;
@@ -51,7 +51,7 @@ describe("QueryEditor", () => {
     const props = defaultProps();
     render(<QueryEditor {...props} />);
 
-    const textarea = screen.getByPlaceholderText(/top 5 customers/);
+    const textarea = screen.getByRole("textbox", { name: "Question for the SQL agent" });
     const form = textarea.closest("form")!;
     fireEvent.submit(form);
 
@@ -67,7 +67,7 @@ describe("QueryEditor", () => {
     const sqlTab = screen.getByText("Raw SQL");
     await user.click(sqlTab);
 
-    const textarea = screen.getByPlaceholderText(/SELECT \* FROM customers/);
+    const textarea = screen.getByRole("textbox", { name: "SQL query" });
     await user.type(textarea, "SELECT 1");
 
     const form = textarea.closest("form")!;
@@ -84,7 +84,7 @@ describe("QueryEditor", () => {
     const sqlTab = screen.getByText("Raw SQL");
     await user.click(sqlTab);
 
-    const textarea = screen.getByPlaceholderText(/SELECT \* FROM customers/);
+    const textarea = screen.getByRole("textbox", { name: "SQL query" });
     const form = textarea.closest("form")!;
     fireEvent.submit(form);
 
@@ -120,7 +120,7 @@ describe("QueryEditor", () => {
     const user = userEvent.setup();
     render(<QueryEditor {...defaultProps()} />);
 
-    const textarea = screen.getByPlaceholderText(/top 5 customers/);
+    const textarea = screen.getByRole("textbox", { name: "Question for the SQL agent" });
     await user.type(textarea, "test");
 
     const askButton = screen.getByText("Ask AI").closest("button")!;

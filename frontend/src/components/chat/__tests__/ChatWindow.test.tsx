@@ -231,6 +231,16 @@ describe("ChatWindow", () => {
     expect(window.localStorage.getItem("local-ai-active-conversation:account-alice")).toBe("conversation-1");
   });
 
+  it("returns focus to History when the history sheet is dismissed", async () => {
+    const user = userEvent.setup();
+    render(<ChatWindow />);
+    const trigger = screen.getByRole("button", { name: "History" });
+    await user.click(trigger);
+    await screen.findByRole("textbox", { name: "Search conversations" });
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(trigger).toHaveFocus());
+  });
+
   it("deletes a saved conversation from history after confirmation", async () => {
     const user = userEvent.setup();
     mockGetConversations.mockResolvedValue({
@@ -254,10 +264,14 @@ describe("ChatWindow", () => {
     expect(screen.getByRole("dialog")).toHaveTextContent("permanently delete");
     expect(mockDeleteConversation).not.toHaveBeenCalled();
 
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Delete Project notes" })).toHaveFocus());
+    await user.click(screen.getByRole("button", { name: "Delete Project notes" }));
     await user.click(screen.getByRole("button", { name: "Delete conversation" }));
 
     await waitFor(() => expect(mockDeleteConversation).toHaveBeenCalledWith("conversation-1"));
     await waitFor(() => expect(screen.queryByRole("button", { name: /Project notes/ })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "Search conversations" })).toHaveFocus());
   });
 
   it("starts a new chat when deleting the active conversation", async () => {

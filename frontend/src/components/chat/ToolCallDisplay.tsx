@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { ChevronDown, ChevronRight, Wrench } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import type { ToolCall } from "@/types/chat";
 
 interface ToolCallDisplayProps {
@@ -12,12 +12,18 @@ interface ToolCallDisplayProps {
 
 export function ToolCallDisplay({ toolCall }: ToolCallDisplayProps) {
   const [expanded, setExpanded] = useState(false);
+  const detailsId = useId();
 
   return (
     <div className="rounded-md border bg-background/50 text-xs">
-      <button
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        aria-expanded={expanded}
+        aria-controls={expanded ? detailsId : undefined}
         onClick={() => setExpanded(!expanded)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-accent/50"
+        className="h-auto min-h-9 w-full justify-start rounded-none px-3 py-2 text-left text-xs hover:bg-accent/50"
       >
         {expanded ? (
           <ChevronDown className="h-3 w-3" />
@@ -25,15 +31,15 @@ export function ToolCallDisplay({ toolCall }: ToolCallDisplayProps) {
           <ChevronRight className="h-3 w-3" />
         )}
         <Wrench className="h-3 w-3 text-muted-foreground" />
-        <span className="font-mono font-medium">{toolCall.toolName}</span>
+        <span className="min-w-0 flex-1 truncate text-left font-mono font-medium">{toolCall.toolName ?? "Tool call"}</span>
         {toolCall.durationMs && (
           <Badge variant="secondary" className="ml-auto text-[10px]">
             {toolCall.durationMs.toFixed(0)}ms
           </Badge>
         )}
-      </button>
+      </Button>
       {expanded && (
-        <div className="space-y-2 border-t px-3 py-2">
+        <div id={detailsId} className="space-y-2 border-t px-3 py-2">
           <div>
             <div className="mb-1 font-medium text-muted-foreground">Input</div>
             <pre className="overflow-x-auto rounded bg-muted p-2 text-[11px]">

@@ -80,7 +80,15 @@ describe("GitHubProjectPage", () => {
   it("shows changed files and check status for a pull request", async () => {
     render(<GitHubProjectPage />);
     fireEvent.click(await screen.findByRole("button", { name: "Load project" }));
-    fireEvent.click(await screen.findByRole("tab", { name: "Pull requests (1)" }));
+    const user = userEvent.setup();
+    const issuesTab = await screen.findByRole("tab", { name: "Issues (1)" });
+    issuesTab.focus();
+    await user.keyboard("{ArrowRight}");
+    const pullsTab = screen.getByRole("tab", { name: "Pull requests (1)" });
+    expect(pullsTab).toHaveFocus();
+    expect(pullsTab).toHaveAttribute("aria-selected", "true");
+    const panel = screen.getByRole("tabpanel", { name: "Pull requests (1)" });
+    expect(pullsTab).toHaveAttribute("aria-controls", panel.id);
     fireEvent.click(await screen.findByRole("button", { name: "View diff and checks" }));
     expect(await screen.findByText("schema.py · +1 / −0")).toBeInTheDocument();
     expect(screen.getByText("tests")).toBeInTheDocument();

@@ -246,7 +246,8 @@ describe("SettingsPage", () => {
     render(<SettingsPage />);
     expect(screen.getByText("Database Connections")).toBeInTheDocument();
     expect(screen.getByText("Add Connection")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("sqlite+aiosqlite:///path/to/db.sqlite")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Connection Name" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Database URL" })).toBeInTheDocument();
   });
 
   it("trims the name sent for a new specialist and selects the created profile", async () => {

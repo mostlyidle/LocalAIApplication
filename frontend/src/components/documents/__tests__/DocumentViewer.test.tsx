@@ -110,7 +110,7 @@ describe("DocumentViewer", () => {
     render(
       <DocumentViewer document={baseDoc} onDelete={onDelete} onAnalyze={onAnalyze} />
     );
-    await userEvent.type(screen.getByPlaceholderText(/Ask about this document/i), "What was revenue?");
+    await userEvent.type(screen.getByRole("textbox", { name: /Question about/ }), "What was revenue?");
     await userEvent.click(screen.getByRole("button", { name: /Analyze/i }));
 
     expect(await screen.findByText("42 million.")).toBeInTheDocument();
@@ -121,7 +121,7 @@ describe("DocumentViewer", () => {
     render(
       <DocumentViewer document={baseDoc} onDelete={onDelete} onAnalyze={onAnalyze} />
     );
-    const textarea = screen.getByPlaceholderText(/Ask about this document/i);
+    const textarea = screen.getByRole("textbox", { name: /Question about/ });
     await userEvent.type(textarea, "Summarize findings");
 
     const analyzeBtn = screen.getByRole("button", { name: /Analyze/i });
@@ -167,7 +167,7 @@ describe("DocumentViewer", () => {
       <DocumentViewer document={baseDoc} onDelete={onDelete} onAnalyze={onAnalyze} />
     );
 
-    await user.click(screen.getByRole("button", { name: /Add to Knowledge Base/i }));
+    await user.click(screen.getByRole("button", { name: /Add to index/i }));
     const containerSelect = await screen.findByRole("combobox", { name: "Target container" });
     containerSelect.focus();
     fireEvent.keyDown(containerSelect, { key: "ArrowDown" });
@@ -178,6 +178,18 @@ describe("DocumentViewer", () => {
     await waitFor(() => {
       expect(queueDocument).toHaveBeenCalledWith("container_research", "doc-1");
     });
+    await waitFor(() => expect(screen.getByRole("button", { name: /Add to index/i })).toHaveFocus());
+  });
+
+  it("returns focus to Add to index when its dialog is dismissed", async () => {
+    vi.spyOn(api, "getRAGContainers").mockResolvedValue([]);
+    const user = userEvent.setup();
+    render(<DocumentViewer document={baseDoc} onDelete={onDelete} onAnalyze={onAnalyze} />);
+    const trigger = screen.getByRole("button", { name: /Add to index/i });
+    await user.click(trigger);
+    await screen.findByRole("dialog");
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(trigger).toHaveFocus());
   });
 
   it("disables Analyze button during analysis", async () => {

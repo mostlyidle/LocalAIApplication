@@ -1,5 +1,7 @@
 "use client";
 
+/* Hallmark · genre: playful · macrostructure: Workbench · design-system: design.md · designed-as-app */
+
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { Search, Trash2, Database, Loader2, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";

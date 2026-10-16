@@ -67,6 +67,7 @@ export function QueryEditor({
           <TabsContent value="natural">
             <form onSubmit={handleNLSubmit} className="space-y-3">
               <Textarea
+                aria-label="Question for the SQL agent"
                 value={nlQuery}
                 onChange={(e) => setNlQuery(e.target.value)}
                 placeholder="e.g. Show me the top 5 customers by total spending"
@@ -87,6 +88,7 @@ export function QueryEditor({
           <TabsContent value="sql">
             <form onSubmit={handleSQLSubmit} className="space-y-3">
               <Textarea
+                aria-label="SQL query"
                 value={rawSQL}
                 onChange={(e) => updateRawSQL(e.target.value)}
                 placeholder="SELECT * FROM customers LIMIT 10;"

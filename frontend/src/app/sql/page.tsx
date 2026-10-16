@@ -1,5 +1,7 @@
 "use client";
 
+/* Hallmark · genre: playful · macrostructure: Workbench · design-system: design.md · designed-as-app */
+
 import { useCallback, useEffect, useState } from "react";
 import { Database } from "lucide-react";
 import * as api from "@/lib/api";
