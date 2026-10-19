@@ -24,6 +24,29 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """Create the redaction job state table."""
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    if inspector.has_table("redaction_jobs"):
+        columns = {column["name"] for column in inspector.get_columns("redaction_jobs")}
+        if "pages_processed" not in columns:
+            op.add_column(
+                "redaction_jobs",
+                sa.Column("pages_processed", sa.Integer(), nullable=False, server_default="0"),
+            )
+        if "lease_until" not in columns:
+            op.add_column("redaction_jobs", sa.Column("lease_until", sa.DateTime(), nullable=True))
+
+        indexes = {index["name"] for index in inspector.get_indexes("redaction_jobs")}
+        for name, index_columns in (
+            ("ix_redaction_jobs_document_id", ["document_id"]),
+            ("ix_redaction_jobs_owner_id", ["owner_id"]),
+            ("ix_redaction_jobs_status", ["status"]),
+            ("ix_redaction_jobs_status_created", ["status", "created_at"]),
+        ):
+            if name not in indexes:
+                op.create_index(name, "redaction_jobs", index_columns)
+        return
+
     op.create_table(
         "redaction_jobs",
         sa.Column("id", sa.String(length=36), nullable=False),
