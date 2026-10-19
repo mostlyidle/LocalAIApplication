@@ -8,6 +8,8 @@ from typing import Any, Literal
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
 
 class Settings(BaseSettings):
     """Central configuration for the Local AI Application.
@@ -32,6 +34,7 @@ class Settings(BaseSettings):
     ollama_embedding_dimension: int = 768
     ollama_request_timeout: int = 120
     ollama_num_parallel: int = 2
+    redaction_context_model: str = "qwen2.5:7b"
     laya_model: str = "laya:latest"
     laya_rag_evidence_mode: Literal["off", "observe", "enforce"] = "off"
     laya_rag_rewrite_mode: Literal["off", "observe", "enforce"] = "off"
@@ -77,6 +80,7 @@ class Settings(BaseSettings):
     )
     pdf_parser: Literal["pymupdf", "docling"] = "pymupdf"
     docling_artifacts_path: str | None = None
+    redaction_model_cache_dir: Path | None = None
 
     # ── API Server ──────────────────────────────────────────────────────
     api_host: str = "0.0.0.0"
@@ -122,6 +126,17 @@ class Settings(BaseSettings):
         path = Path(self.upload_dir)
         path.mkdir(parents=True, exist_ok=True)
         return path
+
+    @property
+    def redaction_model_cache_path(self) -> Path:
+        """Return the local Hugging Face cache for the pinned redaction model."""
+        if self.redaction_model_cache_dir is not None:
+            path = self.redaction_model_cache_dir
+            return path if path.is_absolute() else PROJECT_ROOT / path
+        upload_path = Path(self.upload_dir)
+        if not upload_path.is_absolute():
+            upload_path = PROJECT_ROOT / upload_path
+        return upload_path.parent / "models" / "gliner"
 
     @field_validator("cors_origins", mode="before")
     @classmethod

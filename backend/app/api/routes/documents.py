@@ -37,7 +37,7 @@ from app.dependencies import (
     get_document_parser,
     get_vector_store,
 )
-from app.models.db_models import Document, RagCollection, RagContainerFile
+from app.models.db_models import Document, RagCollection, RagContainerFile, RedactionJob
 from app.models.enums import DocumentFormat, DocumentStatus
 from app.models.schemas import (
     DocumentAnalysisResult,
@@ -48,6 +48,7 @@ from app.models.schemas import (
 )
 from app.services.auth import AuthenticatedSession  # noqa: TC001
 from app.services.rag_store import RagCollectionSchemaError
+from app.services.redaction_job_worker import cleanup_redaction_job_artifacts
 from app.services.vector_store import VectorStoreService  # noqa: TC001
 
 logger = structlog.get_logger(__name__)
@@ -498,6 +499,23 @@ async def delete_document(
         if claimed.rowcount != len(memberships):
             await db.rollback()
             raise HTTPException(status_code=409, detail="Wait for container indexing to finish.")
+    redaction_jobs = list(
+        (
+            await db.scalars(
+                select(RedactionJob).where(
+                    RedactionJob.document_id == document_id,
+                    RedactionJob.owner_id == authenticated.account.id,
+                )
+            )
+        ).all()
+    )
+    if any(job.status == "exporting" for job in redaction_jobs):
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Wait for redacted export to finish first.")
+    for job in redaction_jobs:
+        if job.status in {"queued", "processing"}:
+            job.status = "cancelled"
+            job.lease_until = None
     await db.commit()
 
     try:
@@ -519,6 +537,8 @@ async def delete_document(
                     collection=collection,
                     reason=str(exc),
                 )
+        for job in redaction_jobs:
+            await db.delete(job)
         await db.delete(doc)
         await db.commit()
     except Exception:
@@ -531,6 +551,8 @@ async def delete_document(
         raise
 
     Path(doc.storage_path).unlink(missing_ok=True)
+    for job in redaction_jobs:
+        cleanup_redaction_job_artifacts(job.job_dir, job.owner_id)
 
     logger.info("document_deleted", doc_id=document_id)
     return {"status": "deleted", "document_id": document_id}

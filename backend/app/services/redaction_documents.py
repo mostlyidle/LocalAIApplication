@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import os
 import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
@@ -18,6 +19,7 @@ REDACTION_MARGIN_POINTS = 1.5
 OCR_DPI = 300
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
     from pathlib import Path
 
     from app.services.ocr import OCRService
@@ -106,34 +108,22 @@ def add_ocr_regions(
     parts = [page.text] if page.text else []
     words = list(page.words)
     offset = len(page.text)
-    native_text = _normalized_ocr_text(page.text)
     line_index = 0
     for detection in detections:
         text = str(detection.get("text", "")).strip()
-        confidence = float(detection.get("confidence", 0.0))
         polygon = detection.get("bbox", [])
-        if (
-            not text
-            or len(polygon) < 3
-            or not math.isfinite(confidence)
-            or len({len(point) for point in polygon}) != 1
-            or any(len(point) < 2 for point in polygon)
-        ):
-            continue
-        normalized_text = _normalized_ocr_text(text)
-        if not normalized_text or normalized_text in native_text:
-            continue
-        if parts:
-            parts.append("\n")
-            offset += 1
-        start = offset
-        parts.append(text)
-        offset += len(text)
         try:
-            x_values = [float(point[0]) for point in polygon]
-            y_values = [float(point[1]) for point in polygon]
+            confidence = float(detection.get("confidence", 0.0))
+            points = [(float(point[0]), float(point[1])) for point in polygon]
         except (TypeError, ValueError, IndexError):
             continue
+        if not text or len(points) < 3 or not math.isfinite(confidence):
+            continue
+        normalized_text = _normalized_ocr_text(text)
+        if not normalized_text:
+            continue
+        x_values = [point[0] for point in points]
+        y_values = [point[1] for point in points]
         if not all(math.isfinite(value) for value in (*x_values, *y_values)):
             continue
         rect = pymupdf.Rect(
@@ -145,6 +135,22 @@ def add_ocr_regions(
         rect &= pymupdf.Rect(0, 0, page.width, page.height)
         if rect.is_empty:
             continue
+        overlapping_native = [
+            word
+            for word in page.words
+            if word.source == "pdf" and pymupdf.Rect(word.rect).intersects(rect)
+        ]
+        native_overlap_text = [
+            _normalized_ocr_text(page.text[word.start : word.end]) for word in overlapping_native
+        ]
+        if native_overlap_text and all(word in normalized_text for word in native_overlap_text):
+            continue
+        if parts:
+            parts.append("\n")
+            offset += 1
+        start = offset
+        parts.append(text)
+        offset += len(text)
         words.append(
             WordRegion(
                 start=start,
@@ -168,6 +174,8 @@ def add_ocr_regions(
 async def extract_document_pages(
     source: Path,
     ocr_service: OCRService,
+    *,
+    on_page: Callable[[int, int], Awaitable[bool]] | None = None,
 ) -> list[ExtractedPage]:
     """Extract PDF/image pages and OCR scanned or image-containing page content."""
     document = await asyncio.to_thread(pymupdf.open, source)
@@ -179,6 +187,8 @@ async def extract_document_pages(
             has_images, has_widgets = await asyncio.to_thread(_page_requires_ocr, page)
             if extracted.words and not has_images and not has_widgets:
                 pages.append(extracted)
+                if on_page is not None and not await on_page(page_number + 1, len(document)):
+                    return pages
                 continue
 
             dpi = page_render_dpi(page, OCR_DPI)
@@ -202,6 +212,8 @@ async def extract_document_pages(
                     image_height=pixmap.height,
                 )
             )
+            if on_page is not None and not await on_page(page_number + 1, len(document)):
+                return pages
     finally:
         await asyncio.to_thread(document.close)
     return pages
@@ -307,6 +319,7 @@ def redact_to_image_pdf(
     """Create a new text-free PDF by painting boxes into source page pixels."""
     original = pymupdf.open(source)
     result = pymupdf.open()
+    temp_output = output.with_name(f"{output.stem}.pending{output.suffix}")
     try:
         for page_number, page in enumerate(original):
             source_page = extract_native_page(page, page_number)
@@ -336,8 +349,74 @@ def redact_to_image_pdf(
             output_page.insert_image(output_page.rect, stream=pixmap.tobytes("png"))
 
         output.parent.mkdir(parents=True, exist_ok=True)
-        result.save(output, garbage=4, deflate=True)
+        result.save(temp_output, garbage=4, deflate=True)
+        temp_output.chmod(0o600)
+        _verify_image_export(temp_output, original, redactions)
+        os.replace(temp_output, output)
         return len(original)
     finally:
         result.close()
         original.close()
+        if temp_output.exists():
+            temp_output.unlink()
+
+
+def _verify_image_export(
+    output: Path,
+    source: pymupdf.Document,
+    redactions: dict[int, list[tuple[float, float, float, float]]],
+) -> None:
+    """Verify the saved artifact before making it available for download."""
+    exported = pymupdf.open(output)
+    try:
+        if len(exported) != len(source) or exported.embfile_count():
+            raise RedactionDocumentError("The saved PDF failed structural verification.")
+        metadata = exported.metadata or {}
+        sensitive_metadata = (
+            "title",
+            "author",
+            "subject",
+            "keywords",
+            "creator",
+            "producer",
+            "creationDate",
+            "modDate",
+        )
+        if any(metadata.get(field) for field in sensitive_metadata):
+            raise RedactionDocumentError("The saved PDF retained source metadata.")
+        for page_number, page in enumerate(exported):
+            source_page = source[page_number]
+            if (
+                page.get_text().strip()
+                or not page.get_images()
+                or abs(page.rect.width - source_page.rect.width) > 0.1
+                or abs(page.rect.height - source_page.rect.height) > 0.1
+            ):
+                raise RedactionDocumentError("A saved page failed image-only verification.")
+            boxes = validate_boxes(
+                ExtractedPage(
+                    number=page_number,
+                    width=page.rect.width,
+                    height=page.rect.height,
+                    text="",
+                    words=(),
+                ),
+                redactions.get(page_number, []),
+            )
+            pixmap = page.get_pixmap(
+                dpi=page_render_dpi(page, REDACTION_DPI),
+                colorspace=pymupdf.csRGB,
+                alpha=False,
+            )
+            scale_x = pixmap.width / page.rect.width
+            scale_y = pixmap.height / page.rect.height
+            for box in boxes:
+                for x_fraction, y_fraction in ((0.25, 0.25), (0.5, 0.5), (0.75, 0.75)):
+                    x = int((box.x0 + box.width * x_fraction) * scale_x)
+                    y = int((box.y0 + box.height * y_fraction) * scale_y)
+                    if pixmap.pixel(x, y) != (0, 0, 0):
+                        raise RedactionDocumentError(
+                            "An approved region failed black-pixel verification."
+                        )
+    finally:
+        exported.close()

@@ -17,6 +17,7 @@ RoutableTarget = Literal[
     "stock_research",
     "software_engineer",
     "image_generation",
+    "document_redaction",
 ]
 AgentTarget = Literal["auto"] | RoutableTarget
 ModelName = Annotated[

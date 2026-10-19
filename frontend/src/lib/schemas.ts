@@ -231,6 +231,33 @@ export const documentListSchema = z.array(z.object({
   created_at: z.string(),
 })).transform((documents) => ({ documents }));
 
+export const redactionJobSchema = z.object({
+  id: z.string(),
+  document_id: z.string(),
+  status: z.string(),
+  page_count: z.number(),
+  pages_processed: z.number(),
+  review_revision: z.number(),
+  approved_revision: z.number().nullable(),
+  error_message: z.string().nullable(),
+  warnings: z.array(z.string()).default([]),
+});
+
+export const redactionReviewSchema = z.object({
+  job: redactionJobSchema,
+  findings: z.array(z.object({
+    id: z.string(),
+    page_number: z.number(),
+    category: z.string(),
+    text: z.string(),
+    confidence: z.number().nullable(),
+    source: z.string(),
+    selected: z.boolean(),
+    boxes: z.array(z.array(z.number())),
+  })),
+  pages: z.array(z.object({ number: z.number(), width: z.number(), height: z.number() })),
+});
+
 export const analysisResultSchema = z.object({
   document_id: z.string(),
   filename: z.string(),

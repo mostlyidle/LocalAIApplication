@@ -32,6 +32,7 @@ vi.mock("lucide-react", () => {
     Github: icon,
     Activity: icon,
     ListTodo: icon,
+    ScanEye: icon,
   };
 });
 
@@ -88,6 +89,7 @@ describe("AppSidebar", () => {
     render(<AppSidebar />);
     expect(screen.getByText("Chat")).toBeDefined();
     expect(screen.getByText("Documents")).toBeDefined();
+    expect(screen.getByText("Redaction Agent")).toBeDefined();
     expect(screen.getByText("SQL Agent")).toBeDefined();
     expect(screen.getByText("RAG Search")).toBeDefined();
     expect(screen.getByText("Memory")).toBeDefined();
@@ -103,6 +105,7 @@ describe("AppSidebar", () => {
     expect(hrefs).toContain("/");
     expect(hrefs).toContain("/chat");
     expect(hrefs).toContain("/documents");
+    expect(hrefs).toContain("/redaction");
     expect(hrefs).toContain("/sql");
     expect(hrefs).toContain("/rag");
     expect(hrefs).toContain("/memory");

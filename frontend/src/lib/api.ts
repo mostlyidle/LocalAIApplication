@@ -8,6 +8,8 @@ import {
   conversationDetailSchema,
   analysisResultSchema,
   documentListSchema,
+  redactionJobSchema,
+  redactionReviewSchema,
   sqlQueryResponseSchema,
   sqlExecuteResponseSchema,
   sqlSchemaResponseSchema,
@@ -396,6 +398,80 @@ export async function analyzeDocument(id: string, prompt?: string) {
 
 export async function deleteDocument(id: string) {
   return apiFetch<{ deleted: boolean }>(`/documents/${id}`, { method: "DELETE" });
+}
+
+export async function createRedactionJob(input: {
+  document_id: string;
+  categories: string[];
+  instructions: string;
+}) {
+  return apiFetch("/redaction-jobs", {
+    method: "POST",
+    body: JSON.stringify(input),
+  }, redactionJobSchema);
+}
+
+export async function getRedactionJob(id: string) {
+  return apiFetch(`/redaction-jobs/${encodeURIComponent(id)}`, undefined, redactionJobSchema);
+}
+
+export async function getRedactionReview(id: string) {
+  return apiFetch(`/redaction-jobs/${encodeURIComponent(id)}/review`, undefined, redactionReviewSchema);
+}
+
+export async function updateRedactionFinding(
+  jobId: string,
+  findingId: string,
+  input: { selected: boolean; boxes: number[][] },
+) {
+  return apiFetch(`/redaction-jobs/${encodeURIComponent(jobId)}/findings/${encodeURIComponent(findingId)}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  }, redactionJobSchema);
+}
+
+export async function addRedactionBox(jobId: string, page_number: number, box: number[]) {
+  return apiFetch(`/redaction-jobs/${encodeURIComponent(jobId)}/manual-boxes`, {
+    method: "POST",
+    body: JSON.stringify({ page_number, box }),
+  }, redactionJobSchema);
+}
+
+export async function approveRedactionReview(jobId: string, revision: number) {
+  return apiFetch(`/redaction-jobs/${encodeURIComponent(jobId)}/approve?revision=${revision}`, {
+    method: "POST",
+  }, redactionJobSchema);
+}
+
+export async function exportRedactedDocument(jobId: string) {
+  return apiFetch(`/redaction-jobs/${encodeURIComponent(jobId)}/export`, {
+    method: "POST",
+  }, redactionJobSchema);
+}
+
+export async function cancelRedactionJob(jobId: string) {
+  return apiFetch(`/redaction-jobs/${encodeURIComponent(jobId)}/cancel`, {
+    method: "POST",
+  }, redactionJobSchema);
+}
+
+export async function getRedactionPreviewUrl(jobId: string, pageNumber: number) {
+  const response = await fetch(
+    `${API_V1}/redaction-jobs/${encodeURIComponent(jobId)}/pages/${pageNumber}/preview`,
+    { credentials: "include" },
+  );
+  if (!response.ok) throw new Error("Could not load the page preview.");
+  return URL.createObjectURL(await response.blob());
+}
+
+export async function downloadRedactedDocument(jobId: string) {
+  const response = await fetch(`${API_V1}/redaction-jobs/${encodeURIComponent(jobId)}/download`, {
+    credentials: "include",
+  });
+  if (!response.ok) throw new Error("Could not download the redacted document.");
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] ?? "redacted.pdf";
+  return { blob: await response.blob(), filename };
 }
 
 // --- SQL ---

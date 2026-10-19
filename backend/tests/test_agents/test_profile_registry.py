@@ -31,8 +31,16 @@ def test_catalog_has_a_default_for_every_agent_domain(registry: AgentRegistry) -
         "stock_research",
         "software_engineer",
         "image_generation",
+        "document_redaction",
     }
     assert {agent.name for agent in catalog.agents} >= {"rag", "rag_v2"}
+
+
+def test_redaction_profile_uses_its_dedicated_local_workflow(registry: AgentRegistry) -> None:
+    profile = registry.default_for("document_redaction")
+
+    assert profile.name == "document_redaction"
+    assert profile.inference is None
 
 
 def test_rag_v2_prompt_and_retrieval_profile_load(registry: AgentRegistry) -> None:

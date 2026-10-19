@@ -16,11 +16,18 @@ import time
 import uuid
 from collections.abc import Awaitable, Callable  # noqa: TC003
 from datetime import UTC, datetime
-from typing import Annotated
-from typing import Any
+from typing import Annotated, Any
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from pydantic import ValidationError
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: TC002
@@ -716,6 +723,43 @@ async def _execute_selected_profile(
         asset_id=body.attachments[0] if body.attachments else None,
     )
     try:
+        if profile.target == "document_redaction":
+            if len(body.attachments) != 1:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Attach one PDF or image to start a redaction job.",
+                )
+            documents = await _load_uploaded_documents(body.attachments, owner_id, db=db)
+            document = documents.get(body.attachments[0])
+            if document is None:
+                raise HTTPException(status_code=404, detail="Uploaded asset was not found.")
+            from app.models.redaction_schemas import RedactionJobCreate
+            from app.services.redaction_detector import DEFAULT_CATEGORIES
+            from app.services.redaction_job_worker import queue_redaction_job
+
+            categories = DEFAULT_CATEGORIES
+            if body.workflow and "categories" in body.workflow:
+                categories = body.workflow["categories"]
+            try:
+                job_request = RedactionJobCreate(
+                    document_id=document.id,
+                    categories=categories,
+                    instructions=body.content,
+                )
+                job = await queue_redaction_job(db, document, owner_id, job_request)
+            except (TypeError, ValueError) as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            review_url = f"/redaction?job_id={job.id}"
+            return AgentResult(
+                agent=profile.name,
+                answer=f"Redaction job queued. [Open the review workspace]({review_url}).",
+                artifacts={"redaction_job_id": job.id, "review_url": review_url},
+                metadata=ExecutionMetadata(
+                    request_id=str(uuid.uuid4()),
+                    target=profile.target,
+                    agent_name=profile.name,
+                ),
+            )
         inference = registry.resolve_inference(profile, task)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
