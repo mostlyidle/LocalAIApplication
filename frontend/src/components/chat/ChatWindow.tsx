@@ -495,6 +495,18 @@ export function ChatWindow() {
           return;
         }
       }
+      if (selectedProfile.target === "document_redaction") {
+        const redactableAttachments = attachments.filter((attachment) =>
+          attachment.uploadedPath && !attachment.error &&
+          ["pdf", "png", "jpg", "jpeg", "tiff", "bmp", "webp"].includes(
+            attachment.file.name.split(".").pop()?.toLowerCase() ?? "",
+          ),
+        );
+        if (redactableAttachments.length !== 1 || attachments.length !== 1) {
+          setProfileError("Attach exactly one uploaded PDF or image for redaction.");
+          return;
+        }
+      }
       if (selectedProfile.target === "rag") {
         if (!collection) {
           setProfileError(

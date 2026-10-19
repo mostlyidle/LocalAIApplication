@@ -12,6 +12,7 @@ import {
   BrainCircuit,
   ListTodo,
   Github,
+  ScanEye,
 } from "lucide-react";
 import {
   Sidebar,
@@ -34,6 +35,7 @@ const navGroups = [
   { title: "Ask & explore", items: [
     { title: "Chat", href: "/chat", icon: MessageSquare },
     { title: "Documents", href: "/documents", icon: FileText },
+    { title: "Redaction Agent", href: "/redaction", icon: ScanEye },
     { title: "RAG Search", href: "/rag", icon: Search },
   ] },
   { title: "Get things done", items: [

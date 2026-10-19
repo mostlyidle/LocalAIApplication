@@ -461,6 +461,36 @@ class Document(Base):
     )
 
 
+class RedactionJob(Base):
+    """Account-owned review state for a local document redaction run."""
+
+    __tablename__ = "redaction_jobs"
+    __table_args__ = (Index("ix_redaction_jobs_status_created", "status", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
+    owner_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("accounts.id", ondelete="CASCADE"), index=True
+    )
+    document_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("documents.id", ondelete="CASCADE"), index=True
+    )
+    status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
+    instructions: Mapped[str] = mapped_column(String(2_000), default="")
+    categories_json: Mapped[str] = mapped_column(Text)
+    source_sha256: Mapped[str] = mapped_column(String(64))
+    job_dir: Mapped[str] = mapped_column(String(1_024))
+    page_count: Mapped[int] = mapped_column(Integer, default=0)
+    pages_processed: Mapped[int] = mapped_column(Integer, default=0)
+    review_revision: Mapped[int] = mapped_column(Integer, default=0)
+    approved_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
+
 class Meeting(Base):
     """Metadata and lifecycle state for a consented audio meeting.
 

@@ -48,11 +48,15 @@ fi
 
 # ── Data directories ───────────────────────────────────────────────────
 info "Creating data directories..."
-mkdir -p data/uploads data/fastembed
+mkdir -p data/uploads data/fastembed data/models/gliner
 
 # ── Backend setup ──────────────────────────────────────────────────────
 info "Installing backend dependencies..."
 uv sync --project "$PROJECT_DIR/backend"
+
+info "Downloading the pinned local PII and English OCR models..."
+uv run --project "$PROJECT_DIR/backend" python "$PROJECT_DIR/scripts/download_redaction_model.py"
+uv run --project "$PROJECT_DIR/backend" python -c 'import easyocr; easyocr.Reader(["en"], gpu=False)'
 
 # ── Frontend setup ─────────────────────────────────────────────────────
 info "Installing frontend dependencies..."

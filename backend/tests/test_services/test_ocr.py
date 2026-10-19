@@ -175,9 +175,10 @@ class TestExtractStructuredImage:
             ([[10, 20], [100, 20], [100, 50], [10, 50]], "uncertain", 0.12),
         ]
 
-        with patch("app.services.ocr._get_reader", return_value=mock_reader):
+        with patch("app.services.ocr._get_reader", return_value=mock_reader) as get_reader:
             result = await OCRService().extract_structured_image(object())
 
+        get_reader.assert_called_once_with(None, download_enabled=False)
         assert result == [
             {
                 "text": "uncertain",

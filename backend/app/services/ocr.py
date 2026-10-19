@@ -16,7 +16,11 @@ if TYPE_CHECKING:
 _reader: Any = None
 
 
-def _get_reader(languages: list[str] | None = None) -> Any:
+def _get_reader(
+    languages: list[str] | None = None,
+    *,
+    download_enabled: bool = True,
+) -> Any:
     """Lazy-initialize the EasyOCR reader.
 
     EasyOCR downloads models on first use (~100MB for English).
@@ -28,7 +32,10 @@ def _get_reader(languages: list[str] | None = None) -> Any:
 
         langs = languages or ["en"]
         logger.info("initializing_ocr_reader", languages=langs)
-        _reader = easyocr.Reader(langs, gpu=False)  # CPU on Apple Silicon is fine
+        if download_enabled:
+            _reader = easyocr.Reader(langs, gpu=False)  # CPU on Apple Silicon is fine
+        else:
+            _reader = easyocr.Reader(langs, gpu=False, download_enabled=False)
     return _reader
 
 
@@ -115,7 +122,12 @@ class OCRService:
         """
 
         def _sync_extract() -> list[dict[str, Any]]:
-            reader = _get_reader(languages)
+            try:
+                reader = _get_reader(languages, download_enabled=False)
+            except (FileNotFoundError, RuntimeError) as exc:
+                raise RuntimeError(
+                    "Local English OCR assets are missing. Re-run `bash scripts/setup.sh`."
+                ) from exc
             results = reader.readtext(image)
             return [
                 {

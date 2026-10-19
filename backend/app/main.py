@@ -122,6 +122,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         run_container_worker(app.state.rag_container_worker_stop),
         name="rag-container-worker",
     )
+    from app.services.redaction_job_worker import run_redaction_worker
+
+    app.state.redaction_worker_stop = asyncio.Event()
+    app.state.redaction_worker_task = asyncio.create_task(
+        run_redaction_worker(app.state.redaction_worker_stop),
+        name="redaction-worker",
+    )
 
     reconciled_meetings = await meeting_service.reconcile_active_meetings()
     logger.info("meeting_startup_reconciliation_complete", count=reconciled_meetings)
@@ -157,6 +164,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except TimeoutError:
         app.state.rag_container_worker_task.cancel()
         await asyncio.gather(app.state.rag_container_worker_task, return_exceptions=True)
+    app.state.redaction_worker_stop.set()
+    try:
+        await asyncio.wait_for(app.state.redaction_worker_task, timeout=5)
+    except TimeoutError:
+        app.state.redaction_worker_task.cancel()
+        await asyncio.gather(app.state.redaction_worker_task, return_exceptions=True)
 
     await mcp_client.close()
     await app.state.laya_rag_service.close()
@@ -204,6 +217,7 @@ def create_app() -> FastAPI:
         memory,
         rag,
         rag_containers,
+        redaction,
         sql,
         tasks,
         tools,
@@ -213,6 +227,7 @@ def create_app() -> FastAPI:
     app.include_router(agents.router, prefix="/api/v1", tags=["Agents"])
     app.include_router(chat.router, prefix="/api/v1", tags=["Chat"])
     app.include_router(documents.router, prefix="/api/v1", tags=["Documents"])
+    app.include_router(redaction.router, prefix="/api/v1")
     app.include_router(sql.router, prefix="/api/v1", tags=["SQL"])
     app.include_router(rag.router, prefix="/api/v1", tags=["RAG"])
     app.include_router(rag_containers.router, prefix="/api/v1")

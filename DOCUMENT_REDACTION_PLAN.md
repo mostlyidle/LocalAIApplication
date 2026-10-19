@@ -2,7 +2,10 @@
 
 Date: 2026-10-19
 
-Status: Milestone 1 feasibility spike implemented; full agent implementation remains.
+Status: Core implementation is in place on `main` through checkpoint `c612ffd` plus the
+current uncommitted integration slice. Focused backend and frontend checks pass. The
+remaining work is release hardening and representative-document calibration; this is not a
+claim that the detector finds every sensitive value.
 
 ## Agreed first-version behavior
 
@@ -186,12 +189,32 @@ removed from the exported artifact, while detection recall/precision must be mea
 ground truth, including false negatives. Passing an image-only/text-extraction check does not
 prove all sensitive visible content was found. Runtime review remains mandatory.
 
+## Implementation checkpoint and remaining work
+
+Implemented: pinned local GLiNER setup, deterministic rules, contextual selection through
+the existing local Qwen 2.5 7B Ollama service, PDF/image extraction with OCR, owner-scoped
+queued jobs, progress/cancellation, saved review findings, manual boxes, revision-gated
+approval, and verified image-only PDF export. The agent is available from the task/chat
+catalogue and from the dedicated `/redaction` workspace. Source deletion removes related
+job artifacts. Focused checks currently cover 107 backend cases; frontend TypeScript and
+360 tests pass.
+
+Known gaps before release: contextual instructions are not interactively clarified when
+ambiguous; failed/unreadable pages fail the job rather than offering page retry or a
+page-specific manual-resolution state; review does not yet filter by category; automated
+boxes can be deselected and resized numerically, while manual boxes can be drawn; no
+Playwright end-to-end or frozen representative evaluation corpus has run. Keep mandatory
+human review and do not claim complete PII coverage until the evaluation corpus establishes
+per-category recall and false-positive rates.
+
 ## Scope and next checkpoint
 
 Deferred: Office document inputs, multilingual automatic detection, automatic handwriting/
 face/signature/barcode interpretation, batch jobs, unattended export, searchable output,
 and sanitizing existing originals or RAG indexes.
 
-The next implementation checkpoint is **Milestone 1 only**. Its measurements decide the
-detector, execution device, resource limits, and realistic quality targets before building
-the full workflow. No application code or dependencies were changed to prepare this plan.
+The next checkpoint is release hardening: resolve the known gaps that affect review safety,
+then run the frozen synthetic and representative evaluation corpus offline and inspect
+saved exports for leakage. Office documents, multilingual detection, automatic
+handwriting/face/signature/barcode interpretation, batch jobs, unattended export, searchable
+output, and sanitizing existing originals or RAG indexes remain deferred.

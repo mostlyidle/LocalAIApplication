@@ -44,6 +44,7 @@ describe("constants", () => {
     expect(AGENT_LABELS.chat).toBe("Chat");
     expect(AGENT_LABELS.sql).toBe("SQL Agent");
     expect(AGENT_LABELS.rag).toBe("RAG Agent");
+    expect(AGENT_LABELS.document_redaction).toBe("Document Redaction Agent");
   });
 
   it("AGENT_COLORS has expected entries", () => {
