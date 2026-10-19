@@ -6,11 +6,8 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 import app.services.ocr as ocr_module
 from app.services.ocr import OCRService, _get_reader
-
 
 # =============================================================================
 # _get_reader (lazy init)
@@ -169,6 +166,25 @@ class TestExtractStructured:
         for point in result[0]["bbox"]:
             for val in point:
                 assert isinstance(val, float)
+
+
+class TestExtractStructuredImage:
+    async def test_preserves_low_confidence_candidates_for_review(self):
+        mock_reader = MagicMock()
+        mock_reader.readtext.return_value = [
+            ([[10, 20], [100, 20], [100, 50], [10, 50]], "uncertain", 0.12),
+        ]
+
+        with patch("app.services.ocr._get_reader", return_value=mock_reader):
+            result = await OCRService().extract_structured_image(object())
+
+        assert result == [
+            {
+                "text": "uncertain",
+                "confidence": 0.12,
+                "bbox": [[10.0, 20.0], [100.0, 20.0], [100.0, 50.0], [10.0, 50.0]],
+            }
+        ]
 
 
 # =============================================================================

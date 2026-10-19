@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import structlog
 
 logger = structlog.get_logger(__name__)
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 # EasyOCR is heavy — lazy-load to avoid import-time delays.
 _reader: Any = None
@@ -97,6 +99,31 @@ class OCRService:
                 }
                 for bbox, text, confidence in results
                 if confidence > 0.3
+            ]
+
+        return await asyncio.to_thread(_sync_extract)
+
+    async def extract_structured_image(
+        self,
+        image: Any,
+        languages: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
+        """Extract every OCR line from an in-memory image with its box and confidence.
+
+        Unlike the document-analysis helpers, this retains low-confidence results so
+        redaction review can show uncertain text instead of silently dropping it.
+        """
+
+        def _sync_extract() -> list[dict[str, Any]]:
+            reader = _get_reader(languages)
+            results = reader.readtext(image)
+            return [
+                {
+                    "text": text,
+                    "confidence": round(float(confidence), 4),
+                    "bbox": [list(map(float, point)) for point in bbox],
+                }
+                for bbox, text, confidence in results
             ]
 
         return await asyncio.to_thread(_sync_extract)
