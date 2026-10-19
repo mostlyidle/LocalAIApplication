@@ -219,6 +219,8 @@ export type MemorySettings = z.infer<typeof memorySettingsSchema>;
 
 export const uploadResultSchema = z.object({
   id: z.string(),
+  filename: z.string(),
+  format: z.string(),
 });
 
 export const documentListSchema = z.array(z.object({

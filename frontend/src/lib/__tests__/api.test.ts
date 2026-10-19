@@ -362,6 +362,12 @@ describe("API Client", () => {
       await expect(uploadDocument(new File(["x"], "big.pdf"))).rejects.toThrow(ApiError);
     });
 
+    it("uploadDocument rejects a malformed upload response", async () => {
+      globalThis.fetch = mockFetchSuccess({ filename: "test.pdf", format: "pdf" });
+
+      await expect(uploadDocument(new File(["x"], "test.pdf"))).rejects.toThrow();
+    });
+
     it("uploadDocument falls back to UPLOAD_ERROR when body parse fails", async () => {
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: false,

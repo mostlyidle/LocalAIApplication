@@ -20,6 +20,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import * as api from "@/lib/api";
+import { MAX_FILE_SIZE } from "@/lib/constants";
+
+const SUPPORTED_FORMATS = ["pdf", "png", "jpg", "jpeg", "tiff", "bmp", "webp"];
 
 const CATEGORY_OPTIONS = [
   "person name",
@@ -69,6 +72,7 @@ export default function RedactionPage() {
   const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
 
   const page = review?.pages[pageNumber];
   const currentJobId = job?.id;
@@ -79,13 +83,16 @@ export default function RedactionPage() {
   );
   const selectedCount = review?.findings.filter((finding) => finding.selected).length ?? 0;
   const supportedDocuments = documents.filter((document) =>
-    ["pdf", "png", "jpg", "jpeg", "tiff", "bmp", "webp"].includes(document.format),
+    SUPPORTED_FORMATS.includes(document.format),
   );
 
   useEffect(() => {
     let active = true;
     void api.getDocuments().then((result) => {
-      if (active) setDocuments(result.documents);
+      if (active) setDocuments((current) => [
+        ...current,
+        ...result.documents.filter((document) => !current.some((item) => item.id === document.id)),
+      ]);
     }).catch((cause: unknown) => {
       if (active) setError(cause instanceof Error ? cause.message : "Could not load documents.");
     });
@@ -150,6 +157,29 @@ export default function RedactionPage() {
       if (nextUrl) URL.revokeObjectURL(nextUrl);
     };
   }, [currentJobId, currentPageNumber, review]);
+
+  const uploadSource = async (file: File) => {
+    setError("");
+    const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+    if (!SUPPORTED_FORMATS.includes(extension)) {
+      setError("Choose a PDF or supported image file for redaction.");
+      return;
+    }
+    if (file.size > MAX_FILE_SIZE) {
+      setError(`File too large. Maximum size is ${MAX_FILE_SIZE / 1024 / 1024}MB.`);
+      return;
+    }
+    setIsUploading(true);
+    try {
+      const uploaded = await api.uploadDocument(file);
+      setDocuments((current) => [uploaded, ...current.filter((item) => item.id !== uploaded.id)]);
+      setDocumentId(uploaded.id);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not upload the source document.");
+    } finally {
+      setIsUploading(false);
+    }
+  };
 
   const begin = async () => {
     if (!documentId || categories.length === 0) return;
@@ -320,8 +350,25 @@ export default function RedactionPage() {
       {!job && <Card className="rounded-2xl">
         <CardHeader><CardTitle>Choose what to redact</CardTitle></CardHeader>
         <CardContent className="space-y-5">
+          <div className="space-y-2">
+            <label htmlFor="redaction-upload" className="text-sm font-medium">Upload a PDF or image</label>
+            <Input
+              id="redaction-upload"
+              type="file"
+              accept={SUPPORTED_FORMATS.map((format) => `.${format}`).join(",")}
+              disabled={busy || isUploading}
+              aria-describedby="redaction-upload-help"
+              onChange={(event) => {
+                const file = event.currentTarget.files?.[0];
+                event.currentTarget.value = "";
+                if (file) void uploadSource(file);
+              }}
+            />
+            <p id="redaction-upload-help" className="text-xs text-muted-foreground">PDF, PNG, JPEG, TIFF, BMP or WebP (max {MAX_FILE_SIZE / 1024 / 1024}MB). Uploaded files are saved in Documents and selected below.</p>
+            {isUploading && <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> Uploading...</p>}
+          </div>
           <label className="block space-y-2 text-sm font-medium">Source document
-            <select className="h-11 w-full rounded-xl border bg-background px-3" value={documentId} onChange={(event) => setDocumentId(event.target.value)}>
+            <select className="h-11 w-full rounded-xl border bg-background px-3" value={documentId} disabled={busy || isUploading} onChange={(event) => setDocumentId(event.target.value)}>
               <option value="">Select a PDF or image</option>
               {supportedDocuments.map((document) => <option key={document.id} value={document.id}>{document.filename}</option>)}
             </select>
@@ -348,8 +395,8 @@ export default function RedactionPage() {
             <ShieldCheck className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
             <p>Detection runs on this device. Review every page before export; automated detection can miss sensitive content.</p>
           </div>
-          {supportedDocuments.length === 0 && <p className="text-sm text-muted-foreground">Upload a PDF or image on the <Link className="underline" href="/documents">Documents page</Link> first.</p>}
-          <Button onClick={begin} disabled={!documentId || categories.length === 0 || busy}>
+          {supportedDocuments.length === 0 && <p className="text-sm text-muted-foreground">Upload a PDF or image above to get started.</p>}
+          <Button onClick={begin} disabled={!documentId || categories.length === 0 || busy || isUploading}>
             {busy ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : <FileLock2 className="mr-2 size-4" />}
             Analyze document
           </Button>
