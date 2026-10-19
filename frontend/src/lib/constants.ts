@@ -1,4 +1,7 @@
-export const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
+const configuredApiBase = process.env.NEXT_PUBLIC_API_URL || "";
+const isNativeDesktop =
+  typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+export const API_BASE = isNativeDesktop ? configuredApiBase : "";
 export const API_V1 = `${API_BASE}/api/v1`;
 const sameOriginWebSocketBase =
   typeof window === "undefined"
