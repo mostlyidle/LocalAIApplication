@@ -8,6 +8,7 @@ import {
   conversationDetailSchema,
   analysisResultSchema,
   documentListSchema,
+  uploadResultSchema,
   redactionJobSchema,
   redactionReviewSchema,
   sqlQueryResponseSchema,
@@ -378,7 +379,7 @@ export async function uploadDocument(file: File) {
       res.status,
     );
   }
-  return res.json();
+  return uploadResultSchema.parse(await res.json());
 }
 
 export async function getDocuments() {
