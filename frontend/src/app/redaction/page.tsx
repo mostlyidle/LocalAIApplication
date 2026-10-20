@@ -156,7 +156,8 @@ export default function RedactionPage() {
     ["review_ready", "approved", "exported"].includes(item.status),
   ).length ?? 0;
   const batchDownloadReady = batch !== null && batch.jobs.length > 0 && batch.jobs.every((item) =>
-    item.status === "exported" && item.approved_revision === item.review_revision,
+    ["approved", "exported"].includes(item.status)
+      && item.approved_revision === item.review_revision,
   );
   const failedPageResolutionComplete = review !== null
     && review.failed_pages.length > 0
@@ -534,6 +535,11 @@ export default function RedactionPage() {
     setBusy(true);
     setError("");
     try {
+      for (const item of batch.jobs) {
+        if (item.status === "approved") {
+          setActiveJob(await api.exportRedactedDocument(item.id));
+        }
+      }
       const result = await api.downloadRedactionBatch(batchId);
       const url = URL.createObjectURL(result.blob);
       const anchor = document.createElement("a");
