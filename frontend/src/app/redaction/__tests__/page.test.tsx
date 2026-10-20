@@ -99,6 +99,26 @@ describe("RedactionPage uploads", () => {
     expect(await screen.findByRole("button", { name: "Currently reviewing" })).toBeInTheDocument();
   });
 
+  it("rejects a job URL that does not belong to the selected batch", async () => {
+    const job = {
+      id: "other-job", document_id: existing.id, batch_id: "other-batch", status: "queued",
+      page_count: 0, pages_processed: 0, review_revision: 0, approved_revision: null,
+      clarification_question: null, error_message: null, warnings: [],
+    };
+    vi.mocked(api.getRedactionBatch).mockResolvedValue({
+      id: "batch-1",
+      jobs: [{ ...job, id: "batch-job", batch_id: "batch-1" }],
+    });
+    vi.mocked(api.getRedactionJob).mockResolvedValue(job);
+    window.history.replaceState(null, "", "/redaction?job_id=other-job&batch_id=batch-1");
+    render(<RedactionPage />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This redaction job does not belong to the selected batch.",
+    );
+    expect(screen.queryByText("Batch progress")).not.toBeInTheDocument();
+  });
+
   it.each(["unsupported", "oversized"])("rejects %s files before upload", async (kind) => {
     render(<RedactionPage />);
     const file = new File(["content"], kind === "unsupported" ? "report.docx" : "huge.pdf");
