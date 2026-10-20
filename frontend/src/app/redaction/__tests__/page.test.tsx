@@ -8,6 +8,8 @@ vi.mock("@/lib/api", () => ({
   getDocuments: vi.fn(),
   uploadDocument: vi.fn(),
   createRedactionBatch: vi.fn(),
+  getRedactionBatch: vi.fn(),
+  getRedactionJob: vi.fn(),
 }));
 
 const uploaded = { id: "uploaded-pdf", filename: "new-source.pdf", format: "pdf" };
@@ -27,6 +29,7 @@ describe("RedactionPage uploads", () => {
     window.history.replaceState(null, "", "/redaction");
     vi.mocked(api.getDocuments).mockResolvedValue({ documents: [] });
     vi.mocked(api.uploadDocument).mockResolvedValue(uploaded);
+    vi.mocked(api.getRedactionBatch).mockResolvedValue({ id: "batch-1", jobs: [] });
   });
 
   it("selects a new upload and uses it for redaction", async () => {
@@ -67,6 +70,33 @@ describe("RedactionPage uploads", () => {
     await waitFor(() => expect(api.createRedactionBatch).toHaveBeenCalledWith(
       expect.objectContaining({ document_ids: [uploaded.id, secondUploaded.id] }),
     ));
+  });
+
+  it("shows batch progress and opens another document job", async () => {
+    const firstJob = {
+      id: "job-1", document_id: existing.id, batch_id: "batch-1", status: "queued",
+      page_count: 0, pages_processed: 0, review_revision: 0, approved_revision: null,
+      clarification_question: null, error_message: null, warnings: [],
+    };
+    const secondJob = {
+      ...firstJob, id: "job-2", document_id: "second-document",
+    };
+    vi.mocked(api.getDocuments).mockResolvedValue({
+      documents: [existing, { ...existing, id: "second-document", filename: "second.pdf" }],
+    });
+    vi.mocked(api.getRedactionBatch).mockResolvedValue({ id: "batch-1", jobs: [firstJob, secondJob] });
+    vi.mocked(api.getRedactionJob)
+      .mockResolvedValueOnce(firstJob)
+      .mockResolvedValueOnce({ ...secondJob, status: "processing" });
+    window.history.replaceState(null, "", "/redaction?job_id=job-1&batch_id=batch-1");
+    render(<RedactionPage />);
+
+    expect(await screen.findByText("Batch progress")).toBeInTheDocument();
+    expect(await screen.findByText("second.pdf")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+
+    await waitFor(() => expect(api.getRedactionJob).toHaveBeenCalledWith("job-2"));
+    expect(await screen.findByRole("button", { name: "Currently reviewing" })).toBeInTheDocument();
   });
 
   it.each(["unsupported", "oversized"])("rejects %s files before upload", async (kind) => {

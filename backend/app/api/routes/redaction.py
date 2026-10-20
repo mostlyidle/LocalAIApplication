@@ -252,6 +252,33 @@ async def create_redaction_batch(
     )
 
 
+@batch_router.get("/{batch_id}", response_model=RedactionBatchResponse)
+async def get_redaction_batch(
+    batch_id: str,
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+) -> RedactionBatchResponse:
+    """Return the current status of every job in an owned batch."""
+    jobs = list(
+        (
+            await db.scalars(
+                select(RedactionJob)
+                .where(
+                    RedactionJob.batch_id == batch_id,
+                    RedactionJob.owner_id == authenticated.account.id,
+                )
+                .order_by(RedactionJob.created_at, RedactionJob.id)
+            )
+        ).all()
+    )
+    if not jobs:
+        raise HTTPException(status_code=404, detail="Redaction batch not found.")
+    return RedactionBatchResponse(
+        id=batch_id,
+        jobs=[_job_response(job) for job in jobs],
+    )
+
+
 @router.get("/{job_id}", response_model=RedactionJobResponse)
 async def get_redaction_job(
     job_id: str,

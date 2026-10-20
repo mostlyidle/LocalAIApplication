@@ -185,6 +185,25 @@ async def test_redaction_batch_queues_one_job_per_owned_source(
     )
     assert len(persisted_jobs) == 2
 
+    status = await client.get(f"/api/v1/redaction-batches/{body['id']}")
+    assert status.status_code == 200
+    assert [job["id"] for job in status.json()["jobs"]] == [job["id"] for job in body["jobs"]]
+
+    from app.dependencies import get_authenticated_session
+
+    other_account = Account(
+        id="redaction-batch-other",
+        username="redaction-batch-other",
+        display_name="Other",
+        password_hash="!test!",
+    )
+    db_session.add(other_account)
+    await db_session.commit()
+    client._transport.app.dependency_overrides[get_authenticated_session] = lambda: _principal(
+        other_account
+    )
+    assert (await client.get(f"/api/v1/redaction-batches/{body['id']}")).status_code == 404
+
 
 async def test_redaction_batch_rejects_invalid_source_without_partial_jobs(
     client: AsyncClient,
