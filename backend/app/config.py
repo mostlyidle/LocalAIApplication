@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     # ── Ollama ──────────────────────────────────────────────────────────
     ollama_base_url: str = "http://localhost:11434"
     ollama_chat_model: str = "llama3.1:8b"
+    resume_rater_model: str = "qwen3.5:9b-q4_K_M"
     ollama_vision_model: str = "qwen3-vl:4b"
     ollama_embedding_model: str = "nomic-embed-text"
     ollama_embedding_revision: str = "nomic-embed-text-v1"

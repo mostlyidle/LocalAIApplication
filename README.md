@@ -28,6 +28,7 @@ The app's local agents, RAG embeddings, and Laya checks use this model set. Skip
 
 ```bash
 docker compose exec ollama ollama pull llama3.1:8b
+docker compose exec ollama ollama pull qwen3.5:9b-q4_K_M
 docker compose exec ollama ollama pull qwen2.5:7b
 docker compose exec ollama ollama pull qwen3-vl:4b
 docker compose exec ollama ollama pull qwen2.5-coder:7b
@@ -89,6 +90,14 @@ Use `GET /api/v1/agents` to see enabled profiles and whether their approved Olla
 | `sql` | `sql` | Generate and explain safe database queries |
 | `stock_research` | `stock_research` | Combine Finnhub market data with optional supplied context |
 | `web` | `web` | Fetch and summarize user-provided web sources |
+
+The Resume Rater is a dedicated hiring workflow at `/resume-rater` and uses its own
+`/api/v1/resume-rater` endpoints. It uses `RESUME_RATER_MODEL` (default `qwen3.5:9b-q4_K_M`). It evaluates
+multiple candidates against the same approved rubric, cites exact resume passages, and
+calculates weighted scores in application code. Review the evidence and scores before using
+them in hiring decisions. `qwen2.5:7b` is a smaller configured alternative; set the model in
+`.env` and pull it with Ollama if your Mac cannot run the default comfortably. See the
+[local model research](docs/research/resume-rater-slm.md) for model trade-offs.
 
 The general `/api/v1/chat` endpoint can select the `chat`, `sql`, or `web` profile using `agent_name`. Use `/api/v1/tasks` for the other specialist profiles. The task `target` defaults to `auto` and is resolved from the selected profile; when supplied, it must match the profile's target. Model overrides go in `inference.model` and must be allowed for that profile.
 

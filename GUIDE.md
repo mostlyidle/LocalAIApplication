@@ -209,6 +209,7 @@ In another terminal, pull only what you need:
 ```bash
 ollama pull laya:latest          # optional local RAG decision checks
 ollama pull llama3.1:8b          # chat, SQL, web, and meeting answer suggestions
+ollama pull qwen3.5:9b-q4_K_M   # resume rater rubric drafting and candidate assessment
 ollama pull qwen2.5:7b           # documents, RAG, and stock research
 ollama pull qwen3-vl:4b  # image analysis
 ollama pull qwen2.5-coder:7b     # software engineer agent
@@ -521,6 +522,7 @@ In another terminal, pull the models you want:
 
 ```bash
 ollama pull llama3.1:8b
+ollama pull qwen3.5:9b-q4_K_M
 ollama pull qwen2.5:7b
 ollama pull qwen3-vl:4b
 ollama pull qwen2.5-coder:7b
