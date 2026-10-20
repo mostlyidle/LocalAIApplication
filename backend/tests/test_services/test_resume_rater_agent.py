@@ -184,6 +184,16 @@ def test_personal_contact_fields_are_removed_before_model_assessment() -> None:
     assert "Built reliable services for eight years." in evidence
 
 
+def test_name_is_removed_when_resume_has_no_contact_details() -> None:
+    evidence = prepare_resume_evidence(
+        "Alex Doe\nSenior software engineer\nBuilt reliable services for eight years."
+    )
+
+    assert "Alex Doe" not in evidence
+    assert "Senior software engineer" in evidence
+    assert "Built reliable services for eight years." in evidence
+
+
 def test_model_report_rejects_an_invalid_rubric_weight_total() -> None:
     payload = _report().model_dump()
     payload["criterion_scores"] = payload["criterion_scores"][:2]

@@ -54,10 +54,8 @@ _SUGGESTION_ADVICE = {
 
 
 def prepare_resume_evidence(text: str) -> str:
-    """Remove labeled personal details and a likely identity line from the model input."""
+    """Remove labeled personal details and a likely identity line from model input."""
     lines = text.splitlines()
-    top_text = " ".join(lines[:10])
-    remove_first_name = bool(_CONTACT_LINE.search(top_text)) and bool(lines)
     prepared: list[str] = []
     first_content_seen = False
     for index, line in enumerate(lines):
@@ -68,12 +66,11 @@ def prepare_resume_evidence(text: str) -> str:
             continue
         if (
             index < 10
-            and remove_first_name
             and not first_content_seen
             and len(line.split()) <= 5
             and not re.search(r"\d|[|•]", line)
         ):
-            # Names commonly occupy the first line above contact details; omit that line.
+            # Candidate names commonly occupy a short first line, even without contact details.
             first_content_seen = True
             continue
         first_content_seen = True
