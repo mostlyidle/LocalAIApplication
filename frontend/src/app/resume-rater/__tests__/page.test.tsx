@@ -170,7 +170,7 @@ describe("ResumeRaterPage", () => {
 
     fireEvent.change(await screen.findByLabelText("Job title"), { target: { value: "Senior engineer" } });
     const postingField = screen.getByLabelText("Job posting");
-    expect(postingField).toHaveAttribute("rows", "24");
+    expect(postingField).toHaveAttribute("rows", "20");
     expect(postingField).toHaveClass("field-sizing-fixed");
     expect(postingField).not.toHaveClass("field-sizing-content");
     fireEvent.change(postingField, {
