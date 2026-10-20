@@ -607,7 +607,7 @@ export default function ResumeRaterPage() {
       {loading ? (
         <div role="status" className="flex items-center gap-2 rounded-2xl border bg-card p-6 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" aria-hidden="true" />Loading hiring workspaces…</div>
       ) : (
-        <div className="grid items-start gap-6 lg:grid-cols-[260px_minmax(0,1fr)]">
+        <div className={`grid items-start gap-6 ${workspaces.length > 0 ? "lg:grid-cols-[260px_minmax(0,1fr)]" : ""}`}>
           {workspaces.length > 0 && (
             <aside className="resume-rater-no-print rounded-2xl border bg-card p-3" aria-label="Job workspaces">
               <div className="flex items-center justify-between px-2 pb-2 pt-1">
@@ -643,7 +643,7 @@ export default function ResumeRaterPage() {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="resume-job-posting">Job posting</Label>
-                      <Textarea id="resume-job-posting" value={jobPosting} onChange={(event) => setJobPosting(event.target.value)} minLength={100} maxLength={32000} rows={10} placeholder="Paste the complete job description, including required qualifications and responsibilities…" required />
+                      <Textarea id="resume-job-posting" value={jobPosting} onChange={(event) => setJobPosting(event.target.value)} minLength={100} maxLength={32000} rows={14} placeholder="Paste the complete job description, including required qualifications and responsibilities…" required />
                       <p className="text-xs text-muted-foreground">{jobPosting.length.toLocaleString()} / 32,000 characters · At least 100 characters</p>
                     </div>
                     <div className="flex flex-wrap items-center justify-between gap-3">
