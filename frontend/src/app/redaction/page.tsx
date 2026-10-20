@@ -132,6 +132,10 @@ export default function RedactionPage() {
     if (jobId) {
       void api.getRedactionJob(jobId).then((loaded) => {
         if (!active) return;
+        if (initialBatchId && loaded.batch_id !== initialBatchId) {
+          setError("This redaction job does not belong to the selected batch.");
+          return;
+        }
         setJob(loaded);
         if (["review_ready", "approved", "exported"].includes(loaded.status)) {
           void api.getRedactionReview(jobId).then((loadedReview) => {
@@ -278,11 +282,14 @@ export default function RedactionPage() {
   };
 
   const openBatchJob = async (jobId: string) => {
-    if (!batchId || job?.id === jobId) return;
+    if (!batchId || !batch?.jobs.some((item) => item.id === jobId) || job?.id === jobId) return;
     setBusy(true);
     setError("");
     try {
       const selectedJob = await api.getRedactionJob(jobId);
+      if (selectedJob.batch_id !== batchId) {
+        throw new Error("This redaction job does not belong to the selected batch.");
+      }
       setJob(selectedJob);
       setReview(null);
       setPageNumber(0);
