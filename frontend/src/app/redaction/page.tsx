@@ -145,6 +145,7 @@ export default function RedactionPage() {
       setPreviewUrl("");
       return;
     }
+    setPreviewUrl("");
     let active = true;
     let nextUrl = "";
     void api.getRedactionPreviewUrl(currentJobId, currentPageNumber).then((url) => {
@@ -320,7 +321,7 @@ export default function RedactionPage() {
   };
 
   const resolvePage = async () => {
-    if (!job || currentPageNumber === undefined || !review) return;
+    if (!job || currentPageNumber === undefined || !review || !previewUrl) return;
     setBusy(true);
     setError("");
     try {
@@ -530,7 +531,7 @@ export default function RedactionPage() {
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Button type="button" variant="outline" disabled={busy} onClick={retryPage}>Retry page</Button>
                   {!currentPageFailure.manual_reviewed
-                    ? <Button type="button" disabled={busy} onClick={resolvePage}>I inspected this page</Button>
+                    ? <Button type="button" disabled={busy || !previewUrl} onClick={resolvePage}>I inspected this page</Button>
                     : <Badge variant="secondary">Manually inspected</Badge>}
                 </div>
               </div>}
