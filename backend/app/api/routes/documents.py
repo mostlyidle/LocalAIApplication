@@ -513,7 +513,7 @@ async def delete_document(
         await db.rollback()
         raise HTTPException(status_code=409, detail="Wait for redacted export to finish first.")
     for job in redaction_jobs:
-        if job.status in {"queued", "processing"}:
+        if job.status in {"queued", "processing", "needs_clarification"}:
             job.status = "cancelled"
             job.lease_until = None
     await db.commit()

@@ -37,6 +37,7 @@ describe("RedactionPage uploads", () => {
       pages_processed: 0,
       review_revision: 0,
       approved_revision: null,
+      clarification_question: null,
       error_message: null,
       warnings: [],
     });

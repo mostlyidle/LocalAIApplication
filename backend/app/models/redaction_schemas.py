@@ -25,6 +25,18 @@ class RedactionJobCreate(BaseModel):
         return normalized
 
 
+class RedactionClarification(BaseModel):
+    answer: str = Field(min_length=1, max_length=1_000)
+
+    @field_validator("answer")
+    @classmethod
+    def validate_answer(cls, value: str) -> str:
+        answer = value.strip()
+        if not answer:
+            raise ValueError("Enter a clarification before continuing.")
+        return answer
+
+
 class RedactionJobResponse(BaseModel):
     id: str
     document_id: str
@@ -34,6 +46,7 @@ class RedactionJobResponse(BaseModel):
     review_revision: int
     approved_revision: int | None
     error_message: str | None
+    clarification_question: str | None = None
     warnings: list[str] = Field(default_factory=list)
 
 

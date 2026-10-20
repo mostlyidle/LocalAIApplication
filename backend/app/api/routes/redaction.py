@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import uuid
 from contextlib import suppress
 from pathlib import Path
@@ -19,6 +20,7 @@ from app.config import settings
 from app.dependencies import get_authenticated_session, get_db
 from app.models.db_models import Document, RedactionJob
 from app.models.redaction_schemas import (
+    RedactionClarification,
     RedactionFinding,
     RedactionFindingUpdate,
     RedactionJobCreate,
@@ -69,6 +71,7 @@ def _job_response(job: RedactionJob, warnings: list[str] | None = None) -> Redac
         pages_processed=job.pages_processed,
         review_revision=job.review_revision,
         approved_revision=job.approved_revision,
+        clarification_question=job.clarification_question,
         error_message=job.error_message,
         warnings=warnings or [],
     )
@@ -117,6 +120,55 @@ async def get_redaction_job(
         with suppress(OSError, ValueError, KeyError):
             _, warnings = _review_payload(job)
     return _job_response(job, warnings)
+
+
+@router.post("/{job_id}/clarify", response_model=RedactionJobResponse)
+@limiter.limit(settings.rate_limit_llm)
+async def clarify_redaction_job(
+    request: Request,
+    job_id: str,
+    payload: RedactionClarification,
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+) -> RedactionJobResponse:
+    """Resume an ambiguous redaction request with the owner's clarification."""
+    job = await _get_owned_job(db, job_id, authenticated.account.id)
+    if job.status != "needs_clarification":
+        raise HTTPException(status_code=409, detail="This job is not waiting for clarification.")
+    try:
+        answers = json.loads(job.clarification_answers)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            status_code=500, detail="Clarification history is unavailable."
+        ) from exc
+    if not isinstance(answers, list) or not all(isinstance(answer, str) for answer in answers):
+        raise HTTPException(status_code=500, detail="Clarification history is unavailable.")
+    answers.append(payload.answer)
+    result = await db.execute(
+        update(RedactionJob)
+        .where(
+            RedactionJob.id == job.id,
+            RedactionJob.owner_id == authenticated.account.id,
+            RedactionJob.status == "needs_clarification",
+        )
+        .values(
+            clarification_answers=json.dumps(answers, ensure_ascii=False),
+            clarification_question=None,
+            status="queued",
+            pages_processed=0,
+            lease_until=None,
+            error_message=None,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if result.rowcount != 1:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409, detail="This job is no longer waiting for clarification."
+        )
+    await db.commit()
+    await db.refresh(job)
+    return _job_response(job)
 
 
 @router.get("/{job_id}/review", response_model=RedactionReviewResponse)
@@ -343,7 +395,7 @@ async def cancel_redaction_job(
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> RedactionJobResponse:
     job = await _get_owned_job(db, job_id, authenticated.account.id)
-    if job.status not in {"queued", "processing"}:
+    if job.status not in {"queued", "processing", "needs_clarification"}:
         raise HTTPException(status_code=409, detail="This redaction job cannot be cancelled.")
     job.status = "cancelled"
     job.lease_until = None

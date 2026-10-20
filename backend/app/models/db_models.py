@@ -484,6 +484,8 @@ class RedactionJob(Base):
     review_revision: Mapped[int] = mapped_column(Integer, default=0)
     approved_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
     lease_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    clarification_question: Mapped[str | None] = mapped_column(Text, nullable=True)
+    clarification_answers: Mapped[str] = mapped_column(Text, default="[]", server_default="[]")
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
     updated_at: Mapped[datetime] = mapped_column(

@@ -61,6 +61,7 @@ export default function RedactionPage() {
   ]);
   const [customCategory, setCustomCategory] = useState("");
   const [instructions, setInstructions] = useState("");
+  const [clarificationAnswer, setClarificationAnswer] = useState("");
   const [job, setJob] = useState<Job | null>(null);
   const [review, setReview] = useState<Review | null>(null);
   const [pageNumber, setPageNumber] = useState(0);
@@ -220,6 +221,21 @@ export default function RedactionPage() {
       setJob(nextJob);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not update this match.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitClarification = async () => {
+    if (!job || !clarificationAnswer.trim()) return;
+    setBusy(true);
+    setError("");
+    try {
+      const resumed = await api.clarifyRedactionJob(job.id, clarificationAnswer);
+      setJob(resumed);
+      setClarificationAnswer("");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not submit clarification.");
     } finally {
       setBusy(false);
     }
@@ -412,13 +428,33 @@ export default function RedactionPage() {
               {job.error_message && <p className="mt-2 text-sm text-destructive">{job.error_message}</p>}
             </div>
             <div className="flex flex-wrap gap-2">
-              {(["queued", "processing"].includes(job.status)) && <Button variant="outline" onClick={cancel}><X className="mr-2 size-4" /> Cancel</Button>}
+              {(["queued", "processing", "needs_clarification"].includes(job.status)) && <Button variant="outline" onClick={cancel}><X className="mr-2 size-4" /> Cancel</Button>}
               {job.status === "approved" && <Button onClick={exportPdf} disabled={busy}>{busy ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : <FileLock2 className="mr-2 size-4" />} Create redacted PDF</Button>}
               {job.status === "exported" && <Button onClick={download}><Download className="mr-2 size-4" /> Download redacted PDF</Button>}
-              <Button variant="ghost" onClick={() => { setJob(null); setReview(null); setPageNumber(0); setError(""); window.history.replaceState(null, "", "/redaction"); }}>New job</Button>
+              <Button variant="ghost" onClick={() => {
+                setJob(null);
+                setReview(null);
+                setPageNumber(0);
+                setClarificationAnswer("");
+                setError("");
+                window.history.replaceState(null, "", "/redaction");
+              }}>New job</Button>
             </div>
           </CardContent>
         </Card>
+
+        {job.status === "needs_clarification" && <Card className="rounded-2xl">
+          <CardHeader><CardTitle>Clarify your redaction request</CardTitle></CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-sm">{job.clarification_question ?? "Please clarify which matching content should be redacted."}</p>
+            <label className="block space-y-2 text-sm font-medium">Your answer
+              <Textarea value={clarificationAnswer} maxLength={1_000} onChange={(event) => setClarificationAnswer(event.target.value)} rows={2} />
+            </label>
+            <Button onClick={submitClarification} disabled={busy || !clarificationAnswer.trim()}>
+              {busy && <LoaderCircle className="mr-2 size-4 animate-spin" />} Continue analysis
+            </Button>
+          </CardContent>
+        </Card>}
 
         {review && page && <div className="grid gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(280px,0.8fr)]">
           <Card className="overflow-hidden rounded-2xl">
