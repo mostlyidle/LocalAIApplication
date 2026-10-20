@@ -258,7 +258,16 @@ async def get_redaction_batch(
     authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> RedactionBatchResponse:
-    """Return the current status of every job in an owned batch."""
+    """Return the current status of every job in an owned batch.
+
+    Args:
+        batch_id: Identifier shared by the batch's redaction jobs.
+        authenticated: Current authenticated account.
+        db: Database session.
+
+    Returns:
+        The batch identifier and current job statuses.
+    """
     jobs = list(
         (
             await db.scalars(
