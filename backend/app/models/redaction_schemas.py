@@ -68,12 +68,13 @@ class RedactionPageSummary(BaseModel):
 
 
 class RedactionFailedPage(BaseModel):
-    """A page whose text extraction needs retry or manual inspection."""
+    """A page whose extraction failed and may need recovery."""
 
     page_number: int
     error: str
     manual_reviewed: bool
     attempts: int
+    whole_page_redacted: bool = False
 
 
 class RedactionReviewResponse(BaseModel):

@@ -286,6 +286,7 @@ async def test_manual_review_approval_gates_sanitized_download(
     assert whole_page.json()["review_revision"] == 3
     updated_review = await client.get("/api/v1/redaction-jobs/reviewable-redaction-job/review")
     assert updated_review.json()["failed_pages"][0]["manual_reviewed"] is False
+    assert updated_review.json()["failed_pages"][0]["whole_page_redacted"] is True
     assert any(
         finding["category"] == "whole page"
         and finding["selected"]
