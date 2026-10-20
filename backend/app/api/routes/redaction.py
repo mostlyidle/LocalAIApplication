@@ -26,6 +26,7 @@ from app.models.redaction_schemas import (
     RedactionJobCreate,
     RedactionJobResponse,
     RedactionManualBox,
+    RedactionPageAction,
     RedactionPageSummary,
     RedactionReviewResponse,
 )
@@ -180,13 +181,20 @@ async def get_redaction_review(
     job = await _get_owned_job(db, job_id, authenticated.account.id)
     if job.status not in {"review_ready", "approved", "exported"}:
         raise HTTPException(status_code=409, detail="Redaction results are not ready for review.")
-    findings, warnings = _review_payload(job)
     data = load_job_data(job)
+    findings = [RedactionFinding.model_validate(item) for item in data["findings"]]
+    warnings = data["warnings"]
     pages = [
         RedactionPageSummary(number=index, width=page["width"], height=page["height"])
         for index, page in enumerate(data["pages"])
     ]
-    return RedactionReviewResponse(job=_job_response(job, warnings), findings=findings, pages=pages)
+    failed_pages = data.get("failed_pages", [])
+    return RedactionReviewResponse(
+        job=_job_response(job, warnings),
+        findings=findings,
+        pages=pages,
+        failed_pages=failed_pages,
+    )
 
 
 @router.get("/{job_id}/pages/{page_number}/preview")
@@ -281,6 +289,91 @@ async def add_manual_redaction_box(
     return _job_response(job, data["warnings"])
 
 
+@router.post("/{job_id}/retry-page", response_model=RedactionJobResponse)
+async def retry_redaction_page(
+    job_id: str,
+    payload: RedactionPageAction,
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+) -> RedactionJobResponse:
+    """Retry extraction and detection for one page that failed in this job."""
+    job = await _get_owned_job(db, job_id, authenticated.account.id)
+    if job.status != "review_ready":
+        raise HTTPException(status_code=409, detail="This job is not ready for page recovery.")
+    data = load_job_data(job)
+    failure = next(
+        (
+            item
+            for item in data.get("failed_pages", [])
+            if item["page_number"] == payload.page_number
+        ),
+        None,
+    )
+    if failure is None:
+        raise HTTPException(status_code=404, detail="Failed page not found.")
+    retry_pages = set(data.get("retry_pages", []))
+    retry_pages.add(payload.page_number)
+    data["retry_pages"] = sorted(retry_pages)
+    save_job_data(job, data)
+    result = await db.execute(
+        update(RedactionJob)
+        .where(
+            RedactionJob.id == job.id,
+            RedactionJob.owner_id == authenticated.account.id,
+            RedactionJob.status == "review_ready",
+        )
+        .values(
+            status="queued",
+            pages_processed=max(0, job.page_count - len(retry_pages)),
+            review_revision=RedactionJob.review_revision + 1,
+            approved_revision=None,
+            error_message=None,
+            lease_until=None,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if result.rowcount != 1:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="This page is already being recovered.")
+    await db.commit()
+    with suppress(OSError):
+        (Path(job.job_dir) / "redacted.pdf").unlink(missing_ok=True)
+    await db.refresh(job)
+    return _job_response(job)
+
+
+@router.post("/{job_id}/resolve-page", response_model=RedactionJobResponse)
+async def resolve_redaction_page_manually(
+    job_id: str,
+    payload: RedactionPageAction,
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+) -> RedactionJobResponse:
+    """Record the owner's manual inspection of a page extraction could not read."""
+    job = await _get_owned_job(db, job_id, authenticated.account.id)
+    if job.status != "review_ready":
+        raise HTTPException(status_code=409, detail="This job is not ready for page review.")
+    data = load_job_data(job)
+    failure = next(
+        (
+            item
+            for item in data.get("failed_pages", [])
+            if item["page_number"] == payload.page_number
+        ),
+        None,
+    )
+    if failure is None:
+        raise HTTPException(status_code=404, detail="Failed page not found.")
+    if not failure.get("manual_reviewed", False):
+        failure["manual_reviewed"] = True
+        save_job_data(job, data)
+        job.review_revision += 1
+        job.approved_revision = None
+        await db.commit()
+        await db.refresh(job)
+    return _job_response(job, data["warnings"])
+
+
 @router.post("/{job_id}/approve", response_model=RedactionJobResponse)
 async def approve_redaction_review(
     job_id: str,
@@ -293,6 +386,11 @@ async def approve_redaction_review(
     if revision != job.review_revision:
         raise HTTPException(status_code=409, detail="The review changed. Refresh before approving.")
     data = load_job_data(job)
+    if any(not item.get("manual_reviewed", False) for item in data.get("failed_pages", [])):
+        raise HTTPException(
+            status_code=409,
+            detail="Retry or manually inspect every failed page before approving this document.",
+        )
     if not any(item["selected"] for item in data["findings"]):
         raise HTTPException(status_code=422, detail="Select at least one region to redact.")
     job.approved_revision = revision

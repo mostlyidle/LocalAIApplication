@@ -22,6 +22,7 @@ from app.services.redaction_detector import (
     RedactionModelUnavailableError,
     detect_candidates,
     page_data,
+    page_from_data,
 )
 from app.services.redaction_documents import (
     RedactionDocumentError,
@@ -72,6 +73,34 @@ async def process_one_redaction_job(
 
     job_dir = Path(job.job_dir)
     try:
+        existing_data = load_job_data(job) if (job_dir / DATA_FILENAME).is_file() else None
+        retry_pages = sorted(
+            {
+                int(page_number)
+                for page_number in (existing_data or {}).get("retry_pages", [])
+                if type(page_number) is int
+            }
+        )
+        if retry_pages and existing_data is not None:
+            pages = [page_from_data(item) for item in existing_data["pages"]]
+            process_page_numbers = retry_pages
+            findings = [
+                item for item in existing_data["findings"] if item["page_number"] not in retry_pages
+            ]
+            failed_pages = [
+                item
+                for item in existing_data.get("failed_pages", [])
+                if item["page_number"] not in retry_pages
+            ]
+            warnings = list(existing_data.get("warnings", []))
+        else:
+            pages = []
+            process_page_numbers = []
+            findings = []
+            failed_pages = []
+            warnings = []
+
+        completed_pages = len(pages) - len(process_page_numbers)
 
         async def update_extraction_progress(completed: int, total: int) -> bool:
             await db.refresh(job)
@@ -82,7 +111,7 @@ async def process_one_redaction_job(
                 .where(RedactionJob.id == job.id, RedactionJob.status == "processing")
                 .values(
                     page_count=total,
-                    pages_processed=completed,
+                    pages_processed=min(total, completed_pages + completed),
                     lease_until=datetime.now(UTC) + timedelta(seconds=LEASE_SECONDS),
                 )
                 .execution_options(synchronize_session=False)
@@ -90,26 +119,64 @@ async def process_one_redaction_job(
             await db.commit()
             return result.rowcount == 1
 
-        pages = await extract_document_pages(
-            Path(document.storage_path),
-            ocr_service,
-            on_page=update_extraction_progress,
-        )
+        if not retry_pages:
+            pages = await extract_document_pages(
+                Path(document.storage_path),
+                ocr_service,
+                on_page=update_extraction_progress,
+            )
+            process_page_numbers = [page.number for page in pages]
+        else:
+            retried_pages = await extract_document_pages(
+                Path(document.storage_path),
+                ocr_service,
+                on_page=update_extraction_progress,
+                page_numbers=retry_pages,
+            )
+            for page in retried_pages:
+                pages[page.number] = page
         await db.refresh(job)
         if job.status != "processing":
             return True
         if not pages:
             raise RedactionDocumentError("The source document contains no readable pages.")
         categories = json.loads(job.categories_json)
-        findings: list[dict[str, Any]] = []
-        warnings: list[str] = []
         instructions = job.instructions.strip()
         clarifications = json.loads(job.clarification_answers)
         if not isinstance(clarifications, list) or not all(
             isinstance(answer, str) for answer in clarifications
         ):
             raise ValueError("Clarification history is invalid.")
-        for page_index, page in enumerate(pages):
+        previous_failures = {
+            item["page_number"]: item for item in (existing_data or {}).get("failed_pages", [])
+        }
+        for processed_count, page_index in enumerate(process_page_numbers, start=1):
+            page = pages[page_index]
+            if page.error:
+                previous = previous_failures.get(page_index, {})
+                failed_pages.append(
+                    {
+                        "page_number": page_index,
+                        "error": page.error,
+                        "manual_reviewed": False,
+                        "attempts": int(previous.get("attempts", 0)) + 1,
+                    }
+                )
+                await db.execute(
+                    update(RedactionJob)
+                    .where(RedactionJob.id == job.id, RedactionJob.status == "processing")
+                    .values(
+                        page_count=len(pages),
+                        pages_processed=min(len(pages), completed_pages + processed_count),
+                        lease_until=datetime.now(UTC) + timedelta(seconds=LEASE_SECONDS),
+                    )
+                )
+                await db.commit()
+                await db.refresh(job)
+                if job.status == "cancelled":
+                    return True
+                continue
+
             candidates = await detect_candidates(
                 page,
                 categories,
@@ -149,7 +216,7 @@ async def process_one_redaction_job(
                 boxes = boxes_for_span(page, candidate["start"], candidate["end"])
                 if not boxes:
                     warnings.append(
-                        f"A {candidate['category']} match on page {page_index + 1} has no usable box."
+                        f"A {candidate['category']} match on page {page.number + 1} has no usable box."
                     )
                     continue
                 source_confidences = [
@@ -178,7 +245,7 @@ async def process_one_redaction_job(
                 .where(RedactionJob.id == job.id, RedactionJob.status == "processing")
                 .values(
                     page_count=len(pages),
-                    pages_processed=page_index + 1,
+                    pages_processed=min(len(pages), completed_pages + processed_count),
                     lease_until=datetime.now(UTC) + timedelta(seconds=LEASE_SECONDS),
                 )
             )
@@ -191,6 +258,8 @@ async def process_one_redaction_job(
         data = {
             "pages": [page_data(page) for page in pages],
             "findings": findings,
+            "failed_pages": failed_pages,
+            "retry_pages": [],
             "warnings": sorted(set(warnings)),
         }
         _write_private_json(job_dir / DATA_FILENAME, data)

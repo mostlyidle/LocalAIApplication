@@ -78,6 +78,7 @@ export default function RedactionPage() {
   const page = review?.pages[pageNumber];
   const currentJobId = job?.id;
   const currentPageNumber = page?.number;
+  const currentPageFailure = review?.failed_pages.find((failure) => failure.page_number === pageNumber);
   const pageFindings = useMemo(
     () => review?.findings.filter((finding) => finding.page_number === pageNumber) ?? [],
     [review?.findings, pageNumber],
@@ -304,6 +305,41 @@ export default function RedactionPage() {
     }
   };
 
+  const retryPage = async () => {
+    if (!job || currentPageNumber === undefined) return;
+    setBusy(true);
+    setError("");
+    try {
+      setJob(await api.retryRedactionPage(job.id, currentPageNumber));
+      setReview(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not retry this page.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const resolvePage = async () => {
+    if (!job || currentPageNumber === undefined || !review) return;
+    setBusy(true);
+    setError("");
+    try {
+      const updatedJob = await api.resolveRedactionPage(job.id, currentPageNumber);
+      setJob(updatedJob);
+      setReview({
+        ...review,
+        job: updatedJob,
+        failed_pages: review.failed_pages.map((failure) => failure.page_number === currentPageNumber
+          ? { ...failure, manual_reviewed: true }
+          : failure),
+      });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not mark this page as inspected.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const pointerPosition = (event: PointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
@@ -488,6 +524,16 @@ export default function RedactionPage() {
               </div>
               </div>
               <p className="mt-3 text-xs text-muted-foreground">Red boxes are selected for redaction. Amber boxes are excluded. Drag on the page to add a manual region.</p>
+              {currentPageFailure && <div role="alert" className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
+                <p>{currentPageFailure.error}</p>
+                <p className="mt-1">This page was not scanned. Review it visually; draw a redaction region if needed.</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button type="button" variant="outline" disabled={busy} onClick={retryPage}>Retry page</Button>
+                  {!currentPageFailure.manual_reviewed
+                    ? <Button type="button" disabled={busy} onClick={resolvePage}>I inspected this page</Button>
+                    : <Badge variant="secondary">Manually inspected</Badge>}
+                </div>
+              </div>}
             </CardContent>
           </Card>
 
@@ -495,7 +541,7 @@ export default function RedactionPage() {
             <CardHeader><CardTitle className="flex items-center justify-between">Detected regions <Badge variant="secondary">{selectedCount} selected</Badge></CardTitle></CardHeader>
             <CardContent className="space-y-3">
               {review.job.warnings.map((warning) => <div key={warning} className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">{warning}</div>)}
-              {pageFindings.length === 0 ? <p className="text-sm text-muted-foreground">No matches were found on this page. You can draw a region to redact it manually.</p> : pageFindings.map((finding) => (
+              {pageFindings.length === 0 ? <p className="text-sm text-muted-foreground">{currentPageFailure ? "Automatic scanning did not finish on this page. Inspect the page and add any needed regions manually." : "No matches were found on this page. You can draw a region to redact it manually."}</p> : pageFindings.map((finding) => (
                 <label key={finding.id} className="flex cursor-pointer items-start gap-3 rounded-xl border p-3">
                   <input className="mt-1" type="checkbox" checked={finding.selected} disabled={busy || job.status === "exported"} onChange={(event) => { void updateFinding(finding, event.target.checked); }} />
                   <span className="min-w-0 flex-1">
@@ -533,7 +579,8 @@ export default function RedactionPage() {
               ))}
               {job.status !== "exported" && <div className="space-y-2 border-t pt-4">
                 <p className="text-xs text-muted-foreground">Human review is required before a PDF can be produced.</p>
-                <Button className="w-full" onClick={approve} disabled={busy || selectedCount === 0 || job.status === "approved"}>
+                {review.failed_pages.some((failure) => !failure.manual_reviewed) && <p className="text-sm text-amber-700">Retry or manually inspect every failed page before approval.</p>}
+                <Button className="w-full" onClick={approve} disabled={busy || selectedCount === 0 || review.failed_pages.some((failure) => !failure.manual_reviewed) || job.status === "approved"}>
                   <Check className="mr-2 size-4" /> Approve {selectedCount} selected regions
                 </Button>
                 {job.status === "approved" && <p className="text-center text-xs text-muted-foreground">Current review approved. Create the sanitized PDF when ready.</p>}

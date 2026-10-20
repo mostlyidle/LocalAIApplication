@@ -259,6 +259,12 @@ export const redactionReviewSchema = z.object({
     boxes: z.array(z.array(z.number())),
   })),
   pages: z.array(z.object({ number: z.number(), width: z.number(), height: z.number() })),
+  failed_pages: z.array(z.object({
+    page_number: z.number(),
+    error: z.string(),
+    manual_reviewed: z.boolean(),
+    attempts: z.number(),
+  })).default([]),
 });
 
 export const analysisResultSchema = z.object({

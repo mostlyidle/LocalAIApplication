@@ -445,6 +445,20 @@ export async function addRedactionBox(jobId: string, page_number: number, box: n
   }, redactionJobSchema);
 }
 
+export async function retryRedactionPage(jobId: string, page_number: number) {
+  return apiFetch(`/redaction-jobs/${encodeURIComponent(jobId)}/retry-page`, {
+    method: "POST",
+    body: JSON.stringify({ page_number }),
+  }, redactionJobSchema);
+}
+
+export async function resolveRedactionPage(jobId: string, page_number: number) {
+  return apiFetch(`/redaction-jobs/${encodeURIComponent(jobId)}/resolve-page`, {
+    method: "POST",
+    body: JSON.stringify({ page_number }),
+  }, redactionJobSchema);
+}
+
 export async function approveRedactionReview(jobId: string, revision: number) {
   return apiFetch(`/redaction-jobs/${encodeURIComponent(jobId)}/approve?revision=${revision}`, {
     method: "POST",
