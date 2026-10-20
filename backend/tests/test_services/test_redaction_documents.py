@@ -162,3 +162,27 @@ def test_export_contains_only_sanitized_page_images(tmp_path: Path) -> None:
     assert not exported.metadata.get("title")
     source_check.close()
     exported.close()
+
+
+def test_whole_page_export_does_not_require_text_extraction(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A reviewed failed page can be rasterized and fully redacted without text extraction."""
+    source = make_text_pdf(tmp_path / "failed-extraction.pdf")
+    output = tmp_path / "whole-page-redacted.pdf"
+
+    def fail_text_extraction(page: pymupdf.Page, page_number: int) -> ExtractedPage:
+        raise ValueError(f"Text extraction failed on page {page_number}.")
+
+    monkeypatch.setattr(
+        "app.services.redaction_documents.extract_native_page", fail_text_extraction
+    )
+
+    assert redact_to_image_pdf(source, output, {0: [(0.0, 0.0, 300.0, 400.0)]}) == 1
+
+    exported = pymupdf.open(output)
+    pixmap = exported[0].get_pixmap(dpi=72, alpha=False)
+    assert exported[0].get_text().strip() == ""
+    assert pixmap.pixel(150, 200) == (0, 0, 0)
+    exported.close()

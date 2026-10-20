@@ -83,10 +83,30 @@ export default function RedactionPage() {
     () => review?.findings.filter((finding) => finding.page_number === pageNumber) ?? [],
     [review?.findings, pageNumber],
   );
+  const isPageFullyRedacted = (failedPageNumber: number) => {
+    if (!review) return false;
+    const pageSummary = review.pages[failedPageNumber];
+    if (!pageSummary) return false;
+    return review.findings.some((finding) =>
+      finding.page_number === failedPageNumber
+      && finding.selected
+      && finding.boxes.some((box) =>
+        box[0]! <= 0
+        && box[1]! <= 0
+        && box[2]! >= pageSummary.width
+        && box[3]! >= pageSummary.height,
+      ),
+    );
+  };
   const selectedCount = review?.findings.filter((finding) => finding.selected).length ?? 0;
-  const manualInspectionComplete = review !== null
+  const failedPageResolutionComplete = review !== null
     && review.failed_pages.length > 0
-    && review.failed_pages.every((failure) => failure.manual_reviewed);
+    && review.failed_pages.every((failure) =>
+      failure.manual_reviewed || isPageFullyRedacted(failure.page_number),
+    );
+  const hasUnresolvedFailedPages = review?.failed_pages.some((failure) =>
+    !failure.manual_reviewed && !isPageFullyRedacted(failure.page_number),
+  ) ?? false;
   const supportedDocuments = documents.filter((document) =>
     SUPPORTED_FORMATS.includes(document.format),
   );
@@ -323,6 +343,21 @@ export default function RedactionPage() {
     }
   };
 
+  const redactWholePage = async () => {
+    if (!job || currentPageNumber === undefined) return;
+    setBusy(true);
+    setError("");
+    try {
+      const updatedJob = await api.redactFailedPageWhole(job.id, currentPageNumber);
+      setJob(updatedJob);
+      setReview(await api.getRedactionReview(job.id));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not select the full page for redaction.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const resolvePage = async () => {
     if (!job || currentPageNumber === undefined || !review || !previewUrl) return;
     setBusy(true);
@@ -530,12 +565,15 @@ export default function RedactionPage() {
               <p className="mt-3 text-xs text-muted-foreground">Red boxes are selected for redaction. Amber boxes are excluded. Drag on the page to add a manual region.</p>
               {currentPageFailure && <div role="alert" className="mt-4 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
                 <p>{currentPageFailure.error}</p>
-                <p className="mt-1">This page was not scanned. Review it visually; draw a redaction region if needed.</p>
+                <p className="mt-1">This page was not scanned. Inspect it, add regions, or redact the full page.</p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Button type="button" variant="outline" disabled={busy} onClick={retryPage}>Retry page</Button>
-                  {!currentPageFailure.manual_reviewed
-                    ? <Button type="button" disabled={busy || !previewUrl} onClick={resolvePage}>I inspected this page</Button>
-                    : <Badge variant="secondary">Manually inspected</Badge>}
+                  {!isPageFullyRedacted(pageNumber) && <Button type="button" variant="outline" disabled={busy || !previewUrl} onClick={redactWholePage}>Redact whole page</Button>}
+                  {isPageFullyRedacted(pageNumber)
+                    ? <Badge variant="secondary">Whole page redacted</Badge>
+                    : currentPageFailure.manual_reviewed
+                      ? <Badge variant="secondary">Manually inspected</Badge>
+                      : <Button type="button" disabled={busy || !previewUrl} onClick={resolvePage}>I inspected this page</Button>}
                 </div>
               </div>}
             </CardContent>
@@ -583,10 +621,10 @@ export default function RedactionPage() {
               ))}
               {job.status !== "exported" && <div className="space-y-2 border-t pt-4">
                 <p className="text-xs text-muted-foreground">Human review is required before a PDF can be produced.</p>
-                {review.failed_pages.some((failure) => !failure.manual_reviewed) && <p className="text-sm text-amber-700">Retry or manually inspect every failed page before approval.</p>}
-                <Button className="w-full" onClick={approve} disabled={busy || (selectedCount === 0 && !manualInspectionComplete) || review.failed_pages.some((failure) => !failure.manual_reviewed) || job.status === "approved"}>
+                {hasUnresolvedFailedPages && <p className="text-sm text-amber-700">Retry, redact the full page, or manually inspect every failed page before approval.</p>}
+                <Button className="w-full" onClick={approve} disabled={busy || (selectedCount === 0 && !failedPageResolutionComplete) || hasUnresolvedFailedPages || job.status === "approved"}>
                   <Check className="mr-2 size-4" />
-                  {selectedCount === 0 && manualInspectionComplete
+                  {selectedCount === 0 && failedPageResolutionComplete
                     ? "Approve manual inspection"
                     : `Approve ${selectedCount} selected regions`}
                 </Button>

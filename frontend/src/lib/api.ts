@@ -459,6 +459,13 @@ export async function resolveRedactionPage(jobId: string, page_number: number) {
   }, redactionJobSchema);
 }
 
+export async function redactFailedPageWhole(jobId: string, page_number: number) {
+  return apiFetch(`/redaction-jobs/${encodeURIComponent(jobId)}/redact-whole-page`, {
+    method: "POST",
+    body: JSON.stringify({ page_number }),
+  }, redactionJobSchema);
+}
+
 export async function approveRedactionReview(jobId: string, revision: number) {
   return apiFetch(`/redaction-jobs/${encodeURIComponent(jobId)}/approve?revision=${revision}`, {
     method: "POST",
