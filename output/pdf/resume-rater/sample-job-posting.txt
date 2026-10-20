@@ -1,0 +1,27 @@
+Senior Backend Engineer
+Northstar Software | Remote in Canada
+
+Northstar Software builds workflow tools for independent logistics providers. We are looking for a backend engineer to build and operate reliable services that support dispatch, billing, and customer account workflows.
+
+What you will do
+- Design, build, and maintain Python backend services and versioned REST APIs.
+- Work with product and frontend engineers to turn customer needs into clear service contracts.
+- Model data in PostgreSQL, write maintainable SQL, and investigate query performance.
+- Keep production services dependable through automated tests, observability, incident response, and clear runbooks.
+- Improve asynchronous workflows for scheduled and event-driven work.
+- Review designs and code, share technical context, and help teammates grow through collaboration and mentorship.
+
+What we are looking for
+- Demonstrated experience delivering and supporting Python services in production.
+- Practical API design experience, including validation, error handling, and backward-compatible changes.
+- Strong working knowledge of PostgreSQL and SQL query behavior.
+- Experience improving service reliability with testing and operational practices.
+- Clear written communication and constructive collaboration across roles.
+
+Helpful experience
+- FastAPI or a similar Python API framework.
+- Background jobs or message queues such as Celery, Redis Queue, SQS, or an equivalent.
+- Distributed tracing, service-level objectives, or production incident ownership.
+- Containerized deployments and cloud infrastructure.
+
+Please describe your specific contributions, the systems you supported, and measurable outcomes where you can substantiate them. Equivalent experience is welcome; no particular degree or career path is required.
