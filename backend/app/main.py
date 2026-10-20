@@ -103,8 +103,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     hybrid_vector_store_service.configure_laya_service(laya_rag_service)
     await laya_rag_service.start(
         enabled=(
-            settings.laya_rag_evidence_mode != "off"
-            or settings.laya_rag_rewrite_mode != "off"
+            settings.laya_rag_evidence_mode != "off" or settings.laya_rag_rewrite_mode != "off"
         )
     )
 
@@ -228,6 +227,7 @@ def create_app() -> FastAPI:
     app.include_router(chat.router, prefix="/api/v1", tags=["Chat"])
     app.include_router(documents.router, prefix="/api/v1", tags=["Documents"])
     app.include_router(redaction.router, prefix="/api/v1")
+    app.include_router(redaction.batch_router, prefix="/api/v1")
     app.include_router(sql.router, prefix="/api/v1", tags=["SQL"])
     app.include_router(rag.router, prefix="/api/v1", tags=["RAG"])
     app.include_router(rag_containers.router, prefix="/api/v1")

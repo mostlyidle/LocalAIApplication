@@ -474,6 +474,7 @@ class RedactionJob(Base):
     document_id: Mapped[str] = mapped_column(
         String(36), ForeignKey("documents.id", ondelete="CASCADE"), index=True
     )
+    batch_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
     instructions: Mapped[str] = mapped_column(String(2_000), default="")
     categories_json: Mapped[str] = mapped_column(Text)

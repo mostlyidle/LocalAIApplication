@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 import pymupdf
+from sqlalchemy import select
 
 from app.models.db_models import Account, AccountSession, Document, RedactionJob
 from app.services.auth import AuthenticatedSession
@@ -131,6 +132,100 @@ async def test_redaction_export_requires_approval(
 
     result = await client.post("/api/v1/redaction-jobs/redaction-gate-job/export")
     assert result.status_code == 409
+
+
+async def test_redaction_batch_queues_one_job_per_owned_source(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    authenticated_test_session: AuthenticatedSession,
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    import app.api.routes.redaction as redaction_routes
+
+    monkeypatch.setattr(redaction_routes.settings, "upload_dir", str(tmp_path / "uploads"))
+    owner_id = authenticated_test_session.account.id
+    documents = []
+    for index in range(2):
+        source = tmp_path / f"batch-source-{index}.pdf"
+        source.write_bytes(f"synthetic PDF {index}".encode())
+        documents.append(
+            Document(
+                id=str(uuid.uuid4()),
+                owner_id=owner_id,
+                filename=source.name,
+                format="pdf",
+                size_bytes=source.stat().st_size,
+                storage_path=str(source),
+            )
+        )
+    db_session.add_all(documents)
+    await db_session.commit()
+
+    response = await client.post(
+        "/api/v1/redaction-batches",
+        json={
+            "document_ids": [document.id for document in documents],
+            "categories": ["email address"],
+            "instructions": "Redact work emails.",
+        },
+    )
+
+    assert response.status_code == 202
+    body = response.json()
+    assert len(body["jobs"]) == 2
+    assert [job["document_id"] for job in body["jobs"]] == [document.id for document in documents]
+    assert all(job["batch_id"] == body["id"] for job in body["jobs"])
+    persisted_jobs = list(
+        (
+            await db_session.scalars(
+                select(RedactionJob).where(RedactionJob.batch_id == body["id"])
+            )
+        ).all()
+    )
+    assert len(persisted_jobs) == 2
+
+
+async def test_redaction_batch_rejects_invalid_source_without_partial_jobs(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    authenticated_test_session: AuthenticatedSession,
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    import app.api.routes.redaction as redaction_routes
+
+    upload_dir = tmp_path / "uploads"
+    monkeypatch.setattr(redaction_routes.settings, "upload_dir", str(upload_dir))
+    owner_id = authenticated_test_session.account.id
+    documents = []
+    for filename, file_format in [("valid.pdf", "pdf"), ("invalid.docx", "docx")]:
+        source = tmp_path / filename
+        source.write_bytes(b"synthetic source")
+        documents.append(
+            Document(
+                id=str(uuid.uuid4()),
+                owner_id=owner_id,
+                filename=filename,
+                format=file_format,
+                size_bytes=source.stat().st_size,
+                storage_path=str(source),
+            )
+        )
+    db_session.add_all(documents)
+    await db_session.commit()
+
+    response = await client.post(
+        "/api/v1/redaction-batches",
+        json={
+            "document_ids": [document.id for document in documents],
+            "categories": ["email address"],
+        },
+    )
+
+    assert response.status_code == 422
+    assert list((await db_session.scalars(select(RedactionJob))).all()) == []
+    assert not (upload_dir / "redaction-jobs" / owner_id).exists()
 
 
 async def test_redaction_agent_catalog_task_opens_a_private_job(

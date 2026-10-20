@@ -10,6 +10,7 @@ import {
   documentListSchema,
   uploadResultSchema,
   redactionJobSchema,
+  redactionBatchSchema,
   redactionReviewSchema,
   sqlQueryResponseSchema,
   sqlExecuteResponseSchema,
@@ -410,6 +411,17 @@ export async function createRedactionJob(input: {
     method: "POST",
     body: JSON.stringify(input),
   }, redactionJobSchema);
+}
+
+export async function createRedactionBatch(input: {
+  document_ids: string[];
+  categories: string[];
+  instructions: string;
+}) {
+  return apiFetch("/redaction-batches", {
+    method: "POST",
+    body: JSON.stringify(input),
+  }, redactionBatchSchema);
 }
 
 export async function getRedactionJob(id: string) {

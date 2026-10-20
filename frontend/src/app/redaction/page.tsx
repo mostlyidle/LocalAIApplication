@@ -23,6 +23,7 @@ import * as api from "@/lib/api";
 import { MAX_FILE_SIZE } from "@/lib/constants";
 
 const SUPPORTED_FORMATS = ["pdf", "png", "jpg", "jpeg", "tiff", "bmp", "webp"];
+const MAX_BATCH_DOCUMENTS = 20;
 
 const CATEGORY_OPTIONS = [
   "person name",
@@ -42,13 +43,13 @@ const CATEGORY_OPTIONS = [
 ];
 
 type DocumentRow = { id: string; filename: string; format: string };
-type Job = Awaited<ReturnType<typeof api.createRedactionJob>>;
+type Job = Awaited<ReturnType<typeof api.getRedactionJob>>;
 type Review = Awaited<ReturnType<typeof api.getRedactionReview>>;
 type Finding = Review["findings"][number];
 
 export default function RedactionPage() {
   const [documents, setDocuments] = useState<DocumentRow[]>([]);
-  const [documentId, setDocumentId] = useState("");
+  const [documentIds, setDocumentIds] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([
     "person name",
     "employee number",
@@ -169,38 +170,72 @@ export default function RedactionPage() {
     };
   }, [currentJobId, currentPageNumber, review]);
 
-  const uploadSource = async (file: File) => {
+  const uploadSources = async (files: File[]) => {
+    if (documentIds.length + files.length > MAX_BATCH_DOCUMENTS) {
+      setError(`Select no more than ${MAX_BATCH_DOCUMENTS} documents per batch.`);
+      return;
+    }
+    const invalidFile = files.find((file) => {
+      const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+      return !SUPPORTED_FORMATS.includes(extension) || file.size > MAX_FILE_SIZE;
+    });
+    if (invalidFile) {
+      const extension = invalidFile.name.split(".").pop()?.toLowerCase() ?? "";
+      setError(!SUPPORTED_FORMATS.includes(extension)
+        ? `Unsupported file: ${invalidFile.name}. Choose a PDF or supported image.`
+        : `File too large: ${invalidFile.name}. Maximum size is ${MAX_FILE_SIZE / 1024 / 1024}MB.`);
+      return;
+    }
     setError("");
-    const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
-    if (!SUPPORTED_FORMATS.includes(extension)) {
-      setError("Choose a PDF or supported image file for redaction.");
-      return;
-    }
-    if (file.size > MAX_FILE_SIZE) {
-      setError(`File too large. Maximum size is ${MAX_FILE_SIZE / 1024 / 1024}MB.`);
-      return;
-    }
     setIsUploading(true);
-    try {
-      const uploaded = await api.uploadDocument(file);
-      setDocuments((current) => [uploaded, ...current.filter((item) => item.id !== uploaded.id)]);
-      setDocumentId(uploaded.id);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not upload the source document.");
-    } finally {
-      setIsUploading(false);
+    for (const file of files) {
+      try {
+        const uploaded = await api.uploadDocument(file);
+        setDocuments((current) => [uploaded, ...current.filter((item) => item.id !== uploaded.id)]);
+        setDocumentIds((current) => current.includes(uploaded.id)
+          ? current
+          : [...current, uploaded.id]);
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : "Upload failed.";
+        setError(`Could not upload ${file.name}: ${message}`);
+        break;
+      }
     }
+    setIsUploading(false);
+  };
+
+  const toggleSourceDocument = (id: string, selected: boolean) => {
+    setError("");
+    if (selected && !documentIds.includes(id) && documentIds.length >= MAX_BATCH_DOCUMENTS) {
+      setError(`Select no more than ${MAX_BATCH_DOCUMENTS} documents per batch.`);
+      return;
+    }
+    setDocumentIds((current) => {
+      if (!selected) return current.filter((item) => item !== id);
+      if (current.includes(id)) return current;
+      return [...current, id];
+    });
   };
 
   const begin = async () => {
-    if (!documentId || categories.length === 0) return;
+    if (documentIds.length === 0 || categories.length === 0) return;
     setError("");
     setBusy(true);
     setReview(null);
     try {
-      const created = await api.createRedactionJob({ document_id: documentId, categories, instructions });
-      setJob(created);
-      window.history.replaceState(null, "", `/redaction?job_id=${created.id}`);
+      const batch = await api.createRedactionBatch({
+        document_ids: documentIds,
+        categories,
+        instructions,
+      });
+      const firstJob = batch.jobs[0];
+      if (!firstJob) throw new Error("The batch did not create any redaction jobs.");
+      setJob(firstJob);
+      window.history.replaceState(
+        null,
+        "",
+        `/redaction?job_id=${firstJob.id}&batch_id=${batch.id}`,
+      );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not start redaction.");
     } finally {
@@ -427,28 +462,38 @@ export default function RedactionPage() {
         <CardHeader><CardTitle>Choose what to redact</CardTitle></CardHeader>
         <CardContent className="space-y-5">
           <div className="space-y-2">
-            <label htmlFor="redaction-upload" className="text-sm font-medium">Upload a PDF or image</label>
+            <label htmlFor="redaction-upload" className="text-sm font-medium">Upload PDFs or images</label>
             <Input
               id="redaction-upload"
               type="file"
+              multiple
               accept={SUPPORTED_FORMATS.map((format) => `.${format}`).join(",")}
               disabled={busy || isUploading}
               aria-describedby="redaction-upload-help"
               onChange={(event) => {
-                const file = event.currentTarget.files?.[0];
+                const files = Array.from(event.currentTarget.files ?? []);
                 event.currentTarget.value = "";
-                if (file) void uploadSource(file);
+                if (files.length) void uploadSources(files);
               }}
             />
-            <p id="redaction-upload-help" className="text-xs text-muted-foreground">PDF, PNG, JPEG, TIFF, BMP or WebP (max {MAX_FILE_SIZE / 1024 / 1024}MB). Uploaded files are saved in Documents and selected below.</p>
+            <p id="redaction-upload-help" className="text-xs text-muted-foreground">PDF, PNG, JPEG, TIFF, BMP or WebP; up to {MAX_BATCH_DOCUMENTS} files per batch, {MAX_FILE_SIZE / 1024 / 1024}MB each. Uploaded files are saved in Documents and selected below.</p>
             {isUploading && <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> Uploading...</p>}
           </div>
-          <label className="block space-y-2 text-sm font-medium">Source document
-            <select className="h-11 w-full rounded-xl border bg-background px-3" value={documentId} disabled={busy || isUploading} onChange={(event) => setDocumentId(event.target.value)}>
-              <option value="">Select a PDF or image</option>
-              {supportedDocuments.map((document) => <option key={document.id} value={document.id}>{document.filename}</option>)}
-            </select>
-          </label>
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium">Documents to redact ({documentIds.length}/{MAX_BATCH_DOCUMENTS} selected)</legend>
+            <div className="max-h-56 space-y-1 overflow-y-auto rounded-xl border p-2">
+              {supportedDocuments.map((document) => <label key={document.id} className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-muted/50">
+                <input
+                  type="checkbox"
+                  checked={documentIds.includes(document.id)}
+                  disabled={busy || isUploading || (documentIds.length >= MAX_BATCH_DOCUMENTS && !documentIds.includes(document.id))}
+                  onChange={(event) => toggleSourceDocument(document.id, event.target.checked)}
+                />
+                <span className="truncate" title={document.filename}>{document.filename}</span>
+              </label>)}
+              {supportedDocuments.length === 0 && <p className="px-2 py-3 text-sm text-muted-foreground">Upload a PDF or image above to get started.</p>}
+            </div>
+          </fieldset>
           <fieldset>
             <legend className="mb-2 text-sm font-medium">Categories</legend>
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -471,10 +516,9 @@ export default function RedactionPage() {
             <ShieldCheck className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
             <p>Detection runs on this device. Review every page before export; automated detection can miss sensitive content.</p>
           </div>
-          {supportedDocuments.length === 0 && <p className="text-sm text-muted-foreground">Upload a PDF or image above to get started.</p>}
-          <Button onClick={begin} disabled={!documentId || categories.length === 0 || busy || isUploading}>
+          <Button onClick={begin} disabled={documentIds.length === 0 || categories.length === 0 || busy || isUploading}>
             {busy ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : <FileLock2 className="mr-2 size-4" />}
-            Analyze document
+            Analyze {documentIds.length} {documentIds.length === 1 ? "document" : "documents"}
           </Button>
         </CardContent>
       </Card>}
