@@ -91,6 +91,9 @@ export default function RedactionPage() {
   const batchReadyCount = batch?.jobs.filter((item) =>
     ["review_ready", "approved", "exported"].includes(item.status),
   ).length ?? 0;
+  const batchDownloadReady = batch !== null && batch.jobs.length > 0 && batch.jobs.every((item) =>
+    item.status === "exported" && item.approved_revision === item.review_revision,
+  );
   const failedPageResolutionComplete = review !== null
     && review.failed_pages.length > 0
     && review.failed_pages.every((failure) =>
@@ -102,6 +105,13 @@ export default function RedactionPage() {
   const supportedDocuments = documents.filter((document) =>
     SUPPORTED_FORMATS.includes(document.format),
   );
+  const setActiveJob = (nextJob: Job) => {
+    setJob(nextJob);
+    setBatch((current) => current && ({
+      ...current,
+      jobs: current.jobs.map((item) => item.id === nextJob.id ? nextJob : item),
+    }));
+  };
 
   useEffect(() => {
     let active = true;
@@ -136,7 +146,7 @@ export default function RedactionPage() {
           setError("This redaction job does not belong to the selected batch.");
           return;
         }
-        setJob(loaded);
+        setActiveJob(loaded);
         if (["review_ready", "approved", "exported"].includes(loaded.status)) {
           void api.getRedactionReview(jobId).then((loadedReview) => {
             if (active) setReview(loadedReview);
@@ -172,7 +182,7 @@ export default function RedactionPage() {
     const timeout = window.setTimeout(() => {
       void api.getRedactionJob(job.id).then((next) => {
         if (!active) return;
-        setJob(next);
+        setActiveJob(next);
         if (["review_ready", "approved", "exported"].includes(next.status)) {
           void api.getRedactionReview(job.id).then(setReview).catch((cause: unknown) => {
             if (active) setError(cause instanceof Error ? cause.message : "Could not load review.");
@@ -268,7 +278,7 @@ export default function RedactionPage() {
       if (!firstJob) throw new Error("The batch did not create any redaction jobs.");
       setBatch(batch);
       setBatchId(batch.id);
-      setJob(firstJob);
+      setActiveJob(firstJob);
       window.history.replaceState(
         null,
         "",
@@ -290,7 +300,7 @@ export default function RedactionPage() {
       if (selectedJob.batch_id !== batchId) {
         throw new Error("This redaction job does not belong to the selected batch.");
       }
-      setJob(selectedJob);
+      setActiveJob(selectedJob);
       setReview(null);
       setPageNumber(0);
       setClarificationAnswer("");
@@ -329,7 +339,7 @@ export default function RedactionPage() {
           ? { ...item, selected, boxes }
           : item),
       }));
-      setJob(nextJob);
+      setActiveJob(nextJob);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not update this match.");
     } finally {
@@ -343,7 +353,7 @@ export default function RedactionPage() {
     setError("");
     try {
       const resumed = await api.clarifyRedactionJob(job.id, clarificationAnswer);
-      setJob(resumed);
+      setActiveJob(resumed);
       setClarificationAnswer("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not submit clarification.");
@@ -366,7 +376,7 @@ export default function RedactionPage() {
     setError("");
     try {
       const approved = await api.approveRedactionReview(job.id, job.review_revision);
-      setJob(approved);
+      setActiveJob(approved);
       setReview((current) => current && ({ ...current, job: approved }));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not approve review.");
@@ -381,7 +391,7 @@ export default function RedactionPage() {
     setError("");
     try {
       const exported = await api.exportRedactedDocument(job.id);
-      setJob(exported);
+      setActiveJob(exported);
       setReview((current) => current && ({ ...current, job: exported }));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not create the redacted PDF.");
@@ -405,11 +415,30 @@ export default function RedactionPage() {
     }
   };
 
+  const downloadBatch = async () => {
+    if (!batchId || !batchDownloadReady) return;
+    setBusy(true);
+    setError("");
+    try {
+      const result = await api.downloadRedactionBatch(batchId);
+      const url = URL.createObjectURL(result.blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = result.filename;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not download the redacted batch.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const cancel = async () => {
     if (!job) return;
     try {
       const cancelled = await api.cancelRedactionJob(job.id);
-      setJob(cancelled);
+      setActiveJob(cancelled);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not cancel the job.");
     }
@@ -420,7 +449,7 @@ export default function RedactionPage() {
     setBusy(true);
     setError("");
     try {
-      setJob(await api.retryRedactionPage(job.id, currentPageNumber));
+      setActiveJob(await api.retryRedactionPage(job.id, currentPageNumber));
       setReview(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not retry this page.");
@@ -435,7 +464,7 @@ export default function RedactionPage() {
     setError("");
     try {
       const updatedJob = await api.redactFailedPageWhole(job.id, currentPageNumber);
-      setJob(updatedJob);
+      setActiveJob(updatedJob);
       setReview(await api.getRedactionReview(job.id));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not select the full page for redaction.");
@@ -450,7 +479,7 @@ export default function RedactionPage() {
     setError("");
     try {
       const updatedJob = await api.resolveRedactionPage(job.id, currentPageNumber);
-      setJob(updatedJob);
+      setActiveJob(updatedJob);
       setReview({
         ...review,
         job: updatedJob,
@@ -504,7 +533,7 @@ export default function RedactionPage() {
       const nextJob = await api.addRedactionBox(job.id, page.number, [x0, y0, x1, y1]);
       const nextReview = await api.getRedactionReview(job.id);
       setReview(nextReview);
-      setJob(nextJob);
+      setActiveJob(nextJob);
       setDrawMode(false);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not add a manual region.");
@@ -592,10 +621,17 @@ export default function RedactionPage() {
       {job && <div className="space-y-5">
         {batch && <Card className="rounded-2xl">
           <CardHeader>
-            <CardTitle>Batch progress</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              {batchReadyCount} of {batch.jobs.length} documents ready for review or complete
-            </p>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <CardTitle>Batch progress</CardTitle>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {batchReadyCount} of {batch.jobs.length} documents ready to review or exported
+                </p>
+              </div>
+              <Button type="button" variant="outline" disabled={busy || !batchDownloadReady} onClick={() => { void downloadBatch(); }}>
+                <Download className="mr-2 size-4" /> Download redacted ZIP
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-2">
             {batch.jobs.map((item) => {

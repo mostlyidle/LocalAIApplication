@@ -5,7 +5,9 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+import zipfile
 from datetime import UTC, datetime
+from io import BytesIO
 from typing import TYPE_CHECKING
 
 import pymupdf
@@ -245,6 +247,92 @@ async def test_redaction_batch_rejects_invalid_source_without_partial_jobs(
     assert response.status_code == 422
     assert list((await db_session.scalars(select(RedactionJob))).all()) == []
     assert not (upload_dir / "redaction-jobs" / owner_id).exists()
+
+
+async def test_redaction_batch_download_requires_current_exports_and_hides_source_names(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    authenticated_test_session: AuthenticatedSession,
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    import app.api.routes.redaction as redaction_routes
+    from app.dependencies import get_authenticated_session
+
+    monkeypatch.setattr(redaction_routes.settings, "upload_dir", str(tmp_path / "uploads"))
+    owner_id = authenticated_test_session.account.id
+    batch_id = str(uuid.uuid4())
+    jobs = []
+    owner_dir = tmp_path / "uploads" / "redaction-jobs" / owner_id
+    for index in range(2):
+        document_id = str(uuid.uuid4())
+        job_id = str(uuid.uuid4())
+        job_dir = owner_dir / job_id
+        job_dir.mkdir(parents=True)
+        (job_dir / "redacted.pdf").write_bytes(f"sanitized-{index}".encode())
+        db_session.add(
+            Document(
+                id=document_id,
+                owner_id=owner_id,
+                filename=f"confidential-source-{index}.pdf",
+                format="pdf",
+                size_bytes=16,
+                storage_path=str(tmp_path / f"missing-source-{index}.pdf"),
+            )
+        )
+        jobs.append(
+            RedactionJob(
+                id=job_id,
+                owner_id=owner_id,
+                document_id=document_id,
+                batch_id=batch_id,
+                status="exported",
+                instructions="",
+                categories_json='["email address"]',
+                source_sha256="0" * 64,
+                job_dir=str(job_dir),
+                review_revision=2,
+                approved_revision=2,
+            )
+        )
+    db_session.add_all(jobs)
+    await db_session.commit()
+    client._transport.app.dependency_overrides[get_authenticated_session] = lambda: (
+        authenticated_test_session
+    )
+
+    response = await client.get(f"/api/v1/redaction-batches/{batch_id}/download")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    assert response.headers["cache-control"] == "no-store"
+    assert "redacted-documents.zip" in response.headers["content-disposition"]
+    with zipfile.ZipFile(BytesIO(response.content)) as archive:
+        assert archive.namelist() == ["redacted-document-001.pdf", "redacted-document-002.pdf"]
+        assert archive.read("redacted-document-001.pdf") == b"sanitized-0"
+        assert archive.read("redacted-document-002.pdf") == b"sanitized-1"
+        assert all("confidential-source" not in name for name in archive.namelist())
+    assert not list(owner_dir.glob("redaction-batch-*.zip"))
+
+    other_account = Account(
+        id="redaction-batch-download-other",
+        username="redaction-batch-download-other",
+        display_name="Other",
+        password_hash="!test!",
+    )
+    db_session.add(other_account)
+    await db_session.commit()
+    client._transport.app.dependency_overrides[get_authenticated_session] = lambda: _principal(
+        other_account
+    )
+    assert (await client.get(f"/api/v1/redaction-batches/{batch_id}/download")).status_code == 404
+
+    client._transport.app.dependency_overrides[get_authenticated_session] = lambda: (
+        authenticated_test_session
+    )
+    jobs[1].status = "review_ready"
+    await db_session.commit()
+    assert (await client.get(f"/api/v1/redaction-batches/{batch_id}/download")).status_code == 409
 
 
 async def test_redaction_agent_catalog_task_opens_a_private_job(

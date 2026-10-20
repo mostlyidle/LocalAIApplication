@@ -10,6 +10,9 @@ vi.mock("@/lib/api", () => ({
   createRedactionBatch: vi.fn(),
   getRedactionBatch: vi.fn(),
   getRedactionJob: vi.fn(),
+  getRedactionReview: vi.fn(),
+  downloadRedactionBatch: vi.fn(),
+  exportRedactedDocument: vi.fn(),
 }));
 
 const uploaded = { id: "uploaded-pdf", filename: "new-source.pdf", format: "pdf" };
@@ -30,6 +33,9 @@ describe("RedactionPage uploads", () => {
     vi.mocked(api.getDocuments).mockResolvedValue({ documents: [] });
     vi.mocked(api.uploadDocument).mockResolvedValue(uploaded);
     vi.mocked(api.getRedactionBatch).mockResolvedValue({ id: "batch-1", jobs: [] });
+    vi.mocked(api.downloadRedactionBatch).mockResolvedValue({
+      blob: new Blob(["zip"]), filename: "redacted-documents.zip",
+    });
   });
 
   it("selects a new upload and uses it for redaction", async () => {
@@ -117,6 +123,65 @@ describe("RedactionPage uploads", () => {
       "This redaction job does not belong to the selected batch.",
     );
     expect(screen.queryByText("Batch progress")).not.toBeInTheDocument();
+  });
+
+  it("enables batch ZIP download only for current exported reviews", async () => {
+    const exportedJob = {
+      id: "job-1", document_id: existing.id, batch_id: "batch-1", status: "exported",
+      page_count: 1, pages_processed: 1, review_revision: 2, approved_revision: 2,
+      clarification_question: null, error_message: null, warnings: [],
+    };
+    const secondExportedJob = {
+      ...exportedJob, id: "job-2", document_id: "second-document",
+    };
+    vi.mocked(api.getDocuments).mockResolvedValue({
+      documents: [existing, { ...existing, id: "second-document", filename: "second.pdf" }],
+    });
+    vi.mocked(api.getRedactionBatch).mockResolvedValue({
+      id: "batch-1", jobs: [exportedJob, secondExportedJob],
+    });
+    vi.mocked(api.getRedactionJob).mockResolvedValue(exportedJob);
+    vi.mocked(api.getRedactionReview).mockResolvedValue({
+      job: exportedJob, findings: [], pages: [], failed_pages: [],
+    });
+    window.history.replaceState(null, "", "/redaction?job_id=job-1&batch_id=batch-1");
+    render(<RedactionPage />);
+
+    expect(await screen.findByText("Batch progress")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Download redacted ZIP" })).toBeEnabled();
+  });
+
+  it("enables ZIP download after the last batch job is exported", async () => {
+    const approvedJob = {
+      id: "job-1", document_id: existing.id, batch_id: "batch-1", status: "approved",
+      page_count: 1, pages_processed: 1, review_revision: 2, approved_revision: 2,
+      clarification_question: null, error_message: null, warnings: [],
+    };
+    const exportedJob = {
+      ...approvedJob, id: "job-2", document_id: "second-document", status: "exported",
+      approved_revision: 1, review_revision: 1,
+    };
+    vi.mocked(api.getDocuments).mockResolvedValue({
+      documents: [existing, { ...existing, id: "second-document", filename: "second.pdf" }],
+    });
+    vi.mocked(api.getRedactionBatch).mockResolvedValue({
+      id: "batch-1", jobs: [approvedJob, exportedJob],
+    });
+    vi.mocked(api.getRedactionJob).mockResolvedValue(approvedJob);
+    vi.mocked(api.getRedactionReview).mockResolvedValue({
+      job: approvedJob, findings: [], pages: [], failed_pages: [],
+    });
+    vi.mocked(api.exportRedactedDocument).mockResolvedValue({
+      ...approvedJob, status: "exported",
+    });
+    window.history.replaceState(null, "", "/redaction?job_id=job-1&batch_id=batch-1");
+    render(<RedactionPage />);
+
+    const downloadButton = await screen.findByRole("button", { name: "Download redacted ZIP" });
+    expect(downloadButton).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Create redacted PDF" }));
+
+    await waitFor(() => expect(downloadButton).toBeEnabled());
   });
 
   it.each(["unsupported", "oversized"])("rejects %s files before upload", async (kind) => {
