@@ -170,7 +170,11 @@ def _normalize_rubric_weights(rubric: ResumeRaterModelRubric) -> ResumeRubric:
 async def draft_resume_rubric(job_posting: str) -> ResumeRubric:
     """Suggest job-relevant weighted criteria for hiring-manager approval."""
     model = llm_service.get_chat_model(
-        model=settings.resume_rater_model, temperature=0, max_tokens=1_500, num_ctx=16_384
+        model=settings.resume_rater_model,
+        temperature=0,
+        max_tokens=1_500,
+        num_ctx=16_384,
+        reasoning=False,
     )
     try:
         raw = await model.with_structured_output(ResumeRaterModelRubric).ainvoke(
@@ -221,7 +225,11 @@ async def assess_resume(
         raise ValueError("No readable resume text was found. Upload a text-based PDF or DOCX.")
 
     model = llm_service.get_chat_model(
-        model=settings.resume_rater_model, temperature=0, max_tokens=3_500, num_ctx=24_576
+        model=settings.resume_rater_model,
+        temperature=0,
+        max_tokens=3_500,
+        num_ctx=24_576,
+        reasoning=False,
     )
     criteria_json = rubric.model_dump_json()
     try:
