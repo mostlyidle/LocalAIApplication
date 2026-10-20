@@ -12,6 +12,7 @@ from contextlib import suppress
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import anyio
 import pymupdf
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import FileResponse
@@ -383,6 +384,7 @@ async def download_redaction_batch(
         export_paths.append(export_path)
 
     archive_path: Path | None = None
+    archive_task: asyncio.Task[None] | None = None
     try:
         with tempfile.NamedTemporaryFile(
             prefix="redaction-batch-",
@@ -391,8 +393,28 @@ async def download_redaction_batch(
             delete=False,
         ) as archive_file:
             archive_path = Path(archive_file.name)
-        await asyncio.to_thread(_write_redaction_batch_archive, export_paths, archive_path)
+        archive_task = asyncio.create_task(
+            asyncio.to_thread(_write_redaction_batch_archive, export_paths, archive_path)
+        )
+        await asyncio.shield(archive_task)
         await db.commit()
+    except asyncio.CancelledError:
+        with anyio.CancelScope(shield=True):
+            if archive_task is not None:
+                while True:
+                    try:
+                        await asyncio.shield(archive_task)
+                        break
+                    except asyncio.CancelledError:
+                        if archive_task.cancelled():
+                            break
+                    except Exception:
+                        break
+            await db.rollback()
+            if archive_path is not None:
+                with suppress(OSError):
+                    archive_path.unlink()
+        raise
     except Exception:
         await db.rollback()
         if archive_path is not None:
