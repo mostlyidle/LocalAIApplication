@@ -67,10 +67,18 @@ class RedactionPageSummary(BaseModel):
     height: float
 
 
+class RedactionFailedPage(BaseModel):
+    page_number: int
+    error: str
+    manual_reviewed: bool
+    attempts: int
+
+
 class RedactionReviewResponse(BaseModel):
     job: RedactionJobResponse
     findings: list[RedactionFinding]
     pages: list[RedactionPageSummary]
+    failed_pages: list[RedactionFailedPage] = Field(default_factory=list)
 
 
 class RedactionFindingUpdate(BaseModel):
@@ -81,3 +89,7 @@ class RedactionFindingUpdate(BaseModel):
 class RedactionManualBox(BaseModel):
     page_number: int = Field(ge=0)
     box: list[float] = Field(min_length=4, max_length=4)
+
+
+class RedactionPageAction(BaseModel):
+    page_number: int = Field(ge=0)

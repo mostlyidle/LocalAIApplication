@@ -11,12 +11,14 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pymupdf
+import structlog
 
 MAX_RENDER_PIXELS = 16_000_000
 REVIEW_DPI = 180
 REDACTION_DPI = 200
 REDACTION_MARGIN_POINTS = 1.5
 OCR_DPI = 300
+logger = structlog.get_logger(__name__)
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -50,6 +52,7 @@ class ExtractedPage:
     height: float
     text: str
     words: tuple[WordRegion, ...]
+    error: str | None = None
 
 
 def extract_native_page(page: pymupdf.Page, page_number: int) -> ExtractedPage:
@@ -176,43 +179,62 @@ async def extract_document_pages(
     ocr_service: OCRService,
     *,
     on_page: Callable[[int, int], Awaitable[bool]] | None = None,
+    page_numbers: list[int] | None = None,
 ) -> list[ExtractedPage]:
     """Extract PDF/image pages and OCR scanned or image-containing page content."""
     document = await asyncio.to_thread(pymupdf.open, source)
     pages: list[ExtractedPage] = []
     try:
-        for page_number in range(len(document)):
+        selected_pages = list(range(len(document))) if page_numbers is None else page_numbers
+        if any(page_number < 0 or page_number >= len(document) for page_number in selected_pages):
+            raise RedactionDocumentError("A requested page is outside the document.")
+        for processed_count, page_number in enumerate(selected_pages, start=1):
             page = document[page_number]
-            extracted = await asyncio.to_thread(extract_native_page, page, page_number)
-            has_images, has_widgets = await asyncio.to_thread(_page_requires_ocr, page)
-            if extracted.words and not has_images and not has_widgets:
-                pages.append(extracted)
-                if on_page is not None and not await on_page(page_number + 1, len(document)):
-                    return pages
-                continue
-
-            dpi = page_render_dpi(page, OCR_DPI)
-            pixmap = await asyncio.to_thread(
-                page.get_pixmap,
-                dpi=dpi,
-                colorspace=pymupdf.csRGB,
-                alpha=False,
-                annots=True,
-            )
-            channels = pixmap.n
-            image = np.frombuffer(pixmap.samples, dtype=np.uint8).reshape(
-                pixmap.height, pixmap.width, channels
-            )
-            detections = await ocr_service.extract_structured_image(image)
-            pages.append(
-                add_ocr_regions(
-                    extracted,
-                    detections,
-                    image_width=pixmap.width,
-                    image_height=pixmap.height,
+            try:
+                extracted = await asyncio.to_thread(extract_native_page, page, page_number)
+                has_images, has_widgets = await asyncio.to_thread(_page_requires_ocr, page)
+                if extracted.words and not has_images and not has_widgets:
+                    pages.append(extracted)
+                else:
+                    dpi = page_render_dpi(page, OCR_DPI)
+                    pixmap = await asyncio.to_thread(
+                        page.get_pixmap,
+                        dpi=dpi,
+                        colorspace=pymupdf.csRGB,
+                        alpha=False,
+                        annots=True,
+                    )
+                    channels = pixmap.n
+                    image = np.frombuffer(pixmap.samples, dtype=np.uint8).reshape(
+                        pixmap.height, pixmap.width, channels
+                    )
+                    detections = await ocr_service.extract_structured_image(image)
+                    pages.append(
+                        add_ocr_regions(
+                            extracted,
+                            detections,
+                            image_width=pixmap.width,
+                            image_height=pixmap.height,
+                        )
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "redaction_page_extraction_failed",
+                    page_number=page_number,
+                    error_type=type(exc).__name__,
                 )
-            )
-            if on_page is not None and not await on_page(page_number + 1, len(document)):
+                bounds = page.rect
+                pages.append(
+                    ExtractedPage(
+                        number=page_number,
+                        width=bounds.width,
+                        height=bounds.height,
+                        text="",
+                        words=(),
+                        error="Page extraction failed. Retry it or inspect it manually.",
+                    )
+                )
+            if on_page is not None and not await on_page(processed_count, len(document)):
                 return pages
     finally:
         await asyncio.to_thread(document.close)

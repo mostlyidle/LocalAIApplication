@@ -237,6 +237,7 @@ def page_data(page: ExtractedPage) -> dict[str, Any]:
         "width": page.width,
         "height": page.height,
         "text": page.text,
+        "error": page.error,
         "words": [
             {
                 "start": word.start,
@@ -270,4 +271,5 @@ def page_from_data(data: dict[str, Any]) -> ExtractedPage:
             )
             for word in data["words"]
         ),
+        error=(str(data["error"]) if data.get("error") is not None else None),
     )
