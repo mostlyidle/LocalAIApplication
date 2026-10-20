@@ -104,6 +104,35 @@ def _render_source_page(source_path: str, page_number: int) -> bytes:
         pdf.close()
 
 
+async def _require_renderable_source_page(
+    db: AsyncSession,
+    job: RedactionJob,
+    page_number: int,
+) -> None:
+    """Ensure an owned source page can be rendered before recovery actions.
+
+    Args:
+        db: Database session.
+        job: Owned redaction job.
+        page_number: Zero-based source page number.
+
+    Raises:
+        HTTPException: If the source page is missing or cannot be rendered.
+    """
+    document = await db.get(Document, job.document_id)
+    if document is None or document.owner_id != job.owner_id:
+        raise HTTPException(status_code=404, detail="Source document not found.")
+    try:
+        await asyncio.to_thread(_render_source_page, document.storage_path, page_number)
+    except IndexError as exc:
+        raise HTTPException(status_code=404, detail="Page not found.") from exc
+    except (OSError, RuntimeError, ValueError, pymupdf.FileDataError) as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="This page cannot be rendered. Retry processing before recovery.",
+        ) from exc
+
+
 def _job_response(job: RedactionJob, warnings: list[str] | None = None) -> RedactionJobResponse:
     return RedactionJobResponse(
         id=job.id,
@@ -128,6 +157,19 @@ def _find_failed_page(data: dict[str, Any], page_number: int) -> dict[str, Any] 
     return next(
         (item for item in data.get("failed_pages", []) if item["page_number"] == page_number),
         None,
+    )
+
+
+def _has_whole_page_redaction(data: dict[str, Any], page_number: int) -> bool:
+    page = page_from_data(data["pages"][page_number])
+    return any(
+        finding["page_number"] == page_number
+        and finding["selected"]
+        and any(
+            box[0] <= 0 and box[1] <= 0 and box[2] >= page.width and box[3] >= page.height
+            for box in finding["boxes"]
+        )
+        for finding in data["findings"]
     )
 
 
@@ -395,18 +437,7 @@ async def resolve_redaction_page_manually(
         Updated review job state.
     """
     job = await _get_owned_job(db, job_id, authenticated.account.id)
-    document = await db.get(Document, job.document_id)
-    if document is None or document.owner_id != job.owner_id:
-        raise HTTPException(status_code=404, detail="Source document not found.")
-    try:
-        await asyncio.to_thread(_render_source_page, document.storage_path, payload.page_number)
-    except IndexError as exc:
-        raise HTTPException(status_code=404, detail="Page not found.") from exc
-    except (OSError, RuntimeError, ValueError, pymupdf.FileDataError) as exc:
-        raise HTTPException(
-            status_code=409,
-            detail="This page cannot be rendered. Retry processing before manual review.",
-        ) from exc
+    await _require_renderable_source_page(db, job, payload.page_number)
     await _lock_review_job(db, job, authenticated.account.id, allowed_statuses=("review_ready",))
     data = load_job_data(job)
     failure = _find_failed_page(data, payload.page_number)
@@ -422,6 +453,57 @@ async def resolve_redaction_page_manually(
     return _job_response(job, data["warnings"])
 
 
+@router.post("/{job_id}/redact-whole-page", response_model=RedactionJobResponse)
+async def redact_failed_page_whole(
+    job_id: str,
+    payload: RedactionPageAction,
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+) -> RedactionJobResponse:
+    """Resolve an extraction failure by selecting the full page for redaction.
+
+    Args:
+        job_id: Redaction job identifier.
+        payload: Page number to redact completely.
+        authenticated: Current authenticated account.
+        db: Database session.
+
+    Returns:
+        Updated review job state.
+    """
+    job = await _get_owned_job(db, job_id, authenticated.account.id)
+    await _require_renderable_source_page(db, job, payload.page_number)
+    await _lock_review_job(db, job, authenticated.account.id, allowed_statuses=("review_ready",))
+    data = load_job_data(job)
+    failure = _find_failed_page(data, payload.page_number)
+    if failure is None:
+        raise HTTPException(status_code=404, detail="Failed page not found.")
+    page = page_from_data(data["pages"][payload.page_number])
+    box = (0.0, 0.0, page.width, page.height)
+    try:
+        boxes = validate_boxes(page, [box])
+    except RedactionDocumentError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    data["findings"].append(
+        {
+            "id": str(uuid.uuid4()),
+            "page_number": payload.page_number,
+            "category": "whole page",
+            "text": "Entire page",
+            "confidence": None,
+            "source": "manual",
+            "selected": True,
+            "boxes": [list(item) for item in boxes],
+        }
+    )
+    save_job_data(job, data)
+    job.review_revision += 1
+    job.approved_revision = None
+    await db.commit()
+    await db.refresh(job)
+    return _job_response(job, data["warnings"])
+
+
 @router.post("/{job_id}/approve", response_model=RedactionJobResponse)
 async def approve_redaction_review(
     job_id: str,
@@ -433,14 +515,19 @@ async def approve_redaction_review(
     await _lock_review_job(db, job, authenticated.account.id, revision=revision)
     _require_review_state(job)
     data = load_job_data(job)
-    if any(not item.get("manual_reviewed", False) for item in data.get("failed_pages", [])):
+    failed_pages = data.get("failed_pages", [])
+    if any(
+        not item.get("manual_reviewed", False)
+        and not _has_whole_page_redaction(data, item["page_number"])
+        for item in failed_pages
+    ):
         raise HTTPException(
             status_code=409,
-            detail="Retry or manually inspect every failed page before approving this document.",
+            detail="Retry, redact, or manually inspect every failed page before approval.",
         )
-    failed_pages = data.get("failed_pages", [])
     manual_review_is_complete = bool(failed_pages) and all(
-        item.get("manual_reviewed", False) for item in failed_pages
+        item.get("manual_reviewed", False) or _has_whole_page_redaction(data, item["page_number"])
+        for item in failed_pages
     )
     if not any(item["selected"] for item in data["findings"]) and not manual_review_is_complete:
         raise HTTPException(status_code=422, detail="Select at least one region to redact.")

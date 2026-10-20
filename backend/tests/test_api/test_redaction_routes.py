@@ -158,8 +158,8 @@ async def test_redaction_agent_catalog_task_opens_a_private_job(
         )
     )
     await db_session.commit()
-    client._transport.app.dependency_overrides[get_authenticated_session] = (
-        lambda: authenticated_test_session
+    client._transport.app.dependency_overrides[get_authenticated_session] = lambda: (
+        authenticated_test_session
     )
 
     result = await client.post(
@@ -213,6 +213,14 @@ async def test_manual_review_approval_gates_sanitized_download(
                                 "confidence": None,
                             },
                         ],
+                    }
+                ],
+                "failed_pages": [
+                    {
+                        "page_number": 0,
+                        "error": "Page extraction failed.",
+                        "manual_reviewed": False,
+                        "attempts": 1,
                     }
                 ],
                 "findings": [
@@ -271,13 +279,26 @@ async def test_manual_review_approval_gates_sanitized_download(
         json={"selected": False, "boxes": [[108, 43, 138, 64]]},
     )
     assert changed.json()["review_revision"] == 2
+    whole_page = await client.post(
+        "/api/v1/redaction-jobs/reviewable-redaction-job/redact-whole-page",
+        json={"page_number": 0},
+    )
+    assert whole_page.json()["review_revision"] == 3
+    updated_review = await client.get("/api/v1/redaction-jobs/reviewable-redaction-job/review")
+    assert updated_review.json()["failed_pages"][0]["manual_reviewed"] is False
+    assert any(
+        finding["category"] == "whole page"
+        and finding["selected"]
+        and finding["boxes"] == [[0.0, 0.0, 300.0, 400.0]]
+        for finding in updated_review.json()["findings"]
+    )
     manual = await client.post(
         "/api/v1/redaction-jobs/reviewable-redaction-job/manual-boxes",
         json={"page_number": 0, "box": [108, 43, 138, 64]},
     )
-    assert manual.json()["review_revision"] == 3
+    assert manual.json()["review_revision"] == 4
     approved = await client.post(
-        "/api/v1/redaction-jobs/reviewable-redaction-job/approve?revision=3"
+        "/api/v1/redaction-jobs/reviewable-redaction-job/approve?revision=4"
     )
     assert approved.json()["status"] == "approved"
     exported = await client.post("/api/v1/redaction-jobs/reviewable-redaction-job/export")
