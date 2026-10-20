@@ -78,6 +78,175 @@ describe("RedactionPage uploads", () => {
     ));
   });
 
+  it("uploads supported documents selected from a folder", async () => {
+    vi.mocked(api.uploadDocument)
+      .mockResolvedValueOnce(uploaded)
+      .mockResolvedValueOnce(secondUploaded);
+    const firstFile = new File(["PDF content"], "first.pdf", { type: "application/pdf" });
+    const secondFile = new File(["image content"], "second.png", { type: "image/png" });
+    Object.defineProperty(firstFile, "webkitRelativePath", { value: "redactions/first.pdf" });
+    Object.defineProperty(secondFile, "webkitRelativePath", { value: "redactions/second.png" });
+    render(<RedactionPage />);
+
+    fireEvent.change(screen.getByLabelText("Select folder of PDFs or images"), {
+      target: { files: [firstFile, secondFile] },
+    });
+
+    await waitFor(() => expect(api.uploadDocument).toHaveBeenCalledTimes(2));
+    expect(api.uploadDocument).toHaveBeenNthCalledWith(1, firstFile);
+    expect(api.uploadDocument).toHaveBeenNthCalledWith(2, secondFile);
+    expect(await screen.findByRole("checkbox", { name: uploaded.filename })).toBeChecked();
+    expect(await screen.findByRole("checkbox", { name: secondUploaded.filename })).toBeChecked();
+    expect(screen.getByLabelText("Select folder of PDFs or images")).toHaveAttribute(
+      "webkitdirectory",
+    );
+  });
+
+  it("recursively uploads supported files from a dropped folder", async () => {
+    vi.mocked(api.uploadDocument)
+      .mockResolvedValueOnce(uploaded)
+      .mockResolvedValueOnce(secondUploaded);
+    const rootFile = new File(["PDF content"], "first.pdf", { type: "application/pdf" });
+    const nestedFile = new File(["image content"], "second.png", { type: "image/png" });
+    const metadataFile = new File(["metadata"], ".DS_Store");
+    const fileEntry = (name: string, file: File): FileSystemFileEntry => ({
+      isFile: true,
+      isDirectory: false,
+      name,
+      fullPath: `/redactions/${name}`,
+      file: (callback) => callback(file),
+    }) as FileSystemFileEntry;
+    const rootFileEntry = fileEntry("first.pdf", rootFile);
+    const metadataEntry = fileEntry(".DS_Store", metadataFile);
+    const nestedFileEntry = fileEntry("second.png", nestedFile);
+    const nestedDirectory = {
+      isFile: false,
+      isDirectory: true,
+      name: "nested",
+      fullPath: "/redactions/nested",
+      createReader: () => {
+        let read = false;
+        return {
+          readEntries: (callback: (entries: FileSystemEntry[]) => void) => {
+            callback(read ? [] : [nestedFileEntry]);
+            read = true;
+          },
+        };
+      },
+    } as FileSystemDirectoryEntry;
+    const directoryEntry = {
+      isFile: false,
+      isDirectory: true,
+      name: "redactions",
+      fullPath: "/redactions",
+      createReader: () => {
+        let read = false;
+        return {
+          readEntries: (callback: (entries: FileSystemEntry[]) => void) => {
+            callback(read ? [] : [rootFileEntry, metadataEntry, nestedDirectory]);
+            read = true;
+          },
+        };
+      },
+    } as FileSystemDirectoryEntry;
+    const item = { webkitGetAsEntry: () => directoryEntry } as unknown as DataTransferItem;
+    render(<RedactionPage />);
+
+    fireEvent.drop(screen.getByTestId("redaction-upload-dropzone"), {
+      dataTransfer: { items: [item], files: [] },
+    });
+
+    await waitFor(() => expect(api.uploadDocument).toHaveBeenCalledTimes(2));
+    expect(api.uploadDocument).toHaveBeenNthCalledWith(1, rootFile);
+    expect(api.uploadDocument).toHaveBeenNthCalledWith(2, nestedFile);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Skipped 1 unsupported");
+  });
+
+  it("stops traversing a dropped folder after the batch limit", async () => {
+    const fileEntries = Array.from({ length: 21 }, (_, index) => {
+      const file = new File(["PDF content"], `document-${index}.pdf`, { type: "application/pdf" });
+      return {
+        isFile: true,
+        isDirectory: false,
+        name: file.name,
+        fullPath: `/redactions/${file.name}`,
+        file: (callback: (value: File) => void) => callback(file),
+      } as FileSystemFileEntry;
+    });
+    const directoryEntry = {
+      isFile: false,
+      isDirectory: true,
+      name: "redactions",
+      fullPath: "/redactions",
+      createReader: () => {
+        let read = false;
+        return {
+          readEntries: (callback: (entries: FileSystemEntry[]) => void) => {
+            callback(read ? [] : fileEntries);
+            read = true;
+          },
+        };
+      },
+    } as FileSystemDirectoryEntry;
+    const item = { webkitGetAsEntry: () => directoryEntry } as unknown as DataTransferItem;
+    render(<RedactionPage />);
+
+    fireEvent.drop(screen.getByTestId("redaction-upload-dropzone"), {
+      dataTransfer: { items: [item], files: [] },
+    });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Folder contains more than 20 supported documents",
+    );
+    expect(api.uploadDocument).not.toHaveBeenCalled();
+  });
+
+  it("locks document selection while a dropped folder is being read", async () => {
+    vi.mocked(api.getDocuments).mockResolvedValue({ documents: [existing] });
+    const rootFile = new File(["PDF content"], "new.pdf", { type: "application/pdf" });
+    const fileEntry = {
+      isFile: true,
+      isDirectory: false,
+      name: rootFile.name,
+      fullPath: `/redactions/${rootFile.name}`,
+      file: (callback: (value: File) => void) => callback(rootFile),
+    } as FileSystemFileEntry;
+    let deliverEntries: ((entries: FileSystemEntry[]) => void) | undefined;
+    let read = false;
+    const directoryEntry = {
+      isFile: false,
+      isDirectory: true,
+      name: "redactions",
+      fullPath: "/redactions",
+      createReader: () => ({
+        readEntries: (callback: (entries: FileSystemEntry[]) => void) => {
+          if (read) callback([]);
+          else {
+            deliverEntries = callback;
+            read = true;
+          }
+        },
+      }),
+    } as FileSystemDirectoryEntry;
+    const item = { webkitGetAsEntry: () => directoryEntry } as unknown as DataTransferItem;
+    render(<RedactionPage />);
+    const existingCheckbox = await screen.findByRole("checkbox", { name: existing.filename });
+    fireEvent.click(existingCheckbox);
+
+    fireEvent.drop(screen.getByTestId("redaction-upload-dropzone"), {
+      dataTransfer: { items: [item], files: [] },
+    });
+
+    expect(await screen.findByText("Reading folder...")).toBeInTheDocument();
+    expect(existingCheckbox).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Analyze 1 document" })).toBeDisabled();
+    expect(deliverEntries).toBeDefined();
+    deliverEntries?.([fileEntry]);
+
+    await waitFor(() => expect(api.uploadDocument).toHaveBeenCalledWith(rootFile));
+    expect(await screen.findByRole("checkbox", { name: uploaded.filename })).toBeChecked();
+  });
+
   it("shows batch progress and opens another document job", async () => {
     const firstJob = {
       id: "job-1", document_id: existing.id, batch_id: "batch-1", status: "queued",
