@@ -43,6 +43,7 @@ const CATEGORY_OPTIONS = [
 ];
 
 type DocumentRow = { id: string; filename: string; format: string };
+type Batch = Awaited<ReturnType<typeof api.getRedactionBatch>>;
 type Job = Awaited<ReturnType<typeof api.getRedactionJob>>;
 type Review = Awaited<ReturnType<typeof api.getRedactionReview>>;
 type Finding = Review["findings"][number];
@@ -62,6 +63,8 @@ export default function RedactionPage() {
   ]);
   const [customCategory, setCustomCategory] = useState("");
   const [instructions, setInstructions] = useState("");
+  const [batch, setBatch] = useState<Batch | null>(null);
+  const [batchId, setBatchId] = useState<string | null>(null);
   const [clarificationAnswer, setClarificationAnswer] = useState("");
   const [job, setJob] = useState<Job | null>(null);
   const [review, setReview] = useState<Review | null>(null);
@@ -85,6 +88,9 @@ export default function RedactionPage() {
     [review?.findings, pageNumber],
   );
   const selectedCount = review?.findings.filter((finding) => finding.selected).length ?? 0;
+  const batchReadyCount = batch?.jobs.filter((item) =>
+    ["review_ready", "approved", "exported"].includes(item.status),
+  ).length ?? 0;
   const failedPageResolutionComplete = review !== null
     && review.failed_pages.length > 0
     && review.failed_pages.every((failure) =>
@@ -111,24 +117,50 @@ export default function RedactionPage() {
   }, []);
 
   useEffect(() => {
-    const jobId = new URLSearchParams(window.location.search).get("job_id");
-    if (!jobId) return;
+    const params = new URLSearchParams(window.location.search);
+    const jobId = params.get("job_id");
+    const initialBatchId = params.get("batch_id");
     let active = true;
-    void api.getRedactionJob(jobId).then((loaded) => {
-      if (!active) return;
-      setJob(loaded);
-      if (["review_ready", "approved", "exported"].includes(loaded.status)) {
-        void api.getRedactionReview(jobId).then((loadedReview) => {
-          if (active) setReview(loadedReview);
-        }).catch((cause: unknown) => {
-          if (active) setError(cause instanceof Error ? cause.message : "Could not load review.");
-        });
-      }
-    }).catch((cause: unknown) => {
-      if (active) setError(cause instanceof Error ? cause.message : "Could not load redaction job.");
-    });
+    if (initialBatchId) {
+      setBatchId(initialBatchId);
+      void api.getRedactionBatch(initialBatchId).then((loaded) => {
+        if (active) setBatch(loaded);
+      }).catch((cause: unknown) => {
+        if (active) setError(cause instanceof Error ? cause.message : "Could not load batch.");
+      });
+    }
+    if (jobId) {
+      void api.getRedactionJob(jobId).then((loaded) => {
+        if (!active) return;
+        setJob(loaded);
+        if (["review_ready", "approved", "exported"].includes(loaded.status)) {
+          void api.getRedactionReview(jobId).then((loadedReview) => {
+            if (active) setReview(loadedReview);
+          }).catch((cause: unknown) => {
+            if (active) setError(cause instanceof Error ? cause.message : "Could not load review.");
+          });
+        }
+      }).catch((cause: unknown) => {
+        if (active) setError(cause instanceof Error ? cause.message : "Could not load redaction job.");
+      });
+    }
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    if (!batchId || !batch?.jobs.some((item) =>
+      ["queued", "processing", "exporting"].includes(item.status),
+    )) return;
+    let active = true;
+    const timeout = window.setTimeout(() => {
+      void api.getRedactionBatch(batchId).then((next) => {
+        if (active) setBatch(next);
+      }).catch((cause: unknown) => {
+        if (active) setError(cause instanceof Error ? cause.message : "Could not refresh batch status.");
+      });
+    }, 1000);
+    return () => { active = false; window.clearTimeout(timeout); };
+  }, [batch, batchId]);
 
   useEffect(() => {
     if (!job || !["queued", "processing", "exporting"].includes(job.status)) return;
@@ -230,6 +262,8 @@ export default function RedactionPage() {
       });
       const firstJob = batch.jobs[0];
       if (!firstJob) throw new Error("The batch did not create any redaction jobs.");
+      setBatch(batch);
+      setBatchId(batch.id);
       setJob(firstJob);
       window.history.replaceState(
         null,
@@ -238,6 +272,31 @@ export default function RedactionPage() {
       );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not start redaction.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openBatchJob = async (jobId: string) => {
+    if (!batchId || job?.id === jobId) return;
+    setBusy(true);
+    setError("");
+    try {
+      const selectedJob = await api.getRedactionJob(jobId);
+      setJob(selectedJob);
+      setReview(null);
+      setPageNumber(0);
+      setClarificationAnswer("");
+      window.history.replaceState(
+        null,
+        "",
+        `/redaction?job_id=${selectedJob.id}&batch_id=${batchId}`,
+      );
+      if (["review_ready", "approved", "exported"].includes(selectedJob.status)) {
+        setReview(await api.getRedactionReview(jobId));
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not open this redaction job.");
     } finally {
       setBusy(false);
     }
@@ -524,6 +583,35 @@ export default function RedactionPage() {
       </Card>}
 
       {job && <div className="space-y-5">
+        {batch && <Card className="rounded-2xl">
+          <CardHeader>
+            <CardTitle>Batch progress</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              {batchReadyCount} of {batch.jobs.length} documents ready for review or complete
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {batch.jobs.map((item) => {
+              const source = documents.find((document) => document.id === item.document_id);
+              const isCurrentJob = item.id === job.id;
+              return <div key={item.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium" title={source?.filename}>
+                    {source?.filename ?? `Document ${item.document_id.slice(0, 8)}`}
+                  </p>
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <Badge variant="secondary" className="capitalize">{item.status.replaceAll("_", " ")}</Badge>
+                    {item.page_count > 0 && <span className="text-xs text-muted-foreground">{item.pages_processed} of {item.page_count} pages</span>}
+                  </div>
+                  {item.error_message && <p className="mt-1 text-xs text-destructive">{item.error_message}</p>}
+                </div>
+                <Button type="button" size="sm" variant={isCurrentJob ? "outline" : "secondary"} disabled={busy || isCurrentJob} onClick={() => { void openBatchJob(item.id); }}>
+                  {isCurrentJob ? "Currently reviewing" : "Open"}
+                </Button>
+              </div>;
+            })}
+          </CardContent>
+        </Card>}
         <Card className="rounded-2xl">
           <CardContent className="flex flex-wrap items-center justify-between gap-4 pt-6">
             <div>
@@ -538,6 +626,8 @@ export default function RedactionPage() {
               <Button variant="ghost" onClick={() => {
                 setJob(null);
                 setReview(null);
+                setBatch(null);
+                setBatchId(null);
                 setPageNumber(0);
                 setClarificationAnswer("");
                 setError("");

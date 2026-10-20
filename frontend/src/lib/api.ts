@@ -424,6 +424,10 @@ export async function createRedactionBatch(input: {
   }, redactionBatchSchema);
 }
 
+export async function getRedactionBatch(id: string) {
+  return apiFetch(`/redaction-batches/${encodeURIComponent(id)}`, undefined, redactionBatchSchema);
+}
+
 export async function getRedactionJob(id: string) {
   return apiFetch(`/redaction-jobs/${encodeURIComponent(id)}`, undefined, redactionJobSchema);
 }
