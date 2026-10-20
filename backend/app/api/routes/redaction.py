@@ -418,7 +418,11 @@ async def approve_redaction_review(
             status_code=409,
             detail="Retry or manually inspect every failed page before approving this document.",
         )
-    if not any(item["selected"] for item in data["findings"]):
+    failed_pages = data.get("failed_pages", [])
+    manual_review_is_complete = bool(failed_pages) and all(
+        item.get("manual_reviewed", False) for item in failed_pages
+    )
+    if not any(item["selected"] for item in data["findings"]) and not manual_review_is_complete:
         raise HTTPException(status_code=422, detail="Select at least one region to redact.")
     job.approved_revision = revision
     job.status = "approved"
