@@ -6,10 +6,12 @@ import pytest
 
 from app.models.resume_rater_schemas import (
     ResumeRaterModelReport,
+    ResumeRaterModelRubric,
     ResumeRaterReport,
     ResumeRubric,
 )
 from app.services.resume_rater_agent import (
+    _normalize_rubric_weights,
     _public_report,
     prepare_resume_evidence,
     validate_report_evidence,
@@ -80,6 +82,36 @@ def _report() -> ResumeRaterReport:
 
 def test_weighted_score_uses_the_approved_rubric() -> None:
     assert weighted_score(_report(), _rubric()) == 73
+
+
+def test_model_rubric_relative_weights_normalize_to_100() -> None:
+    rubric = ResumeRaterModelRubric(
+        criteria=[
+            {
+                "id": "sql",
+                "label": "SQL experience",
+                "description": "Experience using SQL.",
+                "weight": 120,
+            },
+            {
+                "id": "python",
+                "label": "Python experience",
+                "description": "Experience using Python.",
+                "weight": 40,
+            },
+            {
+                "id": "communication",
+                "label": "Communication",
+                "description": "Communicates findings clearly.",
+                "weight": 20,
+            },
+        ]
+    )
+
+    normalized = _normalize_rubric_weights(rubric)
+
+    assert [criterion.weight for criterion in normalized.criteria] == [66, 22, 12]
+    assert sum(criterion.weight for criterion in normalized.criteria) == 100
 
 
 def test_report_quotes_must_be_present_verbatim() -> None:
