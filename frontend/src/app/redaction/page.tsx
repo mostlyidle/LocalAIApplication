@@ -83,29 +83,14 @@ export default function RedactionPage() {
     () => review?.findings.filter((finding) => finding.page_number === pageNumber) ?? [],
     [review?.findings, pageNumber],
   );
-  const isPageFullyRedacted = (failedPageNumber: number) => {
-    if (!review) return false;
-    const pageSummary = review.pages[failedPageNumber];
-    if (!pageSummary) return false;
-    return review.findings.some((finding) =>
-      finding.page_number === failedPageNumber
-      && finding.selected
-      && finding.boxes.some((box) =>
-        box[0]! <= 0
-        && box[1]! <= 0
-        && box[2]! >= pageSummary.width
-        && box[3]! >= pageSummary.height,
-      ),
-    );
-  };
   const selectedCount = review?.findings.filter((finding) => finding.selected).length ?? 0;
   const failedPageResolutionComplete = review !== null
     && review.failed_pages.length > 0
     && review.failed_pages.every((failure) =>
-      failure.manual_reviewed || isPageFullyRedacted(failure.page_number),
+      failure.manual_reviewed || failure.whole_page_redacted,
     );
   const hasUnresolvedFailedPages = review?.failed_pages.some((failure) =>
-    !failure.manual_reviewed && !isPageFullyRedacted(failure.page_number),
+    !failure.manual_reviewed && !failure.whole_page_redacted,
   ) ?? false;
   const supportedDocuments = documents.filter((document) =>
     SUPPORTED_FORMATS.includes(document.format),
@@ -568,8 +553,8 @@ export default function RedactionPage() {
                 <p className="mt-1">This page was not scanned. Inspect it, add regions, or redact the full page.</p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Button type="button" variant="outline" disabled={busy} onClick={retryPage}>Retry page</Button>
-                  {!isPageFullyRedacted(pageNumber) && <Button type="button" variant="outline" disabled={busy || !previewUrl} onClick={redactWholePage}>Redact whole page</Button>}
-                  {isPageFullyRedacted(pageNumber)
+                  {!currentPageFailure.whole_page_redacted && <Button type="button" variant="outline" disabled={busy || !previewUrl} onClick={redactWholePage}>Redact whole page</Button>}
+                  {currentPageFailure.whole_page_redacted
                     ? <Badge variant="secondary">Whole page redacted</Badge>
                     : currentPageFailure.manual_reviewed
                       ? <Badge variant="secondary">Manually inspected</Badge>

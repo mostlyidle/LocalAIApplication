@@ -21,6 +21,7 @@ from app.dependencies import get_authenticated_session, get_db
 from app.models.db_models import Document, RedactionJob
 from app.models.redaction_schemas import (
     RedactionClarification,
+    RedactionFailedPage,
     RedactionFinding,
     RedactionFindingUpdate,
     RedactionJobCreate,
@@ -278,7 +279,15 @@ async def get_redaction_review(
         RedactionPageSummary(number=index, width=page["width"], height=page["height"])
         for index, page in enumerate(data["pages"])
     ]
-    failed_pages = data.get("failed_pages", [])
+    failed_pages = [
+        RedactionFailedPage.model_validate(
+            {
+                **item,
+                "whole_page_redacted": _has_whole_page_redaction(data, item["page_number"]),
+            }
+        )
+        for item in data.get("failed_pages", [])
+    ]
     return RedactionReviewResponse(
         job=_job_response(job, warnings),
         findings=findings,

@@ -264,6 +264,7 @@ export const redactionReviewSchema = z.object({
     error: z.string(),
     manual_reviewed: z.boolean(),
     attempts: z.number(),
+    whole_page_redacted: z.boolean().default(false),
   })).default([]),
 });
 
