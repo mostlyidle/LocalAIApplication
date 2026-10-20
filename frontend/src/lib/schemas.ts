@@ -210,6 +210,95 @@ export type GitHubProjectOverview = z.infer<typeof githubProjectOverviewSchema>;
 export type GitHubPullDetail = z.infer<typeof githubPullDetailSchema>;
 export type GitHubIssueProposal = z.infer<typeof githubIssueProposalSchema>;
 
+// ---------------------------------------------------------------------------
+// Resume Rater
+// ---------------------------------------------------------------------------
+
+export const resumeRaterCriterionSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  description: z.string(),
+  weight: z.number(),
+  must_have: z.boolean(),
+});
+
+export const resumeRaterReportSchema = z.object({
+  summary: z.string(),
+  criterion_scores: z.array(z.object({
+    criterion_id: z.string(),
+    level: z.enum(["not_demonstrated", "weak", "partial", "substantial", "fully_meets"]),
+    explanation: z.string(),
+    evidence_quotes: z.array(z.string()),
+  })),
+  strengths: z.array(z.object({
+    criterion_id: z.string(),
+    text: z.string(),
+    evidence_quotes: z.array(z.string()),
+  })),
+  gaps: z.array(z.object({
+    criterion_id: z.string(),
+    text: z.string(),
+    evidence_quotes: z.array(z.string()),
+  })),
+  interview_questions: z.array(z.string()),
+  resume_suggestions: z.array(z.object({
+    text: z.string(),
+    source_quote: z.string(),
+  })),
+});
+
+export const resumeRaterAssessmentSchema = z.object({
+  id: z.string(),
+  revision_version: z.number(),
+  status: z.string(),
+  score: z.number().nullable(),
+  rank: z.number().nullable(),
+  must_haves_not_met: z.array(z.string()),
+  result: resumeRaterReportSchema.nullable(),
+  error_message: z.string().nullable(),
+  created_at: z.string(),
+  completed_at: z.string().nullable(),
+});
+
+export const resumeRaterCandidateSchema = z.object({
+  id: z.string(),
+  display_name: z.string(),
+  filename: z.string(),
+  created_at: z.string(),
+  current_assessment: resumeRaterAssessmentSchema.nullable(),
+  history: z.array(resumeRaterAssessmentSchema),
+});
+
+export const resumeRaterRevisionSchema = z.object({
+  id: z.string(),
+  version: z.number(),
+  job_posting: z.string(),
+  criteria: z.array(resumeRaterCriterionSchema).nullable(),
+  status: z.string(),
+  error_message: z.string().nullable(),
+  created_at: z.string(),
+});
+
+export const resumeRaterWorkspaceSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  current_revision: z.number(),
+  revision_status: z.string(),
+  candidate_count: z.number(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+export const resumeRaterWorkspaceDetailSchema = resumeRaterWorkspaceSchema.extend({
+  revisions: z.array(resumeRaterRevisionSchema),
+  candidates: z.array(resumeRaterCandidateSchema),
+});
+export type ResumeRaterCriterion = z.infer<typeof resumeRaterCriterionSchema>;
+export type ResumeRaterCandidate = z.infer<typeof resumeRaterCandidateSchema>;
+export type ResumeRaterRevision = z.infer<typeof resumeRaterRevisionSchema>;
+export type ResumeRaterWorkspace = z.infer<typeof resumeRaterWorkspaceSchema>;
+export type ResumeRaterWorkspaceDetail = z.infer<typeof resumeRaterWorkspaceDetailSchema>;
+
 export type MemoryRecord = z.infer<typeof memorySchema>;
 export type MemorySettings = z.infer<typeof memorySettingsSchema>;
 

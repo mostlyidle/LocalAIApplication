@@ -6,6 +6,7 @@ import {
   ArrowRight,
   ArrowUpRight,
   BrainCircuit,
+  BriefcaseBusiness,
   Database,
   FileText,
   Github,
@@ -36,6 +37,7 @@ const workspaces = [
       { title: "Meetings", description: "Capture notes and next steps", href: "/meetings", icon: Activity },
       { title: "Action Planner", description: "Keep track of what comes next", href: "/action-items", icon: ListTodo },
       { title: "GitHub Agent", description: "Explore repository work", href: "/github", icon: Github },
+      { title: "Resume Rater", description: "Compare candidates against a job rubric", href: "/resume-rater", icon: BriefcaseBusiness },
     ],
   },
   {

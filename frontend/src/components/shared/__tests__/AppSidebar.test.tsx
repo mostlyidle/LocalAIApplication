@@ -30,6 +30,7 @@ vi.mock("lucide-react", () => {
     Brain: icon,
     BrainCircuit: icon,
     Github: icon,
+    BriefcaseBusiness: icon,
     Activity: icon,
     ListTodo: icon,
     ScanEye: icon,
@@ -48,7 +49,7 @@ vi.mock("@/components/ui/sidebar", () => ({
   SidebarHeader: ({ children, ...props }: { children: React.ReactNode }) => <div {...props}>{children}</div>,
   SidebarMenu: ({ children }: { children: React.ReactNode }) => <ul>{children}</ul>,
   SidebarMenuButton: ({ children, isActive, asChild, ...props }: { children: React.ReactNode; isActive?: boolean; asChild?: boolean; [key: string]: unknown }) => (
-    <div data-active={isActive} {...props}>{children}</div>
+    <div data-active={isActive} data-as-child={asChild} {...props}>{children}</div>
   ),
   SidebarMenuItem: ({ children }: { children: React.ReactNode }) => <li>{children}</li>,
   SidebarFooter: ({ children, ...props }: { children: React.ReactNode }) => <div {...props}>{children}</div>,
@@ -95,6 +96,7 @@ describe("AppSidebar", () => {
     expect(screen.getByText("Memory")).toBeDefined();
     expect(screen.getByText("Action Planner")).toBeDefined();
     expect(screen.getByText("GitHub Agent")).toBeDefined();
+    expect(screen.getByText("Resume Rater")).toBeDefined();
     expect(screen.getByText("Settings")).toBeDefined();
   });
 
