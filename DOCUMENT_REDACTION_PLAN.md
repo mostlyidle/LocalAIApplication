@@ -2,10 +2,9 @@
 
 Date: 2026-10-19
 
-Status: Core implementation is in place on `main` through checkpoint `c612ffd` plus the
-current uncommitted integration slice. Focused backend and frontend checks pass. The
-remaining work is release hardening and representative-document calibration; this is not a
-claim that the detector finds every sensitive value.
+Status: Core redaction workflow and contextual clarification interaction are implemented on
+`main`. Remaining work is release hardening and representative-document calibration; this is
+not a claim that the detector finds every sensitive value.
 
 ## Agreed first-version behavior
 
@@ -199,13 +198,14 @@ catalogue and from the dedicated `/redaction` workspace. Source deletion removes
 job artifacts. Focused checks currently cover 107 backend cases; frontend TypeScript and
 360 tests pass.
 
-Known gaps before release: contextual instructions are not interactively clarified when
-ambiguous; failed/unreadable pages fail the job rather than offering page retry or a
-page-specific manual-resolution state; review does not yet filter by category; automated
-boxes can be deselected and resized numerically, while manual boxes can be drawn; no
-Playwright end-to-end or frozen representative evaluation corpus has run. Keep mandatory
-human review and do not claim complete PII coverage until the evaluation corpus establishes
-per-category recall and false-positive rates.
+Known gaps before release: contextual instructions can now pause for a local-model question
+and resume with the user's answer, but ambiguity detection still depends on the model response;
+failed/unreadable pages fail the job rather than offering page retry or a page-specific
+manual-resolution state; review does not yet filter by category; automated boxes can be
+deselected and resized numerically, while manual boxes can be drawn; no Playwright end-to-end
+or frozen representative evaluation corpus has run. Keep mandatory human review and do not
+claim complete PII coverage until the evaluation corpus establishes per-category recall and
+false-positive rates.
 
 ## Scope and next checkpoint
 

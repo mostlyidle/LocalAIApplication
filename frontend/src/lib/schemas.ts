@@ -241,6 +241,7 @@ export const redactionJobSchema = z.object({
   pages_processed: z.number(),
   review_revision: z.number(),
   approved_revision: z.number().nullable(),
+  clarification_question: z.string().nullable().default(null),
   error_message: z.string().nullable(),
   warnings: z.array(z.string()).default([]),
 });

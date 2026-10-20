@@ -420,6 +420,13 @@ export async function getRedactionReview(id: string) {
   return apiFetch(`/redaction-jobs/${encodeURIComponent(id)}/review`, undefined, redactionReviewSchema);
 }
 
+export async function clarifyRedactionJob(jobId: string, answer: string) {
+  return apiFetch(`/redaction-jobs/${encodeURIComponent(jobId)}/clarify`, {
+    method: "POST",
+    body: JSON.stringify({ answer }),
+  }, redactionJobSchema);
+}
+
 export async function updateRedactionFinding(
   jobId: string,
   findingId: string,
