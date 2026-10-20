@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import RedactionPage from "../page";
 import * as api from "@/lib/api";
@@ -7,10 +7,11 @@ import { MAX_FILE_SIZE } from "@/lib/constants";
 vi.mock("@/lib/api", () => ({
   getDocuments: vi.fn(),
   uploadDocument: vi.fn(),
-  createRedactionJob: vi.fn(),
+  createRedactionBatch: vi.fn(),
 }));
 
 const uploaded = { id: "uploaded-pdf", filename: "new-source.pdf", format: "pdf" };
+const secondUploaded = { id: "uploaded-pdf-2", filename: "second-source.pdf", format: "pdf" };
 const existing = {
   id: "existing-pdf",
   filename: "existing.pdf",
@@ -29,30 +30,42 @@ describe("RedactionPage uploads", () => {
   });
 
   it("selects a new upload and uses it for redaction", async () => {
-    vi.mocked(api.createRedactionJob).mockResolvedValue({
-      id: "new-job",
-      document_id: uploaded.id,
-      status: "queued",
-      page_count: 0,
-      pages_processed: 0,
-      review_revision: 0,
-      approved_revision: null,
-      clarification_question: null,
-      error_message: null,
-      warnings: [],
+    vi.mocked(api.uploadDocument)
+      .mockResolvedValueOnce(uploaded)
+      .mockResolvedValueOnce(secondUploaded);
+    vi.mocked(api.createRedactionBatch).mockResolvedValue({
+      id: "batch-1",
+      jobs: [{
+        id: "new-job",
+        document_id: uploaded.id,
+        batch_id: "batch-1",
+        status: "queued",
+        page_count: 0,
+        pages_processed: 0,
+        review_revision: 0,
+        approved_revision: null,
+        clarification_question: null,
+        error_message: null,
+        warnings: [],
+      }],
     });
     render(<RedactionPage />);
-    const file = new File(["PDF content"], uploaded.filename, { type: "application/pdf" });
+    const files = [
+      new File(["PDF content"], uploaded.filename, { type: "application/pdf" }),
+      new File(["PDF content 2"], secondUploaded.filename, { type: "application/pdf" }),
+    ];
 
-    fireEvent.change(screen.getByLabelText("Upload a PDF or image"), {
-      target: { files: [file] },
+    fireEvent.change(screen.getByLabelText("Upload PDFs or images"), {
+      target: { files },
     });
 
-    await waitFor(() => expect(screen.getByRole("combobox")).toHaveValue(uploaded.id));
-    expect(api.uploadDocument).toHaveBeenCalledWith(file);
-    fireEvent.click(screen.getByRole("button", { name: "Analyze document" }));
-    await waitFor(() => expect(api.createRedactionJob).toHaveBeenCalledWith(
-      expect.objectContaining({ document_id: uploaded.id }),
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: uploaded.filename })).toBeChecked());
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: secondUploaded.filename })).toBeChecked());
+    expect(api.uploadDocument).toHaveBeenNthCalledWith(1, files[0]);
+    expect(api.uploadDocument).toHaveBeenNthCalledWith(2, files[1]);
+    fireEvent.click(screen.getByRole("button", { name: "Analyze 2 documents" }));
+    await waitFor(() => expect(api.createRedactionBatch).toHaveBeenCalledWith(
+      expect.objectContaining({ document_ids: [uploaded.id, secondUploaded.id] }),
     ));
   });
 
@@ -61,12 +74,12 @@ describe("RedactionPage uploads", () => {
     const file = new File(["content"], kind === "unsupported" ? "report.docx" : "huge.pdf");
     if (kind === "oversized") Object.defineProperty(file, "size", { value: MAX_FILE_SIZE + 1 });
 
-    fireEvent.change(screen.getByLabelText("Upload a PDF or image"), {
+    fireEvent.change(screen.getByLabelText("Upload PDFs or images"), {
       target: { files: [file] },
     });
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      kind === "unsupported" ? "Choose a PDF or supported image" : "File too large",
+      kind === "unsupported" ? "Unsupported file" : "File too large",
     );
     expect(api.uploadDocument).not.toHaveBeenCalled();
   });
@@ -75,16 +88,16 @@ describe("RedactionPage uploads", () => {
     vi.mocked(api.getDocuments).mockResolvedValue({ documents: [existing] });
     vi.mocked(api.uploadDocument).mockRejectedValue(new Error("Upload failed. Try again."));
     render(<RedactionPage />);
-    await screen.findByRole("option", { name: existing.filename });
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: existing.id } });
+    const existingSource = await screen.findByRole("checkbox", { name: existing.filename });
+    fireEvent.click(existingSource);
 
-    fireEvent.change(screen.getByLabelText("Upload a PDF or image"), {
+    fireEvent.change(screen.getByLabelText("Upload PDFs or images"), {
       target: { files: [new File(["content"], "retry.pdf")] },
     });
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Upload failed. Try again.");
-    expect(screen.getByRole("combobox")).toHaveValue(existing.id);
-    expect(screen.getByRole("button", { name: "Analyze document" })).toBeEnabled();
+    expect(existingSource).toBeChecked();
+    expect(screen.getByRole("button", { name: "Analyze 1 document" })).toBeEnabled();
   });
 
   it("blocks source changes and analysis until the upload finishes", async () => {
@@ -92,17 +105,18 @@ describe("RedactionPage uploads", () => {
     vi.mocked(api.uploadDocument).mockImplementation(() => new Promise((resolve) => {
       finishUpload = () => resolve(uploaded);
     }));
+    vi.mocked(api.getDocuments).mockResolvedValue({ documents: [existing] });
     render(<RedactionPage />);
-    fireEvent.change(screen.getByLabelText("Upload a PDF or image"), {
+    fireEvent.change(screen.getByLabelText("Upload PDFs or images"), {
       target: { files: [new File(["content"], uploaded.filename)] },
     });
 
     expect(screen.getByRole("status")).toHaveTextContent("Uploading...");
-    expect(screen.getByRole("combobox")).toBeDisabled();
-    expect(screen.getByLabelText("Upload a PDF or image")).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Analyze document" })).toBeDisabled();
-    finishUpload();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Analyze document" })).toBeEnabled());
+    expect(await screen.findByRole("checkbox", { name: existing.filename })).toBeDisabled();
+    expect(screen.getByLabelText("Upload PDFs or images")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Analyze 0 documents" })).toBeDisabled();
+    await act(async () => finishUpload());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Analyze 1 document" })).toBeEnabled());
   });
 
   it("keeps a new upload when the initial document list arrives later", async () => {
@@ -111,15 +125,14 @@ describe("RedactionPage uploads", () => {
       finishLoading = () => resolve({ documents: [existing] });
     }));
     render(<RedactionPage />);
-    fireEvent.change(screen.getByLabelText("Upload a PDF or image"), {
+    fireEvent.change(screen.getByLabelText("Upload PDFs or images"), {
       target: { files: [new File(["content"], uploaded.filename)] },
     });
-    await waitFor(() => expect(screen.getByRole("combobox")).toHaveValue(uploaded.id));
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: uploaded.filename })).toBeChecked());
 
     finishLoading();
 
-    await screen.findByRole("option", { name: existing.filename });
-    expect(screen.getByRole("combobox")).toHaveValue(uploaded.id);
-    expect(screen.getByRole("option", { name: uploaded.filename })).toBeInTheDocument();
+    expect(await screen.findByRole("checkbox", { name: existing.filename })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: uploaded.filename })).toBeChecked();
   });
 });

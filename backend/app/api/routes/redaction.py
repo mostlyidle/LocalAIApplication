@@ -20,6 +20,8 @@ from app.config import settings
 from app.dependencies import get_authenticated_session, get_db
 from app.models.db_models import Document, RedactionJob
 from app.models.redaction_schemas import (
+    RedactionBatchCreate,
+    RedactionBatchResponse,
     RedactionClarification,
     RedactionFailedPage,
     RedactionFinding,
@@ -40,6 +42,7 @@ from app.services.redaction_documents import (
 )
 from app.services.redaction_job_worker import (
     load_job_data,
+    queue_redaction_batch_jobs,
     queue_redaction_job,
     save_job_data,
 )
@@ -50,6 +53,7 @@ if TYPE_CHECKING:
     from app.services.auth import AuthenticatedSession
 
 router = APIRouter(prefix="/redaction-jobs", tags=["Document Redaction"])
+batch_router = APIRouter(prefix="/redaction-batches", tags=["Document Redaction"])
 
 
 async def _get_owned_job(db: AsyncSession, job_id: str, owner_id: str) -> RedactionJob:
@@ -138,6 +142,7 @@ def _job_response(job: RedactionJob, warnings: list[str] | None = None) -> Redac
     return RedactionJobResponse(
         id=job.id,
         document_id=job.document_id,
+        batch_id=job.batch_id,
         status=job.status,
         page_count=job.page_count,
         pages_processed=job.pages_processed,
@@ -198,6 +203,53 @@ async def create_redaction_job(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return _job_response(job)
+
+
+@batch_router.post("", response_model=RedactionBatchResponse, status_code=202)
+@limiter.limit(settings.rate_limit_upload)
+async def create_redaction_batch(
+    request: Request,
+    payload: RedactionBatchCreate,
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+) -> RedactionBatchResponse:
+    """Queue one independently reviewable job for each owned source document.
+
+    Args:
+        request: HTTP request used by upload rate limiting.
+        payload: Source IDs and shared redaction policy.
+        authenticated: Current authenticated account.
+        db: Database session.
+
+    Returns:
+        The batch identifier and queued jobs.
+    """
+    documents = list(
+        (
+            await db.scalars(
+                select(Document).where(
+                    Document.owner_id == authenticated.account.id,
+                    Document.id.in_(payload.document_ids),
+                )
+            )
+        ).all()
+    )
+    if len(documents) != len(payload.document_ids):
+        raise HTTPException(status_code=404, detail="One or more source documents were not found.")
+    documents_by_id = {document.id: document for document in documents}
+    ordered_documents = [documents_by_id[document_id] for document_id in payload.document_ids]
+    try:
+        batch_id, jobs = await queue_redaction_batch_jobs(
+            db, ordered_documents, authenticated.account.id, payload
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=410, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return RedactionBatchResponse(
+        id=batch_id,
+        jobs=[_job_response(job) for job in jobs],
+    )
 
 
 @router.get("/{job_id}", response_model=RedactionJobResponse)

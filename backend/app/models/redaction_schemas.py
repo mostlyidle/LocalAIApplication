@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from pydantic import BaseModel, Field, field_validator
 
 from app.services.redaction_detector import DEFAULT_CATEGORIES
 
 
-class RedactionJobCreate(BaseModel):
-    document_id: str = Field(min_length=36, max_length=36)
+class RedactionPolicy(BaseModel):
+    """Shared redaction choices applied to one or more documents."""
+
     categories: list[str] = Field(default_factory=lambda: list(DEFAULT_CATEGORIES), max_length=20)
     instructions: str = Field(default="", max_length=2_000)
 
@@ -22,6 +25,27 @@ class RedactionJobCreate(BaseModel):
             raise ValueError("Choose at least one redaction category.")
         if any(len(value) > 100 for value in normalized):
             raise ValueError("Redaction category labels must be at most 100 characters.")
+        return normalized
+
+
+class RedactionJobCreate(RedactionPolicy):
+    document_id: str = Field(min_length=36, max_length=36)
+
+
+class RedactionBatchCreate(RedactionPolicy):
+    """Create one queued redaction job for each selected source document."""
+
+    document_ids: list[str] = Field(min_length=1, max_length=20)
+
+    @field_validator("document_ids")
+    @classmethod
+    def validate_document_ids(cls, values: list[str]) -> list[str]:
+        try:
+            normalized = [str(UUID(value)) for value in values]
+        except ValueError as exc:
+            raise ValueError("Document IDs must be valid UUIDs.") from exc
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("A document can only appear once in a batch.")
         return normalized
 
 
@@ -40,6 +64,7 @@ class RedactionClarification(BaseModel):
 class RedactionJobResponse(BaseModel):
     id: str
     document_id: str
+    batch_id: str | None = None
     status: str
     page_count: int
     pages_processed: int
@@ -48,6 +73,13 @@ class RedactionJobResponse(BaseModel):
     error_message: str | None
     clarification_question: str | None = None
     warnings: list[str] = Field(default_factory=list)
+
+
+class RedactionBatchResponse(BaseModel):
+    """A batch identifier and its independently reviewable redaction jobs."""
+
+    id: str
+    jobs: list[RedactionJobResponse]
 
 
 class RedactionFinding(BaseModel):

@@ -236,6 +236,7 @@ export const documentListSchema = z.array(z.object({
 export const redactionJobSchema = z.object({
   id: z.string(),
   document_id: z.string(),
+  batch_id: z.string().nullable().default(null),
   status: z.string(),
   page_count: z.number(),
   pages_processed: z.number(),
@@ -244,6 +245,11 @@ export const redactionJobSchema = z.object({
   clarification_question: z.string().nullable().default(null),
   error_message: z.string().nullable(),
   warnings: z.array(z.string()).default([]),
+});
+
+export const redactionBatchSchema = z.object({
+  id: z.string(),
+  jobs: z.array(redactionJobSchema).min(1),
 });
 
 export const redactionReviewSchema = z.object({

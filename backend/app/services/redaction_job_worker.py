@@ -33,7 +33,7 @@ from app.services.redaction_documents import (
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
 
-    from app.models.redaction_schemas import RedactionJobCreate
+    from app.models.redaction_schemas import RedactionJobCreate, RedactionPolicy
     from app.services.ocr import OCRService
 
 logger = structlog.get_logger(__name__)
@@ -279,6 +279,58 @@ async def queue_redaction_job(
     request: RedactionJobCreate,
 ) -> RedactionJob:
     """Validate an owned source and persist a queued redaction job."""
+    job = await _build_redaction_job(document, owner_id, request)
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
+    return job
+
+
+async def queue_redaction_batch_jobs(
+    db: AsyncSession,
+    documents: list[Document],
+    owner_id: str,
+    request: RedactionPolicy,
+) -> tuple[str, list[RedactionJob]]:
+    """Create one atomic batch of queued jobs for the selected documents.
+
+    Args:
+        db: Database session.
+        documents: Sources selected for the batch.
+        owner_id: Account that owns every source.
+        request: Shared categories and instructions.
+
+    Returns:
+        Batch ID and its queued jobs.
+    """
+    if not documents or len(documents) > 20:
+        raise ValueError("Choose between 1 and 20 source documents.")
+    if len({document.id for document in documents}) != len(documents):
+        raise ValueError("A document can only appear once in a batch.")
+    batch_id = str(uuid.uuid4())
+    jobs: list[RedactionJob] = []
+    try:
+        for document in documents:
+            jobs.append(await _build_redaction_job(document, owner_id, request, batch_id=batch_id))
+        db.add_all(jobs)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        for job in jobs:
+            with suppress(OSError, ValueError):
+                cleanup_redaction_job_artifacts(job.job_dir, owner_id)
+        raise
+    return batch_id, jobs
+
+
+async def _build_redaction_job(
+    document: Document,
+    owner_id: str,
+    request: RedactionPolicy,
+    *,
+    batch_id: str | None = None,
+) -> RedactionJob:
+    """Validate a source and prepare its private queued-job directory."""
     if document.owner_id != owner_id:
         raise ValueError("Source document is not owned by this account.")
     if document.format not in SUPPORTED_SOURCE_FORMATS:
@@ -297,14 +349,12 @@ async def queue_redaction_job(
         id=job_id,
         owner_id=owner_id,
         document_id=document.id,
+        batch_id=batch_id,
         instructions=request.instructions.strip(),
         categories_json=json.dumps(request.categories),
         source_sha256=digest,
         job_dir=str(job_dir),
     )
-    db.add(job)
-    await db.commit()
-    await db.refresh(job)
     return job
 
 
