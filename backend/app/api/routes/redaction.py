@@ -16,7 +16,6 @@ import pymupdf
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 from sqlalchemy import select, update
-from starlette.background import BackgroundTask
 
 from app.api.middleware.rate_limiting import limiter
 from app.config import settings
@@ -52,11 +51,23 @@ from app.services.redaction_job_worker import (
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
+    from starlette.types import Receive, Scope, Send
 
     from app.services.auth import AuthenticatedSession
 
 router = APIRouter(prefix="/redaction-jobs", tags=["Document Redaction"])
 batch_router = APIRouter(prefix="/redaction-batches", tags=["Document Redaction"])
+
+
+class _TemporaryArchiveResponse(FileResponse):
+    """Remove a private archive even when streaming is interrupted."""
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            with suppress(OSError):
+                Path(self.path).unlink(missing_ok=True)
 
 
 async def _get_owned_job(db: AsyncSession, job_id: str, owner_id: str) -> RedactionJob:
@@ -336,6 +347,27 @@ async def download_redaction_batch(
             detail="Export every current review in the batch before downloading the ZIP.",
         )
 
+    locked = await db.execute(
+        update(RedactionJob)
+        .where(
+            RedactionJob.batch_id == batch_id,
+            RedactionJob.owner_id == authenticated.account.id,
+            RedactionJob.status == "exported",
+            RedactionJob.approved_revision == RedactionJob.review_revision,
+        )
+        .values(
+            review_revision=RedactionJob.review_revision,
+            updated_at=RedactionJob.updated_at,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if locked.rowcount != len(jobs):
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="A batch review changed before the ZIP could be prepared.",
+        )
+
     redaction_root = (settings.upload_path / "redaction-jobs").resolve()
     owner_dir = (redaction_root / authenticated.account.id).resolve()
     if owner_dir.parent != redaction_root or not owner_dir.is_dir():
@@ -360,18 +392,19 @@ async def download_redaction_batch(
         ) as archive_file:
             archive_path = Path(archive_file.name)
         await asyncio.to_thread(_write_redaction_batch_archive, export_paths, archive_path)
+        await db.commit()
     except Exception:
+        await db.rollback()
         if archive_path is not None:
             with suppress(OSError):
                 archive_path.unlink()
         raise
 
-    return FileResponse(
+    return _TemporaryArchiveResponse(
         archive_path,
         media_type="application/zip",
         filename="redacted-documents.zip",
         headers={"Cache-Control": "no-store"},
-        background=BackgroundTask(archive_path.unlink, missing_ok=True),
     )
 
 

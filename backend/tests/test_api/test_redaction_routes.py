@@ -11,6 +11,7 @@ from io import BytesIO
 from typing import TYPE_CHECKING
 
 import pymupdf
+import pytest
 from sqlalchemy import select
 
 from app.models.db_models import Account, AccountSession, Document, RedactionJob
@@ -22,6 +23,7 @@ if TYPE_CHECKING:
     from httpx import AsyncClient
     from pytest import MonkeyPatch
     from sqlalchemy.ext.asyncio import AsyncSession
+    from starlette.types import Message, Scope
 
 
 def _principal(account: Account) -> AuthenticatedSession:
@@ -333,6 +335,44 @@ async def test_redaction_batch_download_requires_current_exports_and_hides_sourc
     jobs[1].status = "review_ready"
     await db_session.commit()
     assert (await client.get(f"/api/v1/redaction-batches/{batch_id}/download")).status_code == 409
+
+
+async def test_redaction_batch_archive_is_removed_when_response_send_fails(tmp_path: Path) -> None:
+    import app.api.routes.redaction as redaction_routes
+
+    archive_path = tmp_path / "temporary-redaction-batch.zip"
+    archive_path.write_bytes(b"archive")
+    response = redaction_routes._TemporaryArchiveResponse(
+        archive_path,
+        media_type="application/zip",
+        filename="redacted-documents.zip",
+    )
+    scope: Scope = {
+        "type": "http",
+        "asgi": {"version": "3.0", "spec_version": "2.4"},
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "http",
+        "path": "/download",
+        "raw_path": b"/download",
+        "query_string": b"",
+        "root_path": "",
+        "headers": [],
+        "client": ("test", 1),
+        "server": ("test", 80),
+    }
+
+    async def receive() -> Message:
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message: Message) -> None:
+        if message["type"] == "http.response.body":
+            raise RuntimeError("Client disconnected.")
+
+    with pytest.raises(RuntimeError, match="Client disconnected"):
+        await response(scope, receive, send)
+
+    assert not archive_path.exists()
 
 
 async def test_redaction_agent_catalog_task_opens_a_private_job(
