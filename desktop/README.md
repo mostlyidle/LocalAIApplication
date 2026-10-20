@@ -92,8 +92,7 @@ Meeting transcription uses `faster-whisper` with CPU `int8`, English, and built-
 model must be provisioned before a meeting and before an offline run:
 
 - Provide an existing local CTranslate2 model directory named exactly `small.en`.
-- Set `ASR_MODEL_DIR` to that directory's **absolute** path in `backend/.env` (for example,
-  `/absolute/path/to/small.en`).
+- Set `ASR_MODEL_DIR` to the absolute path of that directory in `backend/.env`.
 - Keep `ASR_MODEL_NAME=small.en`.
 - Provision/copy the complete model artifact outside the meeting runtime. Do not point at a
   relative path, a model name, or a parent directory.

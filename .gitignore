@@ -31,6 +31,12 @@ out/
 !.env.example
 .env.*.local
 
+# Private keys and certificate bundles
+*.pem
+*.key
+*.p12
+*.pfx
+
 # Data (local runtime data, not committed)
 data/
 *.db
@@ -71,6 +77,11 @@ logs/
 
 # Documentation directory
 /docs/
+/REVIEW_FIXES.md
+
+# Generated redaction samples can contain PII-shaped data
+/output/pdf/redaction-*.pdf
 
 # Local orchestration state
+.hallmark/
 .slim/deepwork/

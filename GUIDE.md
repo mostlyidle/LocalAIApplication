@@ -174,7 +174,7 @@ Set the resulting **absolute** path in `backend/.env` (quote paths containing
 spaces if exporting them in a shell):
 
 ```dotenv
-ASR_MODEL_DIR=/absolute/path/to/small.en
+ASR_MODEL_DIR="/absolute/path/to/small.en"
 ASR_MODEL_NAME=small.en
 ```
 
@@ -188,7 +188,7 @@ do not provision this ASR artifact.
 Check the path before starting anything:
 
 ```bash
-ASR_MODEL_DIR="/absolute/path/to/small.en"
+ASR_MODEL_DIR="$HOME/Library/Application Support/LocalAIApplication/models/small.en"
 test -d "$ASR_MODEL_DIR" && test "$(basename "$ASR_MODEL_DIR")" = "small.en" \
   && printf 'ASR directory found: %s\n' "$ASR_MODEL_DIR"
 ```
