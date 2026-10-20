@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import tempfile
 import uuid
+import zipfile
 from contextlib import suppress
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -14,6 +16,7 @@ import pymupdf
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 from sqlalchemy import select, update
+from starlette.background import BackgroundTask
 
 from app.api.middleware.rate_limiting import limiter
 from app.config import settings
@@ -154,6 +157,13 @@ def _job_response(job: RedactionJob, warnings: list[str] | None = None) -> Redac
     )
 
 
+def _write_redaction_batch_archive(export_paths: list[Path], archive_path: Path) -> None:
+    """Write exported PDFs with neutral names into a batch ZIP."""
+    with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_STORED) as archive:
+        for index, export_path in enumerate(export_paths, start=1):
+            archive.write(export_path, arcname=f"redacted-document-{index:03}.pdf")
+
+
 def _review_payload(job: RedactionJob) -> tuple[list[RedactionFinding], list[str]]:
     data = load_job_data(job)
     return [RedactionFinding.model_validate(item) for item in data["findings"]], data["warnings"]
@@ -285,6 +295,83 @@ async def get_redaction_batch(
     return RedactionBatchResponse(
         id=batch_id,
         jobs=[_job_response(job) for job in jobs],
+    )
+
+
+@batch_router.get("/{batch_id}/download")
+async def download_redaction_batch(
+    batch_id: str,
+    authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+) -> FileResponse:
+    """Download every current exported PDF in an owned batch as a ZIP.
+
+    Args:
+        batch_id: Identifier shared by the batch's redaction jobs.
+        authenticated: Current authenticated account.
+        db: Database session.
+
+    Returns:
+        A private, temporary ZIP containing the sanitized PDFs.
+    """
+    jobs = list(
+        (
+            await db.scalars(
+                select(RedactionJob)
+                .where(
+                    RedactionJob.batch_id == batch_id,
+                    RedactionJob.owner_id == authenticated.account.id,
+                )
+                .order_by(RedactionJob.created_at, RedactionJob.id)
+            )
+        ).all()
+    )
+    if not jobs:
+        raise HTTPException(status_code=404, detail="Redaction batch not found.")
+    if any(
+        job.status != "exported" or job.approved_revision != job.review_revision for job in jobs
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Export every current review in the batch before downloading the ZIP.",
+        )
+
+    redaction_root = (settings.upload_path / "redaction-jobs").resolve()
+    owner_dir = (redaction_root / authenticated.account.id).resolve()
+    if owner_dir.parent != redaction_root or not owner_dir.is_dir():
+        raise HTTPException(status_code=404, detail="Redacted batch files are unavailable.")
+    export_paths = []
+    for job in jobs:
+        job_dir = Path(job.job_dir).resolve()
+        if job_dir.parent != owner_dir:
+            raise HTTPException(status_code=404, detail="Redacted batch files are unavailable.")
+        export_path = (job_dir / "redacted.pdf").resolve()
+        if export_path.parent != job_dir or not export_path.is_file():
+            raise HTTPException(status_code=409, detail="An exported PDF is unavailable.")
+        export_paths.append(export_path)
+
+    archive_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            prefix="redaction-batch-",
+            suffix=".zip",
+            dir=owner_dir,
+            delete=False,
+        ) as archive_file:
+            archive_path = Path(archive_file.name)
+        await asyncio.to_thread(_write_redaction_batch_archive, export_paths, archive_path)
+    except Exception:
+        if archive_path is not None:
+            with suppress(OSError):
+                archive_path.unlink()
+        raise
+
+    return FileResponse(
+        archive_path,
+        media_type="application/zip",
+        filename="redacted-documents.zip",
+        headers={"Cache-Control": "no-store"},
+        background=BackgroundTask(archive_path.unlink, missing_ok=True),
     )
 
 

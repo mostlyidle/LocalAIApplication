@@ -428,6 +428,17 @@ export async function getRedactionBatch(id: string) {
   return apiFetch(`/redaction-batches/${encodeURIComponent(id)}`, undefined, redactionBatchSchema);
 }
 
+export async function downloadRedactionBatch(id: string) {
+  const response = await fetch(
+    `${API_V1}/redaction-batches/${encodeURIComponent(id)}/download`,
+    { credentials: "include" },
+  );
+  if (!response.ok) throw new Error("Could not download the redacted batch.");
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] ?? "redacted-documents.zip";
+  return { blob: await response.blob(), filename };
+}
+
 export async function getRedactionJob(id: string) {
   return apiFetch(`/redaction-jobs/${encodeURIComponent(id)}`, undefined, redactionJobSchema);
 }

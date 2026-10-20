@@ -209,12 +209,17 @@ false-positive rates.
 
 ## Scope and next checkpoint
 
+Batch support now accepts up to 20 owned documents with one shared policy, creates an
+independent review job for each, shows per-document progress, and offers a ZIP after every
+current review has been exported. Review and export remain per document; unattended batch
+export is not supported.
+
 Deferred: Office document inputs, multilingual automatic detection, automatic handwriting/
-face/signature/barcode interpretation, batch jobs, unattended export, searchable output,
-and sanitizing existing originals or RAG indexes.
+face/signature/barcode interpretation, unattended export, searchable output, and sanitizing
+existing originals or RAG indexes.
 
 The next checkpoint is release hardening: resolve the known gaps that affect review safety,
 then run the frozen synthetic and representative evaluation corpus offline and inspect
 saved exports for leakage. Office documents, multilingual detection, automatic
-handwriting/face/signature/barcode interpretation, batch jobs, unattended export, searchable
-output, and sanitizing existing originals or RAG indexes remain deferred.
+handwriting/face/signature/barcode interpretation, unattended export, searchable output, and
+sanitizing existing originals or RAG indexes remain deferred.
