@@ -13,6 +13,7 @@ import {
   ListTodo,
   Github,
   ScanEye,
+  BriefcaseBusiness,
 } from "lucide-react";
 import {
   Sidebar,
@@ -43,6 +44,7 @@ const navGroups = [
     { title: "Meetings", href: "/meetings", icon: Activity },
     { title: "Action Planner", href: "/action-items", icon: ListTodo },
     { title: "GitHub Agent", href: "/github", icon: Github },
+    { title: "Resume Rater", href: "/resume-rater", icon: BriefcaseBusiness },
     { title: "Memory", href: "/memory", icon: BrainCircuit },
   ] },
   { title: "Personalize", items: [{ title: "Settings", href: "/settings", icon: Settings }] },

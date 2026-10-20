@@ -22,6 +22,7 @@ setup: ## Install all dependencies and pull Ollama models
 	@echo "==> Pulling Ollama models..."
 	ollama pull laya:latest
 	ollama pull llama3.1:8b
+	ollama pull qwen3.5:9b-q4_K_M
 	ollama pull qwen2.5:7b
 	ollama pull qwen3-vl:4b
 	ollama pull qwen2.5-coder:7b

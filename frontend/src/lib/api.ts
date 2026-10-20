@@ -36,6 +36,10 @@ import {
   actionItemSchema,
   actionItemProposalSchema,
   meetingSourceListSchema,
+  resumeRaterAssessmentSchema,
+  resumeRaterRevisionSchema,
+  resumeRaterWorkspaceDetailSchema,
+  resumeRaterWorkspaceSchema,
   githubConnectionSchema,
   githubAuthorizationSchema,
   githubRepositoryListSchema,
@@ -672,6 +676,151 @@ export async function deleteRAGContainer(name: string) {
     `/rag/containers/${encodeURIComponent(name)}`,
     { method: "DELETE" },
     deleteResultSchema,
+  );
+}
+
+// --- Resume Rater ---
+export async function getResumeRaterWorkspaces() {
+  return apiFetch("/resume-rater/workspaces", undefined, z.array(resumeRaterWorkspaceSchema));
+}
+
+export async function createResumeRaterWorkspace(input: { title: string; job_posting: string }) {
+  return apiFetch("/resume-rater/workspaces", {
+    method: "POST",
+    body: JSON.stringify(input),
+  }, resumeRaterWorkspaceDetailSchema);
+}
+
+export async function getResumeRaterWorkspace(workspaceId: string) {
+  return apiFetch(
+    `/resume-rater/workspaces/${encodeURIComponent(workspaceId)}`,
+    undefined,
+    resumeRaterWorkspaceDetailSchema,
+  );
+}
+
+export async function createResumeRaterRevision(workspaceId: string, jobPosting: string) {
+  return apiFetch(
+    `/resume-rater/workspaces/${encodeURIComponent(workspaceId)}/revisions`,
+    { method: "POST", body: JSON.stringify({ job_posting: jobPosting }) },
+    resumeRaterRevisionSchema,
+  );
+}
+
+export async function updateResumeRaterRubric(
+  workspaceId: string,
+  version: number,
+  criteria: Array<{
+    id: string;
+    label: string;
+    description: string;
+    weight: number;
+    must_have: boolean;
+  }>,
+) {
+  return apiFetch(
+    `/resume-rater/workspaces/${encodeURIComponent(workspaceId)}/revisions/${version}/rubric`,
+    { method: "PUT", body: JSON.stringify({ criteria }) },
+    resumeRaterRevisionSchema,
+  );
+}
+
+export async function approveResumeRaterRubric(workspaceId: string, version: number) {
+  return apiFetch(
+    `/resume-rater/workspaces/${encodeURIComponent(workspaceId)}/revisions/${version}/approve`,
+    { method: "POST" },
+    resumeRaterRevisionSchema,
+  );
+}
+
+export async function retryResumeRaterRubric(workspaceId: string, version: number) {
+  return apiFetch(
+    `/resume-rater/workspaces/${encodeURIComponent(workspaceId)}/revisions/${version}/retry`,
+    { method: "POST" },
+    resumeRaterRevisionSchema,
+  );
+}
+
+export async function cancelResumeRaterRubric(workspaceId: string, version: number) {
+  return apiFetch(
+    `/resume-rater/workspaces/${encodeURIComponent(workspaceId)}/revisions/${version}/cancel`,
+    { method: "POST" },
+    z.object({ status: z.literal("cancelled") }),
+  );
+}
+
+export async function uploadResumeRaterCandidates(workspaceId: string, files: File[]) {
+  const formData = new FormData();
+  for (const file of files) formData.append("files", file, file.name);
+  const csrfToken = getCsrfToken();
+  const response = await fetch(
+    `${API_V1}/resume-rater/workspaces/${encodeURIComponent(workspaceId)}/candidates`,
+    {
+      method: "POST",
+      body: formData,
+      credentials: "include",
+      headers: csrfToken ? { "X-CSRF-Token": csrfToken } : {},
+    },
+  );
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new ApiError(
+      body?.error?.code ?? "UPLOAD_ERROR",
+      body?.error?.message ?? body?.detail ?? response.statusText,
+      response.status,
+    );
+  }
+  return resumeRaterWorkspaceDetailSchema.parse(await response.json());
+}
+
+export async function renameResumeRaterCandidate(
+  workspaceId: string,
+  candidateId: string,
+  displayName: string,
+) {
+  return apiFetch(
+    `/resume-rater/workspaces/${encodeURIComponent(workspaceId)}/candidates/${encodeURIComponent(candidateId)}`,
+    { method: "PATCH", body: JSON.stringify({ display_name: displayName }) },
+    z.object({
+      id: z.string(),
+      display_name: z.string(),
+      filename: z.string(),
+      created_at: z.string(),
+      current_assessment: resumeRaterAssessmentSchema.nullable(),
+      history: z.array(resumeRaterAssessmentSchema),
+    }),
+  );
+}
+
+export async function retryResumeRaterCandidate(workspaceId: string, candidateId: string) {
+  return apiFetch(
+    `/resume-rater/workspaces/${encodeURIComponent(workspaceId)}/candidates/${encodeURIComponent(candidateId)}/retry`,
+    { method: "POST" },
+    resumeRaterAssessmentSchema,
+  );
+}
+
+export async function cancelResumeRaterCandidate(workspaceId: string, candidateId: string) {
+  return apiFetch(
+    `/resume-rater/workspaces/${encodeURIComponent(workspaceId)}/candidates/${encodeURIComponent(candidateId)}/cancel`,
+    { method: "POST" },
+    z.object({ status: z.literal("cancelled") }),
+  );
+}
+
+export async function deleteResumeRaterCandidate(workspaceId: string, candidateId: string) {
+  return apiFetch(
+    `/resume-rater/workspaces/${encodeURIComponent(workspaceId)}/candidates/${encodeURIComponent(candidateId)}`,
+    { method: "DELETE" },
+    z.object({ status: z.literal("deleted") }),
+  );
+}
+
+export async function deleteResumeRaterWorkspace(workspaceId: string) {
+  return apiFetch(
+    `/resume-rater/workspaces/${encodeURIComponent(workspaceId)}`,
+    { method: "DELETE" },
+    z.object({ status: z.literal("deleted") }),
   );
 }
 

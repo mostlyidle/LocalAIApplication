@@ -128,6 +128,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         run_redaction_worker(app.state.redaction_worker_stop),
         name="redaction-worker",
     )
+    from app.services.resume_rater_worker import run_resume_rater_worker
+
+    app.state.resume_rater_worker_stop = asyncio.Event()
+    app.state.resume_rater_worker_task = asyncio.create_task(
+        run_resume_rater_worker(app.state.resume_rater_worker_stop),
+        name="resume-rater-worker",
+    )
 
     reconciled_meetings = await meeting_service.reconcile_active_meetings()
     logger.info("meeting_startup_reconciliation_complete", count=reconciled_meetings)
@@ -169,6 +176,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except TimeoutError:
         app.state.redaction_worker_task.cancel()
         await asyncio.gather(app.state.redaction_worker_task, return_exceptions=True)
+    app.state.resume_rater_worker_stop.set()
+    try:
+        await asyncio.wait_for(app.state.resume_rater_worker_task, timeout=5)
+    except TimeoutError:
+        app.state.resume_rater_worker_task.cancel()
+        await asyncio.gather(app.state.resume_rater_worker_task, return_exceptions=True)
 
     await mcp_client.close()
     await app.state.laya_rag_service.close()
@@ -217,6 +230,7 @@ def create_app() -> FastAPI:
         rag,
         rag_containers,
         redaction,
+        resume_rater,
         sql,
         tasks,
         tools,
@@ -228,6 +242,7 @@ def create_app() -> FastAPI:
     app.include_router(documents.router, prefix="/api/v1", tags=["Documents"])
     app.include_router(redaction.router, prefix="/api/v1")
     app.include_router(redaction.batch_router, prefix="/api/v1")
+    app.include_router(resume_rater.router, prefix="/api/v1")
     app.include_router(sql.router, prefix="/api/v1", tags=["SQL"])
     app.include_router(rag.router, prefix="/api/v1", tags=["RAG"])
     app.include_router(rag_containers.router, prefix="/api/v1")

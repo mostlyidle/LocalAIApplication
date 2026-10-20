@@ -28,6 +28,7 @@ const pageTitles: Record<string, string> = {
   "/memory": "Memory",
   "/action-items": "Action Planner",
   "/github": "GitHub Project Agent",
+  "/resume-rater": "Resume Rater",
   "/settings": "Settings",
 };
 

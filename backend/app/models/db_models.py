@@ -461,6 +461,117 @@ class Document(Base):
     )
 
 
+class ResumeRaterWorkspace(Base):
+    """Private hiring workspace for one job posting and its candidate pool."""
+
+    __tablename__ = "resume_rater_workspaces"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
+    owner_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("accounts.id", ondelete="CASCADE"), index=True
+    )
+    title: Mapped[str] = mapped_column(String(255))
+    current_revision: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
+
+class ResumeRaterRevision(Base):
+    """Immutable job posting and approved scoring rubric revision."""
+
+    __tablename__ = "resume_rater_revisions"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "version", name="uq_resume_rater_revision_version"),
+        Index("ix_resume_rater_revisions_workspace_status", "workspace_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("resume_rater_workspaces.id", ondelete="CASCADE"), index=True
+    )
+    version: Mapped[int] = mapped_column(Integer)
+    job_posting: Mapped[str] = mapped_column(Text)
+    criteria_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(24), index=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
+class ResumeRaterCandidate(Base):
+    """One candidate and the private resume file supplied for a workspace."""
+
+    __tablename__ = "resume_rater_candidates"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "content_sha256", name="uq_resume_rater_candidate_file"),
+        Index("ix_resume_rater_candidates_workspace", "workspace_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("resume_rater_workspaces.id", ondelete="CASCADE"), index=True
+    )
+    display_name: Mapped[str] = mapped_column(String(255))
+    filename: Mapped[str] = mapped_column(String(255))
+    resume_path: Mapped[str] = mapped_column(String(1_024))
+    content_sha256: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
+class ResumeRaterAssessment(Base):
+    """Versioned, reviewable result for one candidate and one rubric revision."""
+
+    __tablename__ = "resume_rater_assessments"
+    __table_args__ = (
+        UniqueConstraint("candidate_id", "revision_id", name="uq_resume_rater_assessment_version"),
+        Index("ix_resume_rater_assessments_revision_status", "revision_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("resume_rater_workspaces.id", ondelete="CASCADE"), index=True
+    )
+    candidate_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("resume_rater_candidates.id", ondelete="CASCADE"), index=True
+    )
+    revision_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("resume_rater_revisions.id", ondelete="CASCADE"), index=True
+    )
+    status: Mapped[str] = mapped_column(String(24), default="queued", index=True)
+    score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class ResumeRaterTask(Base):
+    """Durable queue item for drafting a rubric or rating one resume."""
+
+    __tablename__ = "resume_rater_tasks"
+    __table_args__ = (
+        Index("ix_resume_rater_tasks_status_created", "status", "created_at"),
+        Index("ix_resume_rater_tasks_workspace", "workspace_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=_generate_uuid)
+    workspace_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("resume_rater_workspaces.id", ondelete="CASCADE"), index=True
+    )
+    revision_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("resume_rater_revisions.id", ondelete="CASCADE"), index=True
+    )
+    assessment_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("resume_rater_assessments.id", ondelete="CASCADE"), nullable=True
+    )
+    kind: Mapped[str] = mapped_column(String(16))
+    status: Mapped[str] = mapped_column(String(16), default="queued", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+
 class RedactionJob(Base):
     """Account-owned review state for a local document redaction run."""
 

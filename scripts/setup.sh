@@ -74,6 +74,7 @@ fi
 MODELS=(
     "laya:latest"
     "llama3.1:8b"
+    "qwen3.5:9b-q4_K_M"
     "nomic-embed-text"
     "qwen2.5:7b"
     "qwen3-vl:4b"

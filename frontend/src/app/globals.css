@@ -166,3 +166,37 @@
     min-width: 44px;
   }
 }
+
+@media print {
+  body:has(.resume-rater-page) {
+    background: white !important;
+    color: black !important;
+  }
+
+  body:has(.resume-rater-page) [data-slot="sidebar"],
+  body:has(.resume-rater-page) [data-slot="sidebar-gap"],
+  body:has(.resume-rater-page) .studio-surface > header,
+  body:has(.resume-rater-page) .resume-rater-no-print {
+    display: none !important;
+  }
+
+  body:has(.resume-rater-page) [data-slot="sidebar-wrapper"],
+  body:has(.resume-rater-page) .studio-surface,
+  body:has(.resume-rater-page) #main-content {
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+  }
+
+  .resume-rater-page {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+
+  .resume-rater-page [data-slot="card"] {
+    break-inside: avoid;
+    box-shadow: none !important;
+  }
+}
