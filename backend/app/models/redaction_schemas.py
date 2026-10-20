@@ -68,6 +68,8 @@ class RedactionPageSummary(BaseModel):
 
 
 class RedactionFailedPage(BaseModel):
+    """A page whose text extraction needs retry or manual inspection."""
+
     page_number: int
     error: str
     manual_reviewed: bool
@@ -92,4 +94,6 @@ class RedactionManualBox(BaseModel):
 
 
 class RedactionPageAction(BaseModel):
+    """Identify the document page targeted by a recovery action."""
+
     page_number: int = Field(ge=0)

@@ -84,6 +84,9 @@ export default function RedactionPage() {
     [review?.findings, pageNumber],
   );
   const selectedCount = review?.findings.filter((finding) => finding.selected).length ?? 0;
+  const manualInspectionComplete = review !== null
+    && review.failed_pages.length > 0
+    && review.failed_pages.every((failure) => failure.manual_reviewed);
   const supportedDocuments = documents.filter((document) =>
     SUPPORTED_FORMATS.includes(document.format),
   );
@@ -581,8 +584,11 @@ export default function RedactionPage() {
               {job.status !== "exported" && <div className="space-y-2 border-t pt-4">
                 <p className="text-xs text-muted-foreground">Human review is required before a PDF can be produced.</p>
                 {review.failed_pages.some((failure) => !failure.manual_reviewed) && <p className="text-sm text-amber-700">Retry or manually inspect every failed page before approval.</p>}
-                <Button className="w-full" onClick={approve} disabled={busy || selectedCount === 0 || review.failed_pages.some((failure) => !failure.manual_reviewed) || job.status === "approved"}>
-                  <Check className="mr-2 size-4" /> Approve {selectedCount} selected regions
+                <Button className="w-full" onClick={approve} disabled={busy || (selectedCount === 0 && !manualInspectionComplete) || review.failed_pages.some((failure) => !failure.manual_reviewed) || job.status === "approved"}>
+                  <Check className="mr-2 size-4" />
+                  {selectedCount === 0 && manualInspectionComplete
+                    ? "Approve manual inspection"
+                    : `Approve ${selectedCount} selected regions`}
                 </Button>
                 {job.status === "approved" && <p className="text-center text-xs text-muted-foreground">Current review approved. Create the sanitized PDF when ready.</p>}
               </div>}
