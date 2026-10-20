@@ -8,7 +8,7 @@ import json
 import uuid
 from contextlib import suppress
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pymupdf
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -63,6 +63,47 @@ async def _get_owned_job(db: AsyncSession, job_id: str, owner_id: str) -> Redact
     return job
 
 
+async def _lock_review_job(
+    db: AsyncSession,
+    job: RedactionJob,
+    owner_id: str,
+    *,
+    allowed_statuses: tuple[str, ...] = ("review_ready", "approved", "exported"),
+    revision: int | None = None,
+) -> None:
+    """Serialize review-file mutations through the owning database row."""
+    statement = update(RedactionJob).where(
+        RedactionJob.id == job.id,
+        RedactionJob.owner_id == owner_id,
+        RedactionJob.status.in_(allowed_statuses),
+    )
+    if revision is not None:
+        statement = statement.where(RedactionJob.review_revision == revision)
+    result = await db.execute(
+        statement.values(
+            review_revision=RedactionJob.review_revision,
+            updated_at=RedactionJob.updated_at,
+        ).execution_options(synchronize_session=False)
+    )
+    if result.rowcount != 1:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409, detail="The review changed. Refresh before continuing."
+        )
+    await db.refresh(job)
+
+
+def _render_source_page(source_path: str, page_number: int) -> bytes:
+    """Render and close a source page inside one worker thread."""
+    pdf = pymupdf.open(source_path)
+    try:
+        if page_number < 0 or page_number >= len(pdf):
+            raise IndexError("Page not found.")
+        return render_page_image(pdf[page_number])
+    finally:
+        pdf.close()
+
+
 def _job_response(job: RedactionJob, warnings: list[str] | None = None) -> RedactionJobResponse:
     return RedactionJobResponse(
         id=job.id,
@@ -81,6 +122,13 @@ def _job_response(job: RedactionJob, warnings: list[str] | None = None) -> Redac
 def _review_payload(job: RedactionJob) -> tuple[list[RedactionFinding], list[str]]:
     data = load_job_data(job)
     return [RedactionFinding.model_validate(item) for item in data["findings"]], data["warnings"]
+
+
+def _find_failed_page(data: dict[str, Any], page_number: int) -> dict[str, Any] | None:
+    return next(
+        (item for item in data.get("failed_pages", []) if item["page_number"] == page_number),
+        None,
+    )
 
 
 @router.post("", response_model=RedactionJobResponse, status_code=202)
@@ -211,14 +259,10 @@ async def get_redaction_page_preview(
     if document is None or document.owner_id != job.owner_id:
         raise HTTPException(status_code=404, detail="Source document not found.")
     try:
-        pdf = await asyncio.to_thread(pymupdf.open, document.storage_path)
-        try:
-            if page_number < 0 or page_number >= len(pdf):
-                raise HTTPException(status_code=404, detail="Page not found.")
-            image = await asyncio.to_thread(render_page_image, pdf[page_number])
-        finally:
-            await asyncio.to_thread(pdf.close)
-    except (OSError, pymupdf.FileDataError) as exc:
+        image = await asyncio.to_thread(_render_source_page, document.storage_path, page_number)
+    except IndexError as exc:
+        raise HTTPException(status_code=404, detail="Page not found.") from exc
+    except (OSError, RuntimeError, ValueError, pymupdf.FileDataError) as exc:
         raise HTTPException(status_code=410, detail="Source document is unavailable.") from exc
     return Response(image, media_type="image/png", headers={"Cache-Control": "no-store"})
 
@@ -232,6 +276,7 @@ async def update_redaction_finding(
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> RedactionJobResponse:
     job = await _get_owned_job(db, job_id, authenticated.account.id)
+    await _lock_review_job(db, job, authenticated.account.id)
     _require_review_state(job)
     data = load_job_data(job)
     finding = next((item for item in data["findings"] if item["id"] == finding_id), None)
@@ -260,6 +305,7 @@ async def add_manual_redaction_box(
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> RedactionJobResponse:
     job = await _get_owned_job(db, job_id, authenticated.account.id)
+    await _lock_review_job(db, job, authenticated.account.id)
     _require_review_state(job)
     data = load_job_data(job)
     if payload.page_number >= len(data["pages"]):
@@ -298,43 +344,21 @@ async def retry_redaction_page(
 ) -> RedactionJobResponse:
     """Retry extraction and detection for one page that failed in this job."""
     job = await _get_owned_job(db, job_id, authenticated.account.id)
-    if job.status != "review_ready":
-        raise HTTPException(status_code=409, detail="This job is not ready for page recovery.")
+    await _lock_review_job(db, job, authenticated.account.id, allowed_statuses=("review_ready",))
     data = load_job_data(job)
-    failure = next(
-        (
-            item
-            for item in data.get("failed_pages", [])
-            if item["page_number"] == payload.page_number
-        ),
-        None,
-    )
+    failure = _find_failed_page(data, payload.page_number)
     if failure is None:
         raise HTTPException(status_code=404, detail="Failed page not found.")
     retry_pages = set(data.get("retry_pages", []))
     retry_pages.add(payload.page_number)
     data["retry_pages"] = sorted(retry_pages)
     save_job_data(job, data)
-    result = await db.execute(
-        update(RedactionJob)
-        .where(
-            RedactionJob.id == job.id,
-            RedactionJob.owner_id == authenticated.account.id,
-            RedactionJob.status == "review_ready",
-        )
-        .values(
-            status="queued",
-            pages_processed=max(0, job.page_count - len(retry_pages)),
-            review_revision=RedactionJob.review_revision + 1,
-            approved_revision=None,
-            error_message=None,
-            lease_until=None,
-        )
-        .execution_options(synchronize_session=False)
-    )
-    if result.rowcount != 1:
-        await db.rollback()
-        raise HTTPException(status_code=409, detail="This page is already being recovered.")
+    job.status = "queued"
+    job.pages_processed = max(0, job.page_count - len(retry_pages))
+    job.review_revision += 1
+    job.approved_revision = None
+    job.error_message = None
+    job.lease_until = None
     await db.commit()
     with suppress(OSError):
         (Path(job.job_dir) / "redacted.pdf").unlink(missing_ok=True)
@@ -351,17 +375,21 @@ async def resolve_redaction_page_manually(
 ) -> RedactionJobResponse:
     """Record the owner's manual inspection of a page extraction could not read."""
     job = await _get_owned_job(db, job_id, authenticated.account.id)
-    if job.status != "review_ready":
-        raise HTTPException(status_code=409, detail="This job is not ready for page review.")
+    document = await db.get(Document, job.document_id)
+    if document is None or document.owner_id != job.owner_id:
+        raise HTTPException(status_code=404, detail="Source document not found.")
+    try:
+        await asyncio.to_thread(_render_source_page, document.storage_path, payload.page_number)
+    except IndexError as exc:
+        raise HTTPException(status_code=404, detail="Page not found.") from exc
+    except (OSError, RuntimeError, ValueError, pymupdf.FileDataError) as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="This page cannot be rendered. Retry processing before manual review.",
+        ) from exc
+    await _lock_review_job(db, job, authenticated.account.id, allowed_statuses=("review_ready",))
     data = load_job_data(job)
-    failure = next(
-        (
-            item
-            for item in data.get("failed_pages", [])
-            if item["page_number"] == payload.page_number
-        ),
-        None,
-    )
+    failure = _find_failed_page(data, payload.page_number)
     if failure is None:
         raise HTTPException(status_code=404, detail="Failed page not found.")
     if not failure.get("manual_reviewed", False):
@@ -382,9 +410,8 @@ async def approve_redaction_review(
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> RedactionJobResponse:
     job = await _get_owned_job(db, job_id, authenticated.account.id)
+    await _lock_review_job(db, job, authenticated.account.id, revision=revision)
     _require_review_state(job)
-    if revision != job.review_revision:
-        raise HTTPException(status_code=409, detail="The review changed. Refresh before approving.")
     data = load_job_data(job)
     if any(not item.get("manual_reviewed", False) for item in data.get("failed_pages", [])):
         raise HTTPException(

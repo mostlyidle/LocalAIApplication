@@ -217,7 +217,7 @@ async def extract_document_pages(
                             image_height=pixmap.height,
                         )
                     )
-            except Exception as exc:
+            except (OSError, RuntimeError, ValueError, pymupdf.FileDataError) as exc:
                 logger.warning(
                     "redaction_page_extraction_failed",
                     page_number=page_number,
