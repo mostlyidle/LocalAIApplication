@@ -643,7 +643,7 @@ export default function ResumeRaterPage() {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="resume-job-posting">Job posting</Label>
-                      <Textarea id="resume-job-posting" value={jobPosting} onChange={(event) => setJobPosting(event.target.value)} minLength={100} maxLength={32000} rows={24} placeholder="Paste the complete job description, including required qualifications and responsibilities…" required />
+                      <Textarea id="resume-job-posting" className="field-sizing-fixed" value={jobPosting} onChange={(event) => setJobPosting(event.target.value)} minLength={100} maxLength={32000} rows={24} placeholder="Paste the complete job description, including required qualifications and responsibilities…" required />
                       <p className="text-xs text-muted-foreground">{jobPosting.length.toLocaleString()} / 32,000 characters · At least 100 characters</p>
                     </div>
                     <div className="flex flex-wrap items-center justify-between gap-3">

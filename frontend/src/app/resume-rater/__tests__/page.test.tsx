@@ -169,7 +169,11 @@ describe("ResumeRaterPage", () => {
     render(<ResumeRaterPage />);
 
     fireEvent.change(await screen.findByLabelText("Job title"), { target: { value: "Senior engineer" } });
-    fireEvent.change(screen.getByLabelText("Job posting"), {
+    const postingField = screen.getByLabelText("Job posting");
+    expect(postingField).toHaveAttribute("rows", "24");
+    expect(postingField).toHaveClass("field-sizing-fixed");
+    expect(postingField).not.toHaveClass("field-sizing-content");
+    fireEvent.change(postingField, {
       target: { value: "A senior engineering role with more than one hundred characters in the complete job posting, including desired skills and responsibilities. " },
     });
     fireEvent.click(screen.getByRole("button", { name: "Prepare job rubric" }));
