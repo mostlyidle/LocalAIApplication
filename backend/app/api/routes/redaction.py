@@ -342,7 +342,17 @@ async def retry_redaction_page(
     authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> RedactionJobResponse:
-    """Retry extraction and detection for one page that failed in this job."""
+    """Retry extraction and detection for one failed page.
+
+    Args:
+        job_id: Redaction job identifier.
+        payload: Page number to retry.
+        authenticated: Current authenticated account.
+        db: Database session.
+
+    Returns:
+        Updated queued job state.
+    """
     job = await _get_owned_job(db, job_id, authenticated.account.id)
     await _lock_review_job(db, job, authenticated.account.id, allowed_statuses=("review_ready",))
     data = load_job_data(job)
@@ -373,7 +383,17 @@ async def resolve_redaction_page_manually(
     authenticated: AuthenticatedSession = Depends(get_authenticated_session),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ) -> RedactionJobResponse:
-    """Record the owner's manual inspection of a page extraction could not read."""
+    """Record the owner's manual inspection of an unreadable page.
+
+    Args:
+        job_id: Redaction job identifier.
+        payload: Page number inspected by the owner.
+        authenticated: Current authenticated account.
+        db: Database session.
+
+    Returns:
+        Updated review job state.
+    """
     job = await _get_owned_job(db, job_id, authenticated.account.id)
     document = await db.get(Document, job.document_id)
     if document is None or document.owner_id != job.owner_id:

@@ -102,22 +102,23 @@ async def process_one_redaction_job(
 
         completed_pages = len(pages) - len(process_page_numbers)
 
-        async def update_extraction_progress(completed: int, total: int) -> bool:
-            await db.refresh(job)
-            if job.status != "processing":
-                return False
+        async def update_job_progress(completed: int, total: int) -> bool:
             result = await db.execute(
                 update(RedactionJob)
                 .where(RedactionJob.id == job.id, RedactionJob.status == "processing")
                 .values(
                     page_count=total,
-                    pages_processed=min(total, completed_pages + completed),
+                    pages_processed=min(total, completed),
                     lease_until=datetime.now(UTC) + timedelta(seconds=LEASE_SECONDS),
                 )
                 .execution_options(synchronize_session=False)
             )
             await db.commit()
-            return result.rowcount == 1
+            await db.refresh(job)
+            return result.rowcount == 1 and job.status == "processing"
+
+        async def update_extraction_progress(completed: int, total: int) -> bool:
+            return await update_job_progress(completed_pages + completed, total)
 
         if not retry_pages:
             pages = await extract_document_pages(
@@ -162,18 +163,7 @@ async def process_one_redaction_job(
                         "attempts": int(previous.get("attempts", 0)) + 1,
                     }
                 )
-                await db.execute(
-                    update(RedactionJob)
-                    .where(RedactionJob.id == job.id, RedactionJob.status == "processing")
-                    .values(
-                        page_count=len(pages),
-                        pages_processed=min(len(pages), completed_pages + processed_count),
-                        lease_until=datetime.now(UTC) + timedelta(seconds=LEASE_SECONDS),
-                    )
-                )
-                await db.commit()
-                await db.refresh(job)
-                if job.status == "cancelled":
+                if not await update_job_progress(completed_pages + processed_count, len(pages)):
                     return True
                 continue
 
@@ -240,18 +230,7 @@ async def process_one_redaction_job(
                         "boxes": [list(box) for box in boxes],
                     }
                 )
-            await db.execute(
-                update(RedactionJob)
-                .where(RedactionJob.id == job.id, RedactionJob.status == "processing")
-                .values(
-                    page_count=len(pages),
-                    pages_processed=min(len(pages), completed_pages + processed_count),
-                    lease_until=datetime.now(UTC) + timedelta(seconds=LEASE_SECONDS),
-                )
-            )
-            await db.commit()
-            await db.refresh(job)
-            if job.status == "cancelled":
+            if not await update_job_progress(completed_pages + processed_count, len(pages)):
                 return True
 
         job_dir.mkdir(parents=True, exist_ok=True, mode=0o700)

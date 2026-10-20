@@ -181,7 +181,17 @@ async def extract_document_pages(
     on_page: Callable[[int, int], Awaitable[bool]] | None = None,
     page_numbers: list[int] | None = None,
 ) -> list[ExtractedPage]:
-    """Extract PDF/image pages and OCR scanned or image-containing page content."""
+    """Extract PDF/image pages and OCR scanned or image-containing page content.
+
+    Args:
+        source: Source PDF or image path.
+        ocr_service: OCR service used for scanned or image-containing pages.
+        on_page: Optional progress callback receiving completed and total pages.
+        page_numbers: Optional subset of zero-based pages to extract.
+
+    Returns:
+        Extracted page data, including per-page extraction errors.
+    """
     document = await asyncio.to_thread(pymupdf.open, source)
     pages: list[ExtractedPage] = []
     try:
