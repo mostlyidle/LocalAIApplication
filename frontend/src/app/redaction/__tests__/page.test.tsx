@@ -294,24 +294,24 @@ describe("RedactionPage uploads", () => {
     expect(screen.queryByText("Batch progress")).not.toBeInTheDocument();
   });
 
-  it("enables batch ZIP download only for current exported reviews", async () => {
-    const exportedJob = {
-      id: "job-1", document_id: existing.id, batch_id: "batch-1", status: "exported",
+  it("enables batch ZIP download for current approved or exported reviews", async () => {
+    const approvedJob = {
+      id: "job-1", document_id: existing.id, batch_id: "batch-1", status: "approved",
       page_count: 1, pages_processed: 1, review_revision: 2, approved_revision: 2,
       clarification_question: null, error_message: null, warnings: [],
     };
     const secondExportedJob = {
-      ...exportedJob, id: "job-2", document_id: "second-document",
+      ...approvedJob, id: "job-2", document_id: "second-document", status: "exported",
     };
     vi.mocked(api.getDocuments).mockResolvedValue({
       documents: [existing, { ...existing, id: "second-document", filename: "second.pdf" }],
     });
     vi.mocked(api.getRedactionBatch).mockResolvedValue({
-      id: "batch-1", jobs: [exportedJob, secondExportedJob],
+      id: "batch-1", jobs: [approvedJob, secondExportedJob],
     });
-    vi.mocked(api.getRedactionJob).mockResolvedValue(exportedJob);
+    vi.mocked(api.getRedactionJob).mockResolvedValue(approvedJob);
     vi.mocked(api.getRedactionReview).mockResolvedValue({
-      job: exportedJob, findings: [], pages: [], failed_pages: [],
+      job: approvedJob, findings: [], pages: [], failed_pages: [],
     });
     window.history.replaceState(null, "", "/redaction?job_id=job-1&batch_id=batch-1");
     render(<RedactionPage />);
@@ -320,37 +320,39 @@ describe("RedactionPage uploads", () => {
     expect(screen.getByRole("button", { name: "Download redacted ZIP" })).toBeEnabled();
   });
 
-  it("enables ZIP download after the last batch job is exported", async () => {
+  it("exports approved batch jobs when the ZIP download is requested", async () => {
     const approvedJob = {
       id: "job-1", document_id: existing.id, batch_id: "batch-1", status: "approved",
       page_count: 1, pages_processed: 1, review_revision: 2, approved_revision: 2,
       clarification_question: null, error_message: null, warnings: [],
     };
-    const exportedJob = {
-      ...approvedJob, id: "job-2", document_id: "second-document", status: "exported",
-      approved_revision: 1, review_revision: 1,
+    const secondApprovedJob = {
+      ...approvedJob, id: "job-2", document_id: "second-document",
     };
     vi.mocked(api.getDocuments).mockResolvedValue({
       documents: [existing, { ...existing, id: "second-document", filename: "second.pdf" }],
     });
     vi.mocked(api.getRedactionBatch).mockResolvedValue({
-      id: "batch-1", jobs: [approvedJob, exportedJob],
+      id: "batch-1", jobs: [approvedJob, secondApprovedJob],
     });
     vi.mocked(api.getRedactionJob).mockResolvedValue(approvedJob);
     vi.mocked(api.getRedactionReview).mockResolvedValue({
       job: approvedJob, findings: [], pages: [], failed_pages: [],
     });
-    vi.mocked(api.exportRedactedDocument).mockResolvedValue({
-      ...approvedJob, status: "exported",
-    });
+    vi.mocked(api.exportRedactedDocument).mockImplementation(async (id) => ({
+      ...(id === approvedJob.id ? approvedJob : secondApprovedJob), status: "exported",
+    }));
     window.history.replaceState(null, "", "/redaction?job_id=job-1&batch_id=batch-1");
     render(<RedactionPage />);
 
     const downloadButton = await screen.findByRole("button", { name: "Download redacted ZIP" });
-    expect(downloadButton).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: "Create redacted PDF" }));
+    expect(downloadButton).toBeEnabled();
+    expect(api.exportRedactedDocument).not.toHaveBeenCalled();
+    fireEvent.click(downloadButton);
 
-    await waitFor(() => expect(downloadButton).toBeEnabled());
+    await waitFor(() => expect(api.downloadRedactionBatch).toHaveBeenCalledWith("batch-1"));
+    expect(api.exportRedactedDocument).toHaveBeenNthCalledWith(1, "job-1");
+    expect(api.exportRedactedDocument).toHaveBeenNthCalledWith(2, "job-2");
   });
 
   it.each(["unsupported", "oversized"])("rejects %s files before upload", async (kind) => {
