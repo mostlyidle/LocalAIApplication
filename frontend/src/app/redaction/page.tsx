@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type PointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -8,10 +8,12 @@ import {
   Check,
   Download,
   FileLock2,
+  FolderOpen,
   LoaderCircle,
   Plus,
   ShieldCheck,
   Square,
+  Upload,
   X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +26,7 @@ import { MAX_FILE_SIZE } from "@/lib/constants";
 
 const SUPPORTED_FORMATS = ["pdf", "png", "jpg", "jpeg", "tiff", "bmp", "webp"];
 const MAX_BATCH_DOCUMENTS = 20;
+const MAX_FOLDER_ENTRIES = 1000;
 
 const CATEGORY_OPTIONS = [
   "person name",
@@ -48,7 +51,66 @@ type Job = Awaited<ReturnType<typeof api.getRedactionJob>>;
 type Review = Awaited<ReturnType<typeof api.getRedactionReview>>;
 type Finding = Review["findings"][number];
 
+type DropTraversal = { entriesRead: number; supportedFiles: number };
+
+async function readDroppedEntry(entry: FileSystemEntry, traversal: DropTraversal): Promise<File[]> {
+  traversal.entriesRead += 1;
+  if (traversal.entriesRead > MAX_FOLDER_ENTRIES) {
+    throw new Error(`Folder exceeds the ${MAX_FOLDER_ENTRIES}-entry limit; choose a smaller folder.`);
+  }
+
+  if (entry.isFile) {
+    const file = await new Promise<File>((resolve, reject) => {
+      (entry as FileSystemFileEntry).file(resolve, reject);
+    });
+    const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+    if (SUPPORTED_FORMATS.includes(extension) && file.size <= MAX_FILE_SIZE) {
+      traversal.supportedFiles += 1;
+      if (traversal.supportedFiles > MAX_BATCH_DOCUMENTS) {
+        throw new Error(
+          `Folder contains more than ${MAX_BATCH_DOCUMENTS} supported documents. Split it into batches.`,
+        );
+      }
+    }
+    return [file];
+  }
+  if (!entry.isDirectory) return [];
+
+  const reader = (entry as FileSystemDirectoryEntry).createReader();
+  const files: File[] = [];
+  while (true) {
+    const batch = await new Promise<FileSystemEntry[]>((resolve, reject) => {
+      reader.readEntries(resolve, reject);
+    });
+    if (batch.length === 0) break;
+    for (const child of batch) files.push(...await readDroppedEntry(child, traversal));
+  }
+  return files;
+}
+
+async function readDroppedFiles(items: DataTransferItemList): Promise<File[]> {
+  const traversal: DropTraversal = { entriesRead: 0, supportedFiles: 0 };
+  const files: File[] = [];
+  for (const item of Array.from(items)) {
+    const entry = item.webkitGetAsEntry();
+    if (entry) {
+      files.push(...await readDroppedEntry(entry, traversal));
+      continue;
+    }
+    const file = item.getAsFile();
+    if (!file) continue;
+    traversal.entriesRead += 1;
+    if (traversal.entriesRead > MAX_FOLDER_ENTRIES) {
+      throw new Error(`Drop exceeds the ${MAX_FOLDER_ENTRIES}-entry limit.`);
+    }
+    files.push(file);
+  }
+  return files;
+}
+
 export default function RedactionPage() {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
   const [documents, setDocuments] = useState<DocumentRow[]>([]);
   const [documentIds, setDocumentIds] = useState<string[]>([]);
   const [categories, setCategories] = useState<string[]>([
@@ -78,6 +140,8 @@ export default function RedactionPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isReadingDrop, setIsReadingDrop] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
 
   const page = review?.pages[pageNumber];
   const currentJobId = job?.id;
@@ -216,7 +280,14 @@ export default function RedactionPage() {
     };
   }, [currentJobId, currentPageNumber, review]);
 
-  const uploadSources = async (files: File[]) => {
+  const uploadSources = async (files: File[], skippedCount = 0) => {
+    const skippedMessage = skippedCount > 0
+      ? `Skipped ${skippedCount} unsupported or oversized folder item(s). `
+      : "";
+    if (files.length === 0) {
+      setError(skippedMessage || "No supported PDF or image files were found.");
+      return;
+    }
     if (documentIds.length + files.length > MAX_BATCH_DOCUMENTS) {
       setError(`Select no more than ${MAX_BATCH_DOCUMENTS} documents per batch.`);
       return;
@@ -232,7 +303,7 @@ export default function RedactionPage() {
         : `File too large: ${invalidFile.name}. Maximum size is ${MAX_FILE_SIZE / 1024 / 1024}MB.`);
       return;
     }
-    setError("");
+    setError(skippedMessage);
     setIsUploading(true);
     for (const file of files) {
       try {
@@ -243,11 +314,54 @@ export default function RedactionPage() {
           : [...current, uploaded.id]);
       } catch (cause) {
         const message = cause instanceof Error ? cause.message : "Upload failed.";
-        setError(`Could not upload ${file.name}: ${message}`);
+        setError(`${skippedMessage}Could not upload ${file.name}: ${message}`);
         break;
       }
     }
     setIsUploading(false);
+  };
+
+  const uploadFolderSources = async (files: Iterable<File>) => {
+    const accepted: File[] = [];
+    let skippedCount = 0;
+    let entriesRead = 0;
+    for (const file of files) {
+      entriesRead += 1;
+      if (entriesRead > MAX_FOLDER_ENTRIES) {
+        setError(`Folder exceeds the ${MAX_FOLDER_ENTRIES}-file limit; choose a smaller folder.`);
+        return;
+      }
+      const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+      if (!SUPPORTED_FORMATS.includes(extension) || file.size > MAX_FILE_SIZE) {
+        skippedCount += 1;
+      } else {
+        if (accepted.length === MAX_BATCH_DOCUMENTS) {
+          setError(
+            `Folder contains more than ${MAX_BATCH_DOCUMENTS} supported documents. Split it into batches.`,
+          );
+          return;
+        }
+        accepted.push(file);
+      }
+    }
+    await uploadSources(accepted, skippedCount);
+  };
+
+  const handleDrop = async (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    setIsDragOver(false);
+    if (busy || isUploading || isReadingDrop) return;
+    setIsReadingDrop(true);
+    try {
+      const files = await readDroppedFiles(event.dataTransfer.items);
+      await uploadFolderSources(files.length > 0 ? files : Array.from(event.dataTransfer.files));
+    } catch (cause) {
+      setError(cause instanceof Error
+        ? `Could not process the dropped folder: ${cause.message}`
+        : "Could not process the dropped folder.");
+    } finally {
+      setIsReadingDrop(false);
+    }
   };
 
   const toggleSourceDocument = (id: string, selected: boolean) => {
@@ -556,23 +670,77 @@ export default function RedactionPage() {
       {!job && <Card className="rounded-2xl">
         <CardHeader><CardTitle>Choose what to redact</CardTitle></CardHeader>
         <CardContent className="space-y-5">
-          <div className="space-y-2">
-            <label htmlFor="redaction-upload" className="text-sm font-medium">Upload PDFs or images</label>
-            <Input
+          <div
+            data-testid="redaction-upload-dropzone"
+            className={`rounded-xl border-2 border-dashed p-4 transition-colors ${isDragOver ? "border-primary bg-primary/5" : "border-border"}`}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setIsDragOver(true);
+            }}
+            onDragLeave={() => setIsDragOver(false)}
+            onDrop={(event) => { void handleDrop(event); }}
+          >
+            <input
+              ref={fileInputRef}
               id="redaction-upload"
               type="file"
               multiple
               accept={SUPPORTED_FORMATS.map((format) => `.${format}`).join(",")}
-              disabled={busy || isUploading}
+              disabled={busy || isUploading || isReadingDrop}
               aria-describedby="redaction-upload-help"
+              className="sr-only"
               onChange={(event) => {
                 const files = Array.from(event.currentTarget.files ?? []);
                 event.currentTarget.value = "";
                 if (files.length) void uploadSources(files);
               }}
             />
-            <p id="redaction-upload-help" className="text-xs text-muted-foreground">PDF, PNG, JPEG, TIFF, BMP or WebP; up to {MAX_BATCH_DOCUMENTS} files per batch, {MAX_FILE_SIZE / 1024 / 1024}MB each. Uploaded files are saved in Documents and selected below.</p>
-            {isUploading && <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> Uploading...</p>}
+            <label htmlFor="redaction-upload" className="sr-only">Upload PDFs or images</label>
+            <input
+              ref={folderInputRef}
+              id="redaction-folder-upload"
+              type="file"
+              multiple
+              accept={SUPPORTED_FORMATS.map((format) => `.${format}`).join(",")}
+              disabled={busy || isUploading || isReadingDrop}
+              aria-label="Select folder of PDFs or images"
+              className="sr-only"
+              onChange={(event) => {
+                const files = event.currentTarget.files;
+                if (files?.length) void uploadFolderSources(files);
+                event.currentTarget.value = "";
+              }}
+              {...{ webkitdirectory: "" }}
+            />
+            <div className="flex flex-col items-center gap-3 text-center">
+              <Upload aria-hidden="true" className="size-7 text-muted-foreground" />
+              <div>
+                <p className="text-sm font-medium">Drop PDFs, images, or folders here</p>
+                <p id="redaction-upload-help" className="mt-1 text-xs text-muted-foreground">
+                  PDF, PNG, JPEG, TIFF, BMP or WebP; up to {MAX_BATCH_DOCUMENTS} files per batch,
+                  {" "}{MAX_FILE_SIZE / 1024 / 1024}MB each. Uploaded files are saved in Documents.
+                </p>
+              </div>
+              <div className="flex flex-wrap justify-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={busy || isUploading || isReadingDrop}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Upload aria-hidden="true" className="mr-2 size-4" /> Select files
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={busy || isUploading || isReadingDrop}
+                  onClick={() => folderInputRef.current?.click()}
+                >
+                  <FolderOpen aria-hidden="true" className="mr-2 size-4" /> Select folder
+                </Button>
+              </div>
+              {(isReadingDrop || isUploading) && <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle className="size-4 animate-spin" aria-hidden="true" /> {isReadingDrop ? "Reading folder..." : "Uploading..."}</p>}
+            </div>
           </div>
           <fieldset className="space-y-2">
             <legend className="text-sm font-medium">Documents to redact ({documentIds.length}/{MAX_BATCH_DOCUMENTS} selected)</legend>
@@ -581,7 +749,7 @@ export default function RedactionPage() {
                 <input
                   type="checkbox"
                   checked={documentIds.includes(document.id)}
-                  disabled={busy || isUploading || (documentIds.length >= MAX_BATCH_DOCUMENTS && !documentIds.includes(document.id))}
+                  disabled={busy || isUploading || isReadingDrop || (documentIds.length >= MAX_BATCH_DOCUMENTS && !documentIds.includes(document.id))}
                   onChange={(event) => toggleSourceDocument(document.id, event.target.checked)}
                 />
                 <span className="truncate" title={document.filename}>{document.filename}</span>
@@ -611,7 +779,7 @@ export default function RedactionPage() {
             <ShieldCheck className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
             <p>Detection runs on this device. Review every page before export; automated detection can miss sensitive content.</p>
           </div>
-          <Button onClick={begin} disabled={documentIds.length === 0 || categories.length === 0 || busy || isUploading}>
+          <Button onClick={begin} disabled={documentIds.length === 0 || categories.length === 0 || busy || isUploading || isReadingDrop}>
             {busy ? <LoaderCircle className="mr-2 size-4 animate-spin" /> : <FileLock2 className="mr-2 size-4" />}
             Analyze {documentIds.length} {documentIds.length === 1 ? "document" : "documents"}
           </Button>
