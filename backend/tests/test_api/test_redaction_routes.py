@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
+import threading
 import uuid
 import zipfile
 from datetime import UTC, datetime
@@ -373,6 +375,87 @@ async def test_redaction_batch_archive_is_removed_when_response_send_fails(tmp_p
         await response(scope, receive, send)
 
     assert not archive_path.exists()
+
+
+async def test_redaction_batch_archive_is_removed_when_request_is_cancelled_during_creation(
+    client: AsyncClient,
+    db_session: AsyncSession,
+    authenticated_test_session: AuthenticatedSession,
+    tmp_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    import app.api.routes.redaction as redaction_routes
+    from app.dependencies import get_authenticated_session
+
+    monkeypatch.setattr(redaction_routes.settings, "upload_dir", str(tmp_path / "uploads"))
+    owner_id = authenticated_test_session.account.id
+    batch_id = str(uuid.uuid4())
+    job_id = str(uuid.uuid4())
+    document_id = str(uuid.uuid4())
+    owner_dir = tmp_path / "uploads" / "redaction-jobs" / owner_id
+    job_dir = owner_dir / job_id
+    job_dir.mkdir(parents=True)
+    (job_dir / "redacted.pdf").write_bytes(b"sanitized")
+    source = tmp_path / "source.pdf"
+    source.write_bytes(b"source")
+    db_session.add(
+        Document(
+            id=document_id,
+            owner_id=owner_id,
+            filename="source.pdf",
+            format="pdf",
+            size_bytes=6,
+            storage_path=str(source),
+        )
+    )
+    db_session.add(
+        RedactionJob(
+            id=job_id,
+            owner_id=owner_id,
+            document_id=document_id,
+            batch_id=batch_id,
+            status="exported",
+            instructions="",
+            categories_json='["email address"]',
+            source_sha256="0" * 64,
+            job_dir=str(job_dir),
+            review_revision=1,
+            approved_revision=1,
+        )
+    )
+    await db_session.commit()
+    client._transport.app.dependency_overrides[get_authenticated_session] = lambda: (
+        authenticated_test_session
+    )
+
+    archive_started = threading.Event()
+    allow_archive_to_finish = threading.Event()
+    write_archive = redaction_routes._write_redaction_batch_archive
+
+    def delayed_write_archive(export_paths: list[Path], archive_path: Path) -> None:
+        archive_started.set()
+        if not allow_archive_to_finish.wait(timeout=5):
+            raise TimeoutError("Timed out waiting to finish the test archive.")
+        write_archive(export_paths, archive_path)
+
+    monkeypatch.setattr(redaction_routes, "_write_redaction_batch_archive", delayed_write_archive)
+    request_task = asyncio.create_task(client.get(f"/api/v1/redaction-batches/{batch_id}/download"))
+    try:
+        assert await asyncio.to_thread(archive_started.wait, timeout=5)
+        request_task.cancel()
+        await asyncio.sleep(0.05)
+        assert not request_task.done()
+        allow_archive_to_finish.set()
+        with pytest.raises(asyncio.CancelledError):
+            await request_task
+    finally:
+        allow_archive_to_finish.set()
+        if not request_task.done():
+            request_task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await request_task
+
+    assert not list(owner_dir.glob("redaction-batch-*.zip"))
 
 
 async def test_redaction_agent_catalog_task_opens_a_private_job(
