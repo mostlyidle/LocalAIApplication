@@ -8,6 +8,9 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+MIN_RESUME_RUBRIC_CRITERIA = 3
+MAX_RESUME_RUBRIC_CRITERIA = 8
+
 
 class ResumeRaterWorkspaceCreate(BaseModel):
     title: str = Field(min_length=1, max_length=255)
@@ -43,7 +46,10 @@ class ResumeRubricCriterion(BaseModel):
 
 
 class ResumeRubric(BaseModel):
-    criteria: list[ResumeRubricCriterion] = Field(min_length=3, max_length=8)
+    criteria: list[ResumeRubricCriterion] = Field(
+        min_length=MIN_RESUME_RUBRIC_CRITERIA,
+        max_length=MAX_RESUME_RUBRIC_CRITERIA,
+    )
 
     @model_validator(mode="after")
     def validate_rubric(self) -> ResumeRubric:
@@ -172,8 +178,19 @@ class ResumeRaterDeleteResponse(BaseModel):
     status: Literal["deleted"]
 
 
-class ResumeRaterModelRubric(ResumeRubric):
-    """Structured rubric returned by the local model."""
+class ResumeRaterModelRubricCriterion(ResumeRubricCriterion):
+    """Model-produced relative weight, before scaling to the final 100-point rubric."""
+
+    weight: int = Field(ge=1, le=10_000)
+
+
+class ResumeRaterModelRubric(BaseModel):
+    """Structured rubric returned by the local model before weight normalization."""
+
+    criteria: list[ResumeRaterModelRubricCriterion] = Field(
+        min_length=MIN_RESUME_RUBRIC_CRITERIA,
+        max_length=MAX_RESUME_RUBRIC_CRITERIA,
+    )
 
 
 class ResumeRaterModelReport(ResumeRaterReport):
