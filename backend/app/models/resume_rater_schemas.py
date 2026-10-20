@@ -97,11 +97,27 @@ class ResumeRaterRevisionResponse(BaseModel):
     created_at: datetime
 
 
+ResumeRaterEvidenceLevel = Literal[
+    "not_demonstrated", "weak", "partial", "substantial", "fully_meets"
+]
+
+
 class ResumeRaterEvidenceScore(BaseModel):
     criterion_id: str
-    level: Literal["not_demonstrated", "weak", "partial", "substantial", "fully_meets"]
+    level: ResumeRaterEvidenceLevel = Field(
+        description=(
+            "Use not_demonstrated only when no resume evidence supports the criterion; "
+            "that level requires an empty evidence_quotes list."
+        )
+    )
     explanation: str = Field(min_length=1, max_length=500)
-    evidence_quotes: list[str] = Field(max_length=4)
+    evidence_quotes: list[str] = Field(
+        max_length=4,
+        description=(
+            "Use an empty list for not_demonstrated. For every other level, include one to "
+            "four exact, verbatim quotes from the resume."
+        ),
+    )
 
     @model_validator(mode="after")
     def validate_evidence_for_level(self) -> ResumeRaterEvidenceScore:
@@ -193,9 +209,34 @@ class ResumeRaterModelRubric(BaseModel):
     )
 
 
-class ResumeRaterModelReport(ResumeRaterReport):
+class ResumeRaterModelEvidenceScore(BaseModel):
+    """Model evidence score before application-level conditional validation."""
+
+    criterion_id: str
+    level: ResumeRaterEvidenceLevel = Field(
+        description=(
+            "Use not_demonstrated only when no resume evidence supports the criterion; "
+            "that level requires an empty evidence_quotes list."
+        )
+    )
+    explanation: str = Field(min_length=1, max_length=500)
+    evidence_quotes: list[str] = Field(
+        max_length=4,
+        description=(
+            "Use an empty list for not_demonstrated. For every other level, include one to "
+            "four exact, verbatim quotes from the resume."
+        ),
+    )
+
+
+class ResumeRaterModelReport(BaseModel):
     """Structured report returned by the local model before evidence checks."""
 
+    summary: str = Field(min_length=1, max_length=1_000)
+    criterion_scores: list[ResumeRaterModelEvidenceScore] = Field(min_length=3, max_length=8)
+    strengths: list[ResumeRaterPoint] = Field(default_factory=list, max_length=8)
+    gaps: list[ResumeRaterPoint] = Field(default_factory=list, max_length=8)
+    interview_questions: list[str] = Field(default_factory=list, max_length=8)
     resume_suggestions: list[ResumeRaterModelSuggestion] = Field(default_factory=list, max_length=8)
 
 
