@@ -354,8 +354,15 @@ def redact_to_image_pdf(
     temp_output = output.with_name(f"{output.stem}.pending{output.suffix}")
     try:
         for page_number, page in enumerate(original):
-            source_page = extract_native_page(page, page_number)
-            boxes = validate_boxes(source_page, redactions.get(page_number, []))
+            bounds = page.rect
+            page_geometry = ExtractedPage(
+                number=page_number,
+                width=bounds.width,
+                height=bounds.height,
+                text="",
+                words=(),
+            )
+            boxes = validate_boxes(page_geometry, redactions.get(page_number, []))
             dpi = page_render_dpi(page, REDACTION_DPI)
             pixmap = page.get_pixmap(
                 dpi=dpi,
@@ -375,8 +382,8 @@ def redact_to_image_pdf(
                 pixmap.set_rect(pixel_rect, (0, 0, 0))
 
             output_page = result.new_page(
-                width=source_page.width,
-                height=source_page.height,
+                width=page_geometry.width,
+                height=page_geometry.height,
             )
             output_page.insert_image(output_page.rect, stream=pixmap.tobytes("png"))
 
