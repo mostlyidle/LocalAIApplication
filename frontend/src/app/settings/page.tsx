@@ -314,7 +314,7 @@ export default function SettingsPage() {
                 <div className="space-y-2">
                   <Label htmlFor="managed-agent-prompt">System prompt</Label>
                   <textarea id="managed-agent-prompt" value={agentPrompt} onChange={(event) => setAgentPrompt(event.target.value)} maxLength={20000} disabled={!selectedAgent?.inference || selectedAgent.archived || selectedAgent.name === "medical_lab_explainer"} className="min-h-52 w-full resize-y rounded-md border border-input bg-background px-3 py-2 font-sans text-sm leading-relaxed disabled:cursor-not-allowed disabled:opacity-60" />
-                  <p className="text-xs text-muted-foreground">{selectedAgent?.name === "medical_lab_explainer" ? "This profile has a fixed extraction-only safety prompt." : selectedAgent?.inference ? <>Application supplied context and safety rules remain enforced. {agentPrompt.length}/20,000 characters.</> : "This built in profile does not use an LLM system prompt."}</p>
+                  <p className="text-xs text-muted-foreground">{selectedAgent?.name === "medical_lab_explainer" ? "This profile has a fixed diagnosis and treatment advice prompt." : selectedAgent?.inference ? <>Application supplied context and safety rules remain enforced. {agentPrompt.length}/20,000 characters.</> : "This built in profile does not use an LLM system prompt."}</p>
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">

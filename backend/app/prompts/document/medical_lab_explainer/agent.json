@@ -2,7 +2,7 @@
   "schema_version": 1,
   "name": "medical_lab_explainer",
   "target": "document",
-  "description": "Extracts and explains lab report values for local evaluation; it does not diagnose or recommend actions.",
+  "description": "Extracts lab report values and generates likely diagnoses and treatment advice for local evaluation.",
   "enabled": true,
   "default_for_target": false,
   "inference": {

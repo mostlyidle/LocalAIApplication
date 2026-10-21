@@ -315,7 +315,7 @@ class TaskRunner:
 
         results = assemble_lab_results(observations)
         limitations = [
-            "Educational extraction only; do not use this prototype for diagnosis, urgency, triage, or treatment decisions.",
+            "Diagnosis and treatment advice are AI-generated, unvalidated, and may be wrong; have a qualified clinician confirm them and do not change medication based on this response.",
             "Numeric comparisons require an exact source-text match, a clear numeric result and interval, and matching units. No unit conversions are performed.",
             "Cross-page fields are joined only by a unique normalized test name and unit; conflicting or incomplete matches are left for review.",
             "Image and scanned-page values still require checking against the uploaded report, even when local OCR text matches.",
@@ -338,6 +338,43 @@ class TaskRunner:
                 + ", ".join(map(str, truncated_pages))
                 + "; comparisons from those pages were withheld."
             )
+        verified_findings = [
+            {
+                "test_name": result["test_name"],
+                "result": result["result"],
+                "unit": result["unit"],
+                "reference_interval": result["reference_interval"],
+                "reference_qualifier": result["reference_qualifier"],
+                "comparison": result["comparison"],
+                "comparison_reason": result["comparison_reason"],
+                "report_flags": [
+                    flag["text"] for flag in result["report_flags"] if flag["verified"]
+                ],
+                "sources": [
+                    {
+                        "page": source["page"],
+                        "excerpt": str(source["excerpt"] or "")[:120],
+                    }
+                    for source in result["sources"][:2]
+                ],
+            }
+            for result in results
+            if result["sources"] and all(source["verified"] for source in result["sources"])
+        ][:15]
+        interpretation = None
+        if verified_findings:
+            interpretation = await self._answer(
+                execution,
+                purpose="interpretation",
+                prompt_values={
+                    "prompt": request.prompt[:1_600],
+                    "findings": json.dumps(verified_findings, ensure_ascii=False),
+                    "report_alerts": json.dumps(report_alerts[:10], ensure_ascii=False),
+                    "omitted_count": max(0, len(results) - len(verified_findings)),
+                },
+                stream=False,
+            )
+
         artifacts.update(
             {
                 "tests": results,
@@ -346,11 +383,20 @@ class TaskRunner:
                 "invalid_pages": invalid_pages,
                 "truncated_pages": truncated_pages,
                 "report_alerts": report_alerts,
+                "interpretation_findings": len(verified_findings),
             }
         )
+        if not verified_findings:
+            limitations.append(
+                "No source-verified findings were available, so the model did not generate diagnosis or treatment advice."
+            )
+        elif len(verified_findings) < len(results):
+            limitations.append(
+                "Some extracted rows were omitted because source evidence was missing or the model input was capped; review all extracted rows."
+            )
         return AgentResult(
             agent=execution.profile.name,
-            answer=render_lab_answer(results, report_alerts),
+            answer=render_lab_answer(results, report_alerts, interpretation),
             artifacts=artifacts,
             limitations=limitations,
         )
@@ -483,6 +529,7 @@ class TaskRunner:
         execution: AgentExecution,
         *,
         prompt_values: dict[str, object],
+        purpose: str | None = None,
         image_bytes: bytes | None = None,
         image_format: str | None = None,
         stream: bool = True,
@@ -491,11 +538,13 @@ class TaskRunner:
         if inference is None:
             raise RuntimeError(f"Agent '{execution.profile.name}' has no inference configuration.")
         target = execution.profile.target
-        system, prompt = self._prompts.render_messages(
-            execution.profile.name,
-            target,
-            {"agent_name": execution.profile.name, "target": target, **prompt_values},
-        )
+        values = {"agent_name": execution.profile.name, "target": target, **prompt_values}
+        if purpose:
+            system, prompt = self._prompts.render_messages_for(
+                execution.profile.name, target, purpose, values
+            )
+        else:
+            system, prompt = self._prompts.render_messages(execution.profile.name, target, values)
         human_content: str | list[dict[str, object]] = prompt
         if image_bytes is not None:
             image_data = base64.b64encode(image_bytes).decode("ascii")
@@ -507,7 +556,12 @@ class TaskRunner:
                     "image_url": f"data:image/{mime};base64,{image_data}",
                 },
             ]
-        with llm_service.inference_context(inference):
+        call_inference = (
+            inference.model_copy(update={"max_output_tokens": 2048})
+            if purpose == "interpretation"
+            else inference
+        )
+        with llm_service.inference_context(call_inference):
             model = llm_service.get_chat_model(
                 model=inference.model,
                 temperature=inference.temperature,

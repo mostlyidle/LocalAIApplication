@@ -7,7 +7,7 @@
 - Models: `medgemma1.5:4b` (Ollama digest `433252621ab1`) and `qwen2.5:7b` (digest `845dbda0ea48`).
 - Both received the same PDF-extracted text for each case and the same prompt.
 - Ollama options: temperature `0`, seed `42`, context `8192`, maximum output `2048` tokens. All ten responses completed normally.
-- The calls went directly to local Ollama. They did not use the app's Lab Report Explainer profile, whose current prompt prohibits diagnosis and treatment advice.
+- The calls went directly to local Ollama rather than through the app's Lab Report Explainer workflow. They evaluated diagnostic text responses only; they did not test the app's diagnosis and treatment discussion prompt or establish clinical validity.
 - The prompt requested a concise diagnosis, supporting report facts, up to two alternatives, and uncertainty; it prohibited treatment or action recommendations.
 
 ## Answer key and outputs

@@ -340,6 +340,10 @@ class AgentRegistry:
                 )
             try:
                 self._prompts.validate(manifest.name, manifest.target)
+                if manifest.name == "medical_lab_explainer":
+                    self._prompts.validate_messages(
+                        manifest.name, manifest.target, "interpretation"
+                    )
             except PromptTemplateError as exc:
                 raise AgentCatalogError(str(exc)) from exc
             if manifest.inference:

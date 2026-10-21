@@ -69,3 +69,7 @@ If this is explored, make it an explicitly selected `medical_lab_explainer` spec
 5. Do not expose independent critical alerts or “what should I do?” recommendations until clinical experts have defined the intended use, threshold source, validation plan, escalation/human factors design, and applicable regulatory path.
 
 **Decision:** Proceed only with a local, non-diagnostic extraction/explanation prototype for evaluation. MedGemma 1.5 4B is a sensible model to test; deterministic comparison against the uploaded report is essential. The user-facing critical-value/action recommendation described in the original idea should be treated as a separate, higher-risk product requiring clinical and regulatory work.
+
+## Scope update — 2026-10-20
+
+The product scope was subsequently broadened at the user's direction: the local specialist now generates likely diagnoses and treatment advice from source-verified report findings. This exceeds the original extraction-only recommendation above and MedGemma's stated intended-use boundary. Keep it in local evaluation until the diagnosis and treatment use case has independent clinical validation and a regulatory assessment. The “not medical advice” wording does not substitute for either step. See the [MedGemma model card](https://developers.google.com/health-ai-developer-foundations/medgemma/model-card) and [Health Canada SaMD guidance](https://www.canada.ca/en/health-canada/services/drugs-health-products/medical-devices/application-information/guidance-documents/software-medical-device-guidance-document.html).

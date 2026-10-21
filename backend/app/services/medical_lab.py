@@ -318,9 +318,9 @@ def _assemble_group(rows: list[dict[str, Any]]) -> dict[str, Any]:
                 "Detected population qualifier in source page"
                 for row in rows
                 if POPULATION_QUALIFIER.search(
-                    str(row.get("source_excerpt") or "")
-                    + " "
-                    + str(row.get("page_text") or "")
+                str(row.get("source_excerpt") or "")
+                + " "
+                + str(row.get("page_text") or "")
                 )
             ),
             None,
@@ -453,7 +453,9 @@ def extract_report_alerts(pages: list[LabPage]) -> list[dict[str, Any]]:
 
 
 def render_lab_answer(
-    results: list[dict[str, Any]], report_alerts: list[dict[str, Any]] | None = None
+    results: list[dict[str, Any]],
+    report_alerts: list[dict[str, Any]] | None = None,
+    interpretation: str | None = None,
 ) -> str:
     if not results:
         answer = (
@@ -470,9 +472,18 @@ def render_lab_answer(
         "above_reported_range": "Above the report's interval",
         "needs_review": "Needs review; no comparison made",
     }
+    disclaimer = "This is not medical advice."
+    if interpretation:
+        disclaimer += (
+            " The diagnosis and treatment advice below is AI-generated, unvalidated, and may be wrong. "
+            "Have a qualified clinician confirm it. Do not start, stop, or change medication based on this response."
+        )
+    else:
+        disclaimer += " No diagnosis or treatment advice was generated because verified findings were unavailable."
     lines = [
-        "## Lab report explanation",
-        "This is not medical advice. This is an educational extraction. A result inside a lab interval does not prove that a person is healthy, and a result outside it does not by itself establish a health problem.",
+        "## Lab report and interpretation",
+        disclaimer,
+        "A result inside a lab interval does not prove that a person is healthy, and a result outside it does not by itself establish a health problem.",
         "",
         "| Test | Result | Unit | Report interval | Comparison |",
         "| --- | --- | --- | --- | --- |",
@@ -503,11 +514,19 @@ def render_lab_answer(
             marker = "Lab report flag" if flag["verified"] else "Check this flag on the report"
             lines.append(f"{marker} (page {flag['page']}): `{flag['text']}`")
         for critical in result["critical_wording"]:
-            marker = "Report-stated critical wording" if critical["verified"] else "Check this page text"
+            marker = (
+                "Report-stated critical wording"
+                if critical["verified"]
+                else "Check this page text"
+            )
             lines.append(f"**{marker} (page {critical['page']}):** `{critical['wording']}`")
         for source in result["sources"]:
             if source.get("excerpt"):
-                verification = "text match" if source["verified"] else "verify against uploaded page"
+                verification = (
+                    "text match"
+                    if source["verified"]
+                    else "verify against uploaded page"
+                )
                 lines.append(
                     f"Source (page {source['page']}, {verification}): “{source['excerpt']}”"
                 )
@@ -515,10 +534,11 @@ def render_lab_answer(
             lines.append(f"No comparison was made: {result['comparison_reason']}")
         lines.append("")
 
+    if interpretation:
+        lines.extend(["## Likely diagnosis and treatment advice", interpretation.strip(), ""])
     lines.extend(
         [
-            "Questions to discuss with a clinician: What does this test measure, and how should this result be interpreted in my situation?",
-            "This agent does not diagnose, assess urgency, or recommend treatment. Verify extracted values and source wording on the uploaded report.",
+            "Verify extracted values and source wording on the uploaded report, and confirm diagnosis or treatment advice with a qualified clinician.",
         ]
     )
     return "\n".join(lines)
