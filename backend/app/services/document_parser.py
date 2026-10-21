@@ -190,7 +190,7 @@ class DocumentParserService:
                         document_timeout=120,
                         do_ocr=True,
                         do_table_structure=True,
-                        ocr_options=EasyOcrOptions(lang=["en"], download_enabled=False, use_gpu=False),
+                        ocr_options=EasyOcrOptions(lang=["en"], download_enabled=False, use_gpu=True),
                     )
                     self._docling_converter = DocumentConverter(format_options={
                         InputFormat.PDF: PdfFormatOption(pipeline_options=options),

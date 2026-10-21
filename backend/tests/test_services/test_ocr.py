@@ -33,7 +33,7 @@ class TestGetReader:
         with patch.dict(sys.modules, {"easyocr": mock_easyocr}):
             result = _get_reader()
 
-        mock_easyocr.Reader.assert_called_once_with(["en"], gpu=False)
+        mock_easyocr.Reader.assert_called_once_with(["en"], gpu=True)
         assert result is mock_reader
 
     def test_caches_reader_on_subsequent_calls(self):
@@ -55,7 +55,7 @@ class TestGetReader:
         with patch.dict(sys.modules, {"easyocr": mock_easyocr}):
             _get_reader(languages=["en", "fr"])
 
-        mock_easyocr.Reader.assert_called_once_with(["en", "fr"], gpu=False)
+        mock_easyocr.Reader.assert_called_once_with(["en", "fr"], gpu=True)
 
 
 # =============================================================================

@@ -33,9 +33,9 @@ def _get_reader(
         langs = languages or ["en"]
         logger.info("initializing_ocr_reader", languages=langs)
         if download_enabled:
-            _reader = easyocr.Reader(langs, gpu=False)  # CPU on Apple Silicon is fine
+            _reader = easyocr.Reader(langs, gpu=True)
         else:
-            _reader = easyocr.Reader(langs, gpu=False, download_enabled=False)
+            _reader = easyocr.Reader(langs, gpu=True, download_enabled=False)
     return _reader
 
 
@@ -44,8 +44,7 @@ class OCRService:
 
     Design decisions:
         - EasyOCR chosen for broad language support and no API keys.
-        - GPU=False because Apple Silicon Metal isn't supported by EasyOCR;
-          CPU performance is acceptable for document-scale images.
+        - Let EasyOCR select CUDA or Apple Metal when available, with CPU fallback.
         - Lazy initialization to avoid startup delay.
         - All heavy OCR operations run in asyncio.to_thread() to avoid
           blocking the event loop.
