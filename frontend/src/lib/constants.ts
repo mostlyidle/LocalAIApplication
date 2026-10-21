@@ -32,6 +32,7 @@ export const AGENT_LABELS: Record<string, string> = {
   software_engineer: "Software Engineer",
   image_generation: "Image Generation",
   document_analytics: "Document Analytics",
+  medical_lab_explainer: "Lab Report Explainer",
 };
 
 export const AGENT_COLORS: Record<string, string> = {

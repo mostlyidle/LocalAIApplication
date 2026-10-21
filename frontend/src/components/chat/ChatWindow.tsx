@@ -507,6 +507,24 @@ export function ChatWindow() {
           return;
         }
       }
+      if (selectedProfile.name === "medical_lab_explainer") {
+        const labFormats = ["pdf", "png", "jpg", "jpeg", "tiff", "bmp", "webp", "csv", "md", "txt"];
+        if (attachments.length > 1) {
+          setProfileError("Attach one lab report at a time, or paste its text into the message.");
+          return;
+        }
+        if (attachments.length === 1 && uploadedIds.length !== 1) {
+          setProfileError("Wait for the lab report upload to finish or remove the failed attachment.");
+          return;
+        }
+        if (attachments.length === 1) {
+          const extension = attachments[0].file.name.split(".").pop()?.toLowerCase() ?? "";
+          if (!labFormats.includes(extension)) {
+            setProfileError("Use a PDF, image, CSV, Markdown, or text lab report.");
+            return;
+          }
+        }
+      }
       if (selectedProfile.target === "rag") {
         if (!collection) {
           setProfileError(
@@ -532,7 +550,7 @@ export function ChatWindow() {
       if (selectedProfile.target === "software_engineer") {
         options.workspace_path = workspacePath.trim() || undefined;
       }
-      if (selectedProfile.target === "document") {
+      if (selectedProfile.target === "document" && selectedProfile.name !== "medical_lab_explainer") {
         options.context = context.trim() || undefined;
       }
       if (selectedProfile.target === "image_generation") {
@@ -940,7 +958,7 @@ export function ChatWindow() {
           {selectedProfile?.target === "software_engineer" && (
             <label className="flex min-w-48 flex-1 flex-col gap-1 text-xs text-muted-foreground">Workspace path (optional)<input aria-label="Workspace path" value={workspacePath} onChange={(event) => setWorkspacePath(event.target.value)} placeholder="Workspace subpath" className="h-11 w-full rounded-xl border border-input bg-card px-3 text-base sm:text-sm text-foreground" /></label>
           )}
-          {selectedProfile?.target === "document" && (
+          {selectedProfile?.target === "document" && selectedProfile.name !== "medical_lab_explainer" && (
             <label className="flex min-w-48 flex-1 flex-col gap-1 text-xs text-muted-foreground">Document context (optional)<input aria-label="Document context" value={context} onChange={(event) => setContext(event.target.value)} placeholder="Add a little context" className="h-11 w-full rounded-xl border border-input bg-card px-3 text-base sm:text-sm text-foreground" /></label>
           )}
           {selectedProfile?.target === "image_generation" && (

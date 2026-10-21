@@ -81,6 +81,7 @@ Use `GET /api/v1/agents` to see enabled profiles and whether their approved Olla
 |---|---|---|
 | `chat` | `chat` | General local conversation and coding help |
 | `document_analytics` | `document` | Extract grounded facts, dates, amounts, tables, and action items |
+| `medical_lab_explainer` | `document` | Extracts report values and gives educational explanations; explicit selection only, no diagnosis or action advice |
 | `image_analysis` | `image_analysis` | Describe an uploaded image using a vision model |
 | `image_fraud` | `image_fraud` | Check image metadata and recompression signals; triage only |
 | `image_generation` | `image_generation` | Submit a ComfyUI API-format workflow |
@@ -100,6 +101,14 @@ them in hiring decisions. `qwen2.5:7b` is a smaller configured alternative; set 
 [local model research](docs/research/resume-rater-slm.md) for model trade-offs.
 
 The general `/api/v1/chat` endpoint can select the `chat`, `sql`, or `web` profile using `agent_name`. Use `/api/v1/tasks` for the other specialist profiles. The task `target` defaults to `auto` and is resolved from the selected profile; when supplied, it must match the profile's target. Model overrides go in `inference.model` and must be allowed for that profile.
+
+### Medical lab report evaluation
+
+Select **Lab Report Explainer** in Chat and attach one PDF or image, or paste report text into the message. The profile defaults to `medgemma1.5:4b` and allows `qwen2.5:7b` as a text/OCR baseline. For Docker Ollama, install the default model with `docker compose exec ollama ollama pull medgemma1.5:4b`.
+
+This is not medical advice. The local prototype extracts values, units, report intervals, flags, and page excerpts. It compares only clearly extracted numeric values with the report's own interval and matching unit; uncertain fields are left for review. Image and scanned-page extractions still need checking against the uploaded report. It gives educational explanations and clinician-question prompts only. It does not diagnose, assess urgency, or recommend treatment. Synthetic evaluation fixtures are plumbing checks, not clinical validation. Review the [MedGemma terms](https://developers.google.com/health-ai-developer-foundations/terms) before redistributing model weights or offering hosted access.
+
+Run the synthetic comparison from `backend` with `python -m app.medical_lab_eval`. It prints field-level matches, abstentions, report-flag errors, and the installed model digests and inference settings. It creates all fixtures in a temporary directory and skips models that are not installed. Qwen is compared only on inputs the current parser can read.
 
 ## Agent examples
 

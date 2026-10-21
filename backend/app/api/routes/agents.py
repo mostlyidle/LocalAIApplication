@@ -16,6 +16,7 @@ from app.dependencies import get_authenticated_session, get_db
 from app.models.db_models import AgentConfiguration
 from app.services.auth import AuthenticatedSession  # noqa: TC001
 from app.services.llm import llm_service
+from app.services.medical_lab import MEDICAL_LAB_PROFILE
 
 router = APIRouter()
 
@@ -123,6 +124,11 @@ async def update_agent(
     profile = registry.get(agent_name, include_archived=True)
     if profile is None:
         raise HTTPException(status_code=404, detail="Agent not found.")
+    if agent_name == MEDICAL_LAB_PROFILE and body.system_prompt is not None:
+        raise HTTPException(
+            status_code=422,
+            detail="The lab explainer safety prompt is fixed and cannot be customized.",
+        )
     result = await db.execute(
         select(AgentConfiguration).where(AgentConfiguration.name == agent_name)
     )

@@ -20,6 +20,15 @@ from app.services.document_parser import DocumentParserService
 from app.services.images import ImageInspectionError, inspect_image, manipulation_signals
 from app.services.llm import llm_service
 from app.services.market_data import MarketDataError
+from app.services.medical_lab import (
+    MEDICAL_LAB_PROFILE,
+    add_local_ocr,
+    assemble_lab_results,
+    extract_report_alerts,
+    parse_page_observations,
+    prepare_lab_pages,
+    render_lab_answer,
+)
 from app.services.workspace import WorkspaceInputError, account_workspace_root, read_workspace
 
 if TYPE_CHECKING:
@@ -73,7 +82,7 @@ class TaskRunner:
                 "rag",
                 "stock_research",
                 "software_engineer",
-            }:
+            } and execution.profile.name != MEDICAL_LAB_PROFILE:
                 from app.services.memory_context import load_account_memory_context
 
                 self._memory_context.set(
@@ -84,7 +93,10 @@ class TaskRunner:
             elif target == "image_fraud":
                 result = await self._image_fraud(execution, document)
             elif target == "document":
-                result = await self._document_analysis(request, execution, document)
+                if execution.profile.name == MEDICAL_LAB_PROFILE:
+                    result = await self._medical_lab_analysis(request, execution, document)
+                else:
+                    result = await self._document_analysis(request, execution, document)
             elif target == "rag":
                 result = await self._rag_answer(
                     request, execution, history=history, owner_id=owner_id
@@ -234,6 +246,115 @@ class TaskRunner:
         )
         return AgentResult(agent=execution.profile.name, answer=answer, artifacts=artifacts)
 
+    async def _medical_lab_analysis(
+        self, request: TaskRequest, execution: AgentExecution, document: Document | None
+    ) -> AgentResult:
+        parsed = None
+        file_path = None
+        doc_format = None
+        artifacts: dict[str, object] = {}
+        if document is not None:
+            file_path = Path(document.storage_path)
+            doc_format = DocumentFormat(document.format)
+            try:
+                parsed = await self._parser.parse(file_path, doc_format)
+            except (OSError, ValueError) as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Could not parse lab report: {exc}",
+                ) from exc
+            artifacts = {"asset_id": document.id, "filename": document.filename}
+
+        vision = execution.inference is not None and execution.inference.model == "medgemma1.5:4b"
+        try:
+            pages = await asyncio.to_thread(
+                prepare_lab_pages,
+                file_path,
+                doc_format,
+                parsed,
+                vision=vision,
+                pasted_text=request.context or request.prompt,
+            )
+        except (OSError, ValueError) as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+            ) from exc
+
+        observations: list[dict[str, object]] = []
+        report_alerts: list[dict[str, object]] = []
+        skipped_pages: list[int] = []
+        invalid_pages: list[int] = []
+        truncated_pages: list[int] = []
+        for page in pages:
+            if vision:
+                page = await add_local_ocr(page)
+            report_alerts.extend(extract_report_alerts([page]))
+            if page.truncated:
+                truncated_pages.append(page.number)
+            if not page.text.strip() and page.image_bytes is None:
+                skipped_pages.append(page.number)
+                continue
+            raw = await self._answer(
+                execution,
+                prompt_values={
+                    "prompt": request.prompt,
+                    "page_number": page.number,
+                    "content": page.text,
+                    "source_kind": "image with local text extraction"
+                    if page.image_bytes
+                    else "text",
+                },
+                image_bytes=page.image_bytes,
+                image_format=page.image_format,
+                stream=False,
+            )
+            page_observations, valid = parse_page_observations(raw, page)
+            observations.extend(page_observations)
+            if not valid:
+                invalid_pages.append(page.number)
+
+        results = assemble_lab_results(observations)
+        limitations = [
+            "Educational extraction only; do not use this prototype for diagnosis, urgency, triage, or treatment decisions.",
+            "Numeric comparisons require an exact source-text match, a clear numeric result and interval, and matching units. No unit conversions are performed.",
+            "Cross-page fields are joined only by a unique normalized test name and unit; conflicting or incomplete matches are left for review.",
+            "Image and scanned-page values still require checking against the uploaded report, even when local OCR text matches.",
+        ]
+        if skipped_pages:
+            limitations.append(
+                "The selected text-only model could not read pages without extracted text: "
+                + ", ".join(map(str, skipped_pages))
+                + "."
+            )
+        if invalid_pages:
+            limitations.append(
+                "Structured extraction failed on pages: "
+                + ", ".join(map(str, invalid_pages))
+                + "; no values from those pages were compared."
+            )
+        if truncated_pages:
+            limitations.append(
+                "Text extraction was limited to 12,000 characters on pages: "
+                + ", ".join(map(str, truncated_pages))
+                + "; comparisons from those pages were withheld."
+            )
+        artifacts.update(
+            {
+                "tests": results,
+                "extraction_pages": len(pages),
+                "skipped_pages": skipped_pages,
+                "invalid_pages": invalid_pages,
+                "truncated_pages": truncated_pages,
+                "report_alerts": report_alerts,
+            }
+        )
+        return AgentResult(
+            agent=execution.profile.name,
+            answer=render_lab_answer(results, report_alerts),
+            artifacts=artifacts,
+            limitations=limitations,
+        )
+
     async def _rag_answer(
         self,
         request: TaskRequest,
@@ -364,6 +485,7 @@ class TaskRunner:
         prompt_values: dict[str, object],
         image_bytes: bytes | None = None,
         image_format: str | None = None,
+        stream: bool = True,
     ) -> str:
         inference = execution.inference
         if inference is None:
@@ -402,7 +524,7 @@ class TaskRunner:
                 )
             messages.append(HumanMessage(content=human_content))
             on_token = self._on_token.get()
-            if on_token is None:
+            if on_token is None or not stream:
                 response = await model.ainvoke(messages)
                 return str(response.content)
             chunks: list[str] = []

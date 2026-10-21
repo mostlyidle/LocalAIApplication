@@ -313,12 +313,12 @@ export default function SettingsPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="managed-agent-prompt">System prompt</Label>
-                  <textarea id="managed-agent-prompt" value={agentPrompt} onChange={(event) => setAgentPrompt(event.target.value)} maxLength={20000} disabled={!selectedAgent?.inference || selectedAgent.archived} className="min-h-52 w-full resize-y rounded-md border border-input bg-background px-3 py-2 font-sans text-sm leading-relaxed disabled:cursor-not-allowed disabled:opacity-60" />
-                  <p className="text-xs text-muted-foreground">{selectedAgent?.inference ? <>Application supplied context and safety rules remain enforced. {agentPrompt.length}/20,000 characters.</> : "This built in profile does not use an LLM system prompt."}</p>
+                  <textarea id="managed-agent-prompt" value={agentPrompt} onChange={(event) => setAgentPrompt(event.target.value)} maxLength={20000} disabled={!selectedAgent?.inference || selectedAgent.archived || selectedAgent.name === "medical_lab_explainer"} className="min-h-52 w-full resize-y rounded-md border border-input bg-background px-3 py-2 font-sans text-sm leading-relaxed disabled:cursor-not-allowed disabled:opacity-60" />
+                  <p className="text-xs text-muted-foreground">{selectedAgent?.name === "medical_lab_explainer" ? "This profile has a fixed extraction-only safety prompt." : selectedAgent?.inference ? <>Application supplied context and safety rules remain enforced. {agentPrompt.length}/20,000 characters.</> : "This built in profile does not use an LLM system prompt."}</p>
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button size="sm" onClick={() => void saveAgent()} disabled={agentBusy || !selectedAgent?.inference || selectedAgent.archived}><Save className="mr-2 h-4 w-4" />Save prompt</Button>
+                <Button size="sm" onClick={() => void saveAgent()} disabled={agentBusy || !selectedAgent?.inference || selectedAgent.archived || selectedAgent.name === "medical_lab_explainer"}><Save className="mr-2 h-4 w-4" />Save prompt</Button>
                 {!selectedAgent?.is_custom && selectedAgent?.inference && <Button size="sm" variant="outline" onClick={() => void resetAgentPrompt()} disabled={agentBusy}><RotateCcw className="mr-2 h-4 w-4" />Reset to default</Button>}
                 {selectedAgent?.is_custom && <Button size="sm" variant="outline" onClick={() => void toggleAgentArchive()} disabled={agentBusy}>{selectedAgent.archived ? <><Plus className="mr-2 h-4 w-4" />Restore agent</> : <><Archive className="mr-2 h-4 w-4" />Archive agent</>}</Button>}
               </div>

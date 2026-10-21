@@ -60,6 +60,7 @@ from app.models.schemas import (
     ToolCallInfo,
 )
 from app.services.auth import AuthenticatedSession  # noqa: TC001
+from app.services.medical_lab import MEDICAL_LAB_PROFILE
 from app.services.memory_context import memory_sources_from_context
 from app.services.memory_outbox import enqueue_conversation_recall
 
@@ -150,12 +151,13 @@ async def send_message(
         if conversation.title == "New Conversation":
             conversation.title = body.content[:80].strip()
         conversation.updated_at = datetime.now(UTC)
-        await enqueue_conversation_recall(
-            db,
-            owner_id=owner_id,
-            conversation=conversation,
-            source_message_id=assistant_msg.id,
-        )
+        if execution.agent != MEDICAL_LAB_PROFILE:
+            await enqueue_conversation_recall(
+                db,
+                owner_id=owner_id,
+                conversation=conversation,
+                source_message_id=assistant_msg.id,
+            )
         await db.commit()
         await _maybe_refresh_conversation_summary(db, conversation_id, owner_id)
         return ChatMessageResponse(
@@ -230,12 +232,13 @@ async def send_message(
         conversation.title = body.content[:80].strip()
     conversation.updated_at = datetime.now(UTC)
 
-    await enqueue_conversation_recall(
-        db,
-        owner_id=owner_id,
-        conversation=conversation,
-        source_message_id=assistant_msg.id,
-    )
+    if agent_used != MEDICAL_LAB_PROFILE:
+        await enqueue_conversation_recall(
+            db,
+            owner_id=owner_id,
+            conversation=conversation,
+            source_message_id=assistant_msg.id,
+        )
     await db.commit()
     await _maybe_refresh_conversation_summary(db, conversation_id, owner_id)
 
@@ -836,7 +839,7 @@ async def _execute_selected_profile(
             for message in history[-8:]
             if getattr(message, "content", None)
         ]
-        if prior_turns and profile.target != "rag":
+        if prior_turns and profile.target != "rag" and profile.name != MEDICAL_LAB_PROFILE:
             history_header = "Prior conversation:\n"
             current_request = "\n\nCurrent request:\n" + body.content
             history_limit = max(0, 32_000 - len(history_header) - len(current_request) - 1)
@@ -996,12 +999,13 @@ async def _persist_ws_messages(
                 conversation.title = user_content[:80].strip()
             conversation.updated_at = datetime.now(UTC)
 
-            await enqueue_conversation_recall(
-                db,
-                owner_id=owner_id,
-                conversation=conversation,
-                source_message_id=assistant_msg.id,
-            )
+            if agent_used != MEDICAL_LAB_PROFILE:
+                await enqueue_conversation_recall(
+                    db,
+                    owner_id=owner_id,
+                    conversation=conversation,
+                    source_message_id=assistant_msg.id,
+                )
             await db.commit()
             await _maybe_refresh_conversation_summary(db, conversation_id, owner_id)
 
