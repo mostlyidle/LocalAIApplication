@@ -218,6 +218,8 @@ def parse_page_observations(raw: str, page: LabPage) -> tuple[list[dict[str, Any
         payload = _json_payload(raw)
     except (json.JSONDecodeError, ValueError):
         return [], False
+    if isinstance(payload, list):
+        payload = {"tests": payload}
     if not isinstance(payload, dict) or not isinstance(payload.get("tests"), list):
         return [], False
 
@@ -531,6 +533,15 @@ def _render_report_alerts(report_alerts: list[dict[str, Any]]) -> str:
 
 def _json_payload(raw: str) -> Any:
     cleaned = raw.strip()
+    fenced_payloads = re.findall(
+        r"```(?:json)?\s*(.*?)```", cleaned, flags=re.IGNORECASE | re.DOTALL
+    )
+    for fenced_payload in fenced_payloads:
+        try:
+            return json.loads(fenced_payload.strip())
+        except json.JSONDecodeError:
+            continue
+
     if cleaned.startswith("```"):
         cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", cleaned, flags=re.IGNORECASE)
     start, end = cleaned.find("{"), cleaned.rfind("}")

@@ -25,5 +25,6 @@ async def test_catalog_separates_profile_enablement_from_model_availability(clie
     agents = {agent["name"]: agent for agent in response.json()["agents"]}
     assert agents["rag"]["model_availability"] == expected
     assert agents["image_generation"]["model_availability"] == {}
-    assert len(agents) == 11
+    assert "medical_lab_explainer" in agents
+    assert len(agents) == 13
     fetch.assert_awaited_once_with(raise_on_error=True)

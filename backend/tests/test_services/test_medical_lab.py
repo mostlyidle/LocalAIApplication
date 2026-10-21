@@ -70,6 +70,31 @@ def test_test_name_must_be_present_in_source_excerpt() -> None:
     assert not observations[0]["source_verified"]
 
 
+def test_fenced_observation_array_after_explanatory_text_is_parsed() -> None:
+    page_text = (
+        "Glucose, fasting | Result: 5.2 mmol/L | "
+        "Reference interval: 3.9 - 5.5 mmol/L"
+    )
+    raw = (
+        'I will return `{"tests":[]}` if there are no lab tests.\n'
+        "```json\n"
+        "["
+        '{"test_name":"Glucose, fasting","result":"5.2","unit":"mmol/L",'
+        '"reference_interval":"3.9 - 5.5 mmol/L","source_excerpt":'
+        '"Glucose, fasting | Result: 5.2 mmol/L | Reference interval: '
+        '3.9 - 5.5 mmol/L"}'
+        "]\n"
+        "```"
+    )
+
+    observations, valid = parse_page_observations(raw, LabPage(1, page_text))
+
+    assert valid
+    assert len(observations) == 1
+    assert observations[0]["test_name"] == "Glucose, fasting"
+    assert observations[0]["source_verified"]
+
+
 def test_source_name_is_required_and_explanations_must_be_generic() -> None:
     raw = json.dumps(
         {
