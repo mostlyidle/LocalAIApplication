@@ -71,10 +71,7 @@ def test_test_name_must_be_present_in_source_excerpt() -> None:
 
 
 def test_fenced_observation_array_after_explanatory_text_is_parsed() -> None:
-    page_text = (
-        "Glucose, fasting | Result: 5.2 mmol/L | "
-        "Reference interval: 3.9 - 5.5 mmol/L"
-    )
+    page_text = "Glucose, fasting | Result: 5.2 mmol/L | Reference interval: 3.9 - 5.5 mmol/L"
     raw = (
         'I will return `{"tests":[]}` if there are no lab tests.\n'
         "```json\n"
@@ -146,8 +143,7 @@ def test_generic_measurement_explanation_is_preserved() -> None:
 
 def test_generic_test_purpose_explanation_is_preserved() -> None:
     explanation = (
-        "This test measures creatinine in blood. "
-        "It is commonly used to assess kidney function."
+        "This test measures creatinine in blood. It is commonly used to assess kidney function."
     )
     raw = json.dumps(
         {
@@ -370,3 +366,40 @@ def test_pdf_table_cells_already_in_page_text_are_not_duplicated(tmp_path: Path)
         "Glucose 5.2 mmol/L 3.9-5.5",
         "Test | Result | Unit | Reference interval",
     ]
+
+
+def test_medgemma_renders_scanned_pdf_even_when_parser_supplies_ocr_text(
+    tmp_path: Path,
+) -> None:
+    pdf_path = tmp_path / "mixed-report.pdf"
+    source = fitz.open()
+    source_page = source.new_page()
+    source_page.insert_text((50, 50), "Potassium 6.8 mmol/L 3.5-5.1")
+    scan = source_page.get_pixmap().tobytes("png")
+    source.close()
+
+    pdf = fitz.open()
+    text_page = pdf.new_page()
+    text_page.insert_text((50, 50), "Glucose 5.2 mmol/L 3.9-5.5")
+    scanned_page = pdf.new_page()
+    scanned_page.insert_image(scanned_page.rect, stream=scan)
+    pdf.save(pdf_path)
+    pdf.close()
+
+    pages = prepare_lab_pages(
+        pdf_path,
+        DocumentFormat.PDF,
+        SimpleNamespace(
+            blocks=[
+                {"page": 1, "text": "Glucose 5.2 mmol/L 3.9-5.5"},
+                {"page": 2, "text": "Potassium 6.8 mmol/L 3.5-5.1"},
+            ],
+            tables=[],
+        ),
+        vision=True,
+    )
+
+    assert pages[0].text == "Glucose 5.2 mmol/L 3.9-5.5"
+    assert pages[0].image_bytes is None
+    assert pages[1].text == "Potassium 6.8 mmol/L 3.5-5.1"
+    assert pages[1].image_bytes is not None

@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 MEDICAL_LAB_PROFILE = "medical_lab_explainer"
 MAX_LAB_PAGES = 20
 MAX_PAGE_TEXT_CHARS = 12_000
+MAX_INTERPRETATION_CONTEXT_CHARS = 10_000
 OUT_OF_SCOPE_EXPLANATION = re.compile(
     r"\b(?:should|must|recommend\w*|diagnos\w*|treat\w*|urgent\w*|emergency|"
     r"call|contact|seek|take|start|stop|increase|decrease|normal|abnormal|healthy|"
@@ -157,9 +158,7 @@ def prepare_lab_pages(
                     parsed_pages[page_number].append(" | ".join(headers))
                 continue
             parsed_pages[page_number].append(" | ".join(headers))
-            parsed_pages[page_number].extend(
-                " | ".join(str(cell) for cell in row) for row in rows
-            )
+            parsed_pages[page_number].extend(" | ".join(str(cell) for cell in row) for row in rows)
 
         pages: list[LabPage] = []
         with fitz.open(str(file_path)) as pdf:
@@ -170,7 +169,7 @@ def prepare_lab_pages(
                 truncated = len(page_text) > MAX_PAGE_TEXT_CHARS
                 page_text = page_text[:MAX_PAGE_TEXT_CHARS]
                 image_bytes = None
-                if vision:
+                if vision and not page.get_text("text").strip():
                     scale = min(1.6, 2000 / max(page.rect.width, page.rect.height))
                     pixmap = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
                     image_bytes = pixmap.tobytes("png")
@@ -253,11 +252,7 @@ def parse_page_observations(raw: str, page: LabPage) -> tuple[list[dict[str, Any
             not page.truncated
             and excerpt
             and excerpt_text in _normalized_text(page.text)
-            and all(
-                _normalized_text(value) in excerpt_text
-                for value in quoted_fields
-                if value
-            )
+            and all(_normalized_text(value) in excerpt_text for value in quoted_fields if value)
         )
         values = row.model_dump()
         if row.explanation:
@@ -318,9 +313,7 @@ def _assemble_group(rows: list[dict[str, Any]]) -> dict[str, Any]:
                 "Detected population qualifier in source page"
                 for row in rows
                 if POPULATION_QUALIFIER.search(
-                str(row.get("source_excerpt") or "")
-                + " "
-                + str(row.get("page_text") or "")
+                    str(row.get("source_excerpt") or "") + " " + str(row.get("page_text") or "")
                 )
             ),
             None,
@@ -342,7 +335,13 @@ def _assemble_group(rows: list[dict[str, Any]]) -> dict[str, Any]:
         reason = "More than one result or reference interval matched this test and unit."
     elif qualifier:
         reason = "The report includes a population-specific reference qualifier."
-    elif result_row and range_row and unit and result_row["source_verified"] and range_row["source_verified"]:
+    elif (
+        result_row
+        and range_row
+        and unit
+        and result_row["source_verified"]
+        and range_row["source_verified"]
+    ):
         numeric_text = _numeric_literal(str(result_text), unit)
         numeric = _parse_decimal(str(result_text), unit)
         bounds = _parse_interval(str(interval), unit)
@@ -427,9 +426,7 @@ def extract_report_alerts(pages: list[LabPage]) -> list[dict[str, Any]]:
             bool(REPORT_ALERT.search(_normalized_text(line.strip()))) for line in lines
         ]
         candidates = [
-            line.strip()
-            for line, matches in zip(lines, matching_lines, strict=True)
-            if matches
+            line.strip() for line, matches in zip(lines, matching_lines, strict=True) if matches
         ]
         covered_lines = {index for index, matches in enumerate(matching_lines) if matches}
         for size in (2, 3):
@@ -515,17 +512,13 @@ def render_lab_answer(
             lines.append(f"{marker} (page {flag['page']}): `{flag['text']}`")
         for critical in result["critical_wording"]:
             marker = (
-                "Report-stated critical wording"
-                if critical["verified"]
-                else "Check this page text"
+                "Report-stated critical wording" if critical["verified"] else "Check this page text"
             )
             lines.append(f"**{marker} (page {critical['page']}):** `{critical['wording']}`")
         for source in result["sources"]:
             if source.get("excerpt"):
                 verification = (
-                    "text match"
-                    if source["verified"]
-                    else "verify against uploaded page"
+                    "text match" if source["verified"] else "verify against uploaded page"
                 )
                 lines.append(
                     f"Source (page {source['page']}, {verification}): “{source['excerpt']}”"

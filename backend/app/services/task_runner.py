@@ -21,6 +21,7 @@ from app.services.images import ImageInspectionError, inspect_image, manipulatio
 from app.services.llm import llm_service
 from app.services.market_data import MarketDataError
 from app.services.medical_lab import (
+    MAX_INTERPRETATION_CONTEXT_CHARS,
     MEDICAL_LAB_PROFILE,
     add_local_ocr,
     assemble_lab_results,
@@ -38,6 +39,19 @@ if TYPE_CHECKING:
     from app.prompt_store import PromptStore
     from app.services.comfyui import ComfyUIClient
     from app.services.market_data import FinnhubMarketDataClient
+
+
+def _strip_model_thinking(answer: str) -> str:
+    """Remove Gemma thinking-channel text accidentally returned as user-facing content."""
+    start_marker = "<unused94>thought"
+    end_marker = "<unused95>"
+    start = answer.find(start_marker)
+    if start < 0:
+        return answer.strip()
+    end = answer.find(end_marker, start + len(start_marker))
+    if end < 0:
+        return answer[:start].strip()
+    return (answer[:start] + answer[end + len(end_marker) :]).strip()
 
 
 class TaskRunner:
@@ -76,13 +90,18 @@ class TaskRunner:
         try:
             execution = self._resolve_execution(request, document)
             target = execution.profile.target
-            if owner_id and target in {
-                "image_analysis",
-                "document",
-                "rag",
-                "stock_research",
-                "software_engineer",
-            } and execution.profile.name != MEDICAL_LAB_PROFILE:
+            if (
+                owner_id
+                and target
+                in {
+                    "image_analysis",
+                    "document",
+                    "rag",
+                    "stock_research",
+                    "software_engineer",
+                }
+                and execution.profile.name != MEDICAL_LAB_PROFILE
+            ):
                 from app.services.memory_context import load_account_memory_context
 
                 self._memory_context.set(
@@ -285,9 +304,11 @@ class TaskRunner:
         skipped_pages: list[int] = []
         invalid_pages: list[int] = []
         truncated_pages: list[int] = []
+        analyzed_pages = []
         for page in pages:
             if vision:
                 page = await add_local_ocr(page)
+            analyzed_pages.append(page)
             report_alerts.extend(extract_report_alerts([page]))
             if page.truncated:
                 truncated_pages.append(page.number)
@@ -314,6 +335,11 @@ class TaskRunner:
                 invalid_pages.append(page.number)
 
         results = assemble_lab_results(observations)
+        full_report_context = "\n\n".join(
+            f"Page {page.number}:\n{page.text}" for page in analyzed_pages if page.text.strip()
+        )
+        report_context_truncated = len(full_report_context) > MAX_INTERPRETATION_CONTEXT_CHARS
+        report_context = full_report_context[:MAX_INTERPRETATION_CONTEXT_CHARS]
         limitations = [
             "Diagnosis and treatment advice are AI-generated, unvalidated, and may be wrong; have a qualified clinician confirm them and do not change medication based on this response.",
             "Numeric comparisons require an exact source-text match, a clear numeric result and interval, and matching units. No unit conversions are performed.",
@@ -337,6 +363,11 @@ class TaskRunner:
                 "Text extraction was limited to 12,000 characters on pages: "
                 + ", ".join(map(str, truncated_pages))
                 + "; comparisons from those pages were withheld."
+            )
+        if report_context_truncated:
+            limitations.append(
+                "Report context for diagnosis and treatment advice was limited to the first "
+                f"{MAX_INTERPRETATION_CONTEXT_CHARS:,} characters."
             )
         verified_findings = [
             {
@@ -369,11 +400,14 @@ class TaskRunner:
                 prompt_values={
                     "prompt": request.prompt[:1_600],
                     "findings": json.dumps(verified_findings, ensure_ascii=False),
+                    "report_context": report_context,
+                    "report_context_truncated": report_context_truncated,
                     "report_alerts": json.dumps(report_alerts[:10], ensure_ascii=False),
                     "omitted_count": max(0, len(results) - len(verified_findings)),
                 },
                 stream=False,
             )
+            interpretation = _strip_model_thinking(interpretation)
 
         artifacts.update(
             {
