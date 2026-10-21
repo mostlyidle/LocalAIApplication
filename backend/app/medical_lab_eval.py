@@ -80,10 +80,7 @@ Hemoglobin | Result: 11.3 | Unit: g/dL | Reference interval: 12.0-16.0 | Flag: L
     )
     _write_pdf(
         root / "scanned_report.pdf",
-        [
-            "Potassium | Result: 6.8 | Unit: mmol/L | Reference interval: 3.5-5.1\n"
-            "CRITICAL RESULT"
-        ],
+        ["Potassium | Result: 6.8 | Unit: mmol/L | Reference interval: 3.5-5.1\nCRITICAL RESULT"],
         scanned=True,
     )
     scan = fitz.open(root / "scanned_report.pdf")
@@ -104,8 +101,22 @@ Hemoglobin | Result: 11.3 | Unit: g/dL | Reference interval: 12.0-16.0 | Flag: L
             "path": root / "text_report.txt",
             "format": "text",
             "expected": [
-                {"test_name": "Glucose", "result": "5.2", "unit": "mmol/L", "reference_interval": "3.9-5.5", "comparison": "within_reported_range", "report_flags": []},
-                {"test_name": "Hemoglobin", "result": "11.3", "unit": "g/dL", "reference_interval": "12.0-16.0", "comparison": "below_reported_range", "report_flags": [{"text": "L", "page": 1}]},
+                {
+                    "test_name": "Glucose",
+                    "result": "5.2",
+                    "unit": "mmol/L",
+                    "reference_interval": "3.9-5.5",
+                    "comparison": "within_reported_range",
+                    "report_flags": [],
+                },
+                {
+                    "test_name": "Hemoglobin",
+                    "result": "11.3",
+                    "unit": "g/dL",
+                    "reference_interval": "12.0-16.0",
+                    "comparison": "below_reported_range",
+                    "report_flags": [{"text": "L", "page": 1}],
+                },
             ],
         },
         {
@@ -113,7 +124,14 @@ Hemoglobin | Result: 11.3 | Unit: g/dL | Reference interval: 12.0-16.0 | Flag: L
             "path": root / "native_report.pdf",
             "format": "pdf",
             "expected": [
-                {"test_name": "Sodium", "result": "140", "unit": "mmol/L", "reference_interval": "135-145", "comparison": "within_reported_range", "report_flags": []},
+                {
+                    "test_name": "Sodium",
+                    "result": "140",
+                    "unit": "mmol/L",
+                    "reference_interval": "135-145",
+                    "comparison": "within_reported_range",
+                    "report_flags": [],
+                },
             ],
         },
         {
@@ -121,7 +139,14 @@ Hemoglobin | Result: 11.3 | Unit: g/dL | Reference interval: 12.0-16.0 | Flag: L
             "path": root / "cross_page_report.pdf",
             "format": "pdf",
             "expected": [
-                {"test_name": "Creatinine", "result": "82", "unit": "umol/L", "reference_interval": "50-100", "comparison": "within_reported_range", "report_flags": []},
+                {
+                    "test_name": "Creatinine",
+                    "result": "82",
+                    "unit": "umol/L",
+                    "reference_interval": "50-100",
+                    "comparison": "within_reported_range",
+                    "report_flags": [],
+                },
             ],
         },
         {
@@ -129,7 +154,14 @@ Hemoglobin | Result: 11.3 | Unit: g/dL | Reference interval: 12.0-16.0 | Flag: L
             "path": root / "scanned_report.pdf",
             "format": "pdf",
             "expected": [
-                {"test_name": "Potassium", "result": "6.8", "unit": "mmol/L", "reference_interval": "3.5-5.1", "report_flags": [], "critical_wording": ["CRITICAL RESULT"]},
+                {
+                    "test_name": "Potassium",
+                    "result": "6.8",
+                    "unit": "mmol/L",
+                    "reference_interval": "3.5-5.1",
+                    "report_flags": [],
+                    "critical_wording": ["CRITICAL RESULT"],
+                },
             ],
         },
         {
@@ -137,7 +169,14 @@ Hemoglobin | Result: 11.3 | Unit: g/dL | Reference interval: 12.0-16.0 | Flag: L
             "path": root / "report_image.png",
             "format": "png",
             "expected": [
-                {"test_name": "Potassium", "result": "6.8", "unit": "mmol/L", "reference_interval": "3.5-5.1", "report_flags": [], "critical_wording": ["CRITICAL RESULT"]},
+                {
+                    "test_name": "Potassium",
+                    "result": "6.8",
+                    "unit": "mmol/L",
+                    "reference_interval": "3.5-5.1",
+                    "report_flags": [],
+                    "critical_wording": ["CRITICAL RESULT"],
+                },
             ],
         },
         {
@@ -145,7 +184,14 @@ Hemoglobin | Result: 11.3 | Unit: g/dL | Reference interval: 12.0-16.0 | Flag: L
             "path": root / "ambiguous_locale.txt",
             "format": "text",
             "expected": [
-                {"test_name": "Calcium", "result": "2,5", "unit": "mmol/L", "reference_interval": "2,1-2,6", "comparison": "needs_review", "report_flags": []},
+                {
+                    "test_name": "Calcium",
+                    "result": "2,5",
+                    "unit": "mmol/L",
+                    "reference_interval": "2,1-2,6",
+                    "comparison": "needs_review",
+                    "report_flags": [],
+                },
             ],
         },
         {
@@ -153,13 +199,23 @@ Hemoglobin | Result: 11.3 | Unit: g/dL | Reference interval: 12.0-16.0 | Flag: L
             "path": root / "qualified_range.txt",
             "format": "text",
             "expected": [
-                {"test_name": "TSH", "result": "2.1", "unit": "mIU/L", "reference_interval": "0.4-4.0", "reference_qualifier": "age 65+", "comparison": "needs_review", "report_flags": []},
+                {
+                    "test_name": "TSH",
+                    "result": "2.1",
+                    "unit": "mIU/L",
+                    "reference_interval": "0.4-4.0",
+                    "reference_qualifier": "age 65+",
+                    "comparison": "needs_review",
+                    "report_flags": [],
+                },
             ],
         },
     ]
 
 
-def _field_metrics(expected: list[dict[str, Any]], predicted: list[dict[str, Any]]) -> dict[str, Any]:
+def _field_metrics(
+    expected: list[dict[str, Any]], predicted: list[dict[str, Any]]
+) -> dict[str, Any]:
     matches: dict[str, int] = {field: 0 for field in FIELDS}
     missing: dict[str, int] = {field: 0 for field in FIELDS}
     for expected_row in expected:
@@ -180,10 +236,7 @@ def _field_metrics(expected: list[dict[str, Any]], predicted: list[dict[str, Any
             if field == "critical_wording":
                 actual = [item["wording"] for item in (actual or [])]
             if field == "report_flags":
-                actual = [
-                    {"text": item["text"], "page": item["page"]}
-                    for item in (actual or [])
-                ]
+                actual = [{"text": item["text"], "page": item["page"]} for item in (actual or [])]
             if actual == expected_value:
                 matches[field] += 1
             else:
