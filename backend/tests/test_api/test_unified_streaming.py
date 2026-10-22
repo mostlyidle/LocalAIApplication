@@ -11,6 +11,7 @@ from starlette.testclient import TestClient
 
 from app.agents.registry import AgentRegistry
 from app.main import create_app
+from app.models.db_models import LEGACY_ACCOUNT_ID, Document
 from app.models.profile_schemas import AgentResult, TaskRequest
 from app.prompt_store import PromptStore
 from tests.test_services.test_task_runner_images import _runner
@@ -52,6 +53,63 @@ def test_selected_graph_profile_streams_tokens_and_persists_final_state(
     persist.assert_awaited_once()
     assert persist.call_args.kwargs["assistant_content"] == "Hello world"
     assert persist.call_args.kwargs["execution_metadata"]["agent"] == profile
+
+
+def test_selected_document_profile_reuses_conversation_upload_over_websocket(
+    authenticated_test_session,
+) -> None:
+    app = create_app()
+    from app.dependencies import get_websocket_session, websocket_session_is_active
+
+    app.dependency_overrides[get_websocket_session] = lambda: authenticated_test_session
+    app.dependency_overrides[websocket_session_is_active] = lambda: True
+    directory = Path(__file__).resolve().parents[2] / "app" / "prompts"
+    app.state.agent_registry = AgentRegistry(directory, PromptStore(directory))
+    document = Document(
+        id="websocket-prior-upload",
+        owner_id=LEGACY_ACCOUNT_ID,
+        filename="report.pdf",
+        format="pdf",
+        size_bytes=10,
+        storage_path="/unused/report.pdf",
+    )
+    runner = AsyncMock()
+    runner.run.return_value = AgentResult(
+        agent="document_analytics", answer="Follow-up answered from the report."
+    )
+    persist = AsyncMock(return_value=True)
+    find_asset = AsyncMock(return_value=document.id)
+    load_document = AsyncMock(return_value={document.id: document})
+
+    with TestClient(app) as client:
+        app.state.task_runner = runner
+        with (
+            patch("app.api.routes.chat._load_ws_history", AsyncMock(return_value=[])),
+            patch("app.api.routes.chat._recent_conversation_asset_id", find_asset),
+            patch("app.api.routes.chat._load_uploaded_documents", load_document),
+            patch("app.api.routes.chat._persist_ws_messages", persist),
+            client.websocket_connect(
+                "/api/v1/chat/stream", headers={"origin": "http://localhost:3000"}
+            ) as ws,
+        ):
+            ws.send_json(
+                {
+                    "type": "message",
+                    "content": "What is the important date?",
+                    "agent_name": "document_analytics",
+                    "conversation_id": "existing-document-chat",
+                }
+            )
+            token = ws.receive_json()
+            done = ws.receive_json()
+
+    assert token == {"type": "token", "content": "Follow-up answered from the report."}
+    assert done["type"] == "done"
+    assert find_asset.await_args.args == ("existing-document-chat", LEGACY_ACCOUNT_ID)
+    assert find_asset.await_args.kwargs == {"db": None}
+    assert load_document.await_args.args == ([document.id], LEGACY_ACCOUNT_ID)
+    assert runner.run.await_args.args[0].asset_id == document.id
+    assert runner.run.await_args.kwargs["document"].id == document.id
 
 
 def test_selected_rag_fixed_response_streams_once_and_persists(

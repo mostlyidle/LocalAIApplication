@@ -10,7 +10,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fastapi import HTTPException, status
+from langchain_core.exceptions import OutputParserException
 from langchain_core.messages import HumanMessage, SystemMessage
+from pydantic import ValidationError
 
 from app.agents.registry import AgentExecution, AgentRegistry
 from app.config import settings
@@ -29,6 +31,12 @@ from app.services.medical_lab import (
     parse_page_observations,
     prepare_lab_pages,
     render_lab_answer,
+)
+from app.services.spreadsheet import (
+    SpreadsheetError,
+    SpreadsheetPlan,
+    execute_plan,
+    load_spreadsheet,
 )
 from app.services.workspace import WorkspaceInputError, account_workspace_root, read_workspace
 
@@ -52,6 +60,31 @@ def _strip_model_thinking(answer: str) -> str:
     if end < 0:
         return answer[:start].strip()
     return (answer[:start] + answer[end + len(end_marker) :]).strip()
+
+
+def _render_spreadsheet_answer(prompt: str, result: dict[str, object]) -> str:
+    headers = result["headers"]
+    rows = result["rows"]
+    evidence = result["source_rows"]
+    assert isinstance(headers, list) and isinstance(rows, list) and isinstance(evidence, list)
+    if not rows:
+        return f"No rows matched the request: {prompt}"
+
+    def escape(value: object) -> str:
+        return str(value).replace("|", "\\|").replace("\n", " ").replace("\r", " ")
+
+    display_headers = [*headers, "Source rows"]
+    lines = [
+        f"Found {result['matched_rows']} matching source rows for: {escape(prompt)}",
+        "",
+        "| " + " | ".join(escape(header) for header in display_headers) + " |",
+        "| " + " | ".join("---" for _ in display_headers) + " |",
+    ]
+    for row, source_rows in zip(rows[:20], evidence[:20], strict=True):
+        values = [str(row.get(header, "")) for header in headers]
+        values.append(", ".join(map(str, source_rows)))
+        lines.append("| " + " | ".join(escape(value) for value in values) + " |")
+    return "\n".join(lines)
 
 
 class TaskRunner:
@@ -116,6 +149,8 @@ class TaskRunner:
                     result = await self._medical_lab_analysis(request, execution, document)
                 else:
                     result = await self._document_analysis(request, execution, document)
+            elif target == "spreadsheet":
+                result = await self._spreadsheet_analysis(request, execution, document)
             elif target == "rag":
                 result = await self._rag_answer(
                     request, execution, history=history, owner_id=owner_id
@@ -168,6 +203,11 @@ class TaskRunner:
                     target = "software_engineer"
                 elif document is not None and DocumentFormat(document.format).is_image:
                     target = "image_analysis"
+                elif document is not None and DocumentFormat(document.format) in {
+                    DocumentFormat.CSV,
+                    DocumentFormat.XLSX,
+                }:
+                    target = "spreadsheet"
                 elif document is not None:
                     target = "document"
                 else:
@@ -264,6 +304,118 @@ class TaskRunner:
             prompt_values={"prompt": request.prompt, "content": content[:30_000]},
         )
         return AgentResult(agent=execution.profile.name, answer=answer, artifacts=artifacts)
+
+    async def _spreadsheet_analysis(
+        self, request: TaskRequest, execution: AgentExecution, document: Document | None
+    ) -> AgentResult:
+        if document is None:
+            raise HTTPException(
+                status_code=422, detail="Attach one CSV or XLSX file for spreadsheet analysis."
+            )
+        if document.format not in {DocumentFormat.CSV.value, DocumentFormat.XLSX.value}:
+            raise HTTPException(status_code=422, detail="Only CSV and XLSX files are supported.")
+        try:
+            table = await asyncio.to_thread(
+                load_spreadsheet, Path(document.storage_path), document.format
+            )
+        except (OSError, SpreadsheetError) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+        inference = execution.inference
+        if inference is None:
+            raise RuntimeError("Spreadsheet profile has no inference configuration.")
+        sample_headers = table["headers"][:10]
+        sample = [
+            {header: row[header][:100] for header in sample_headers} for row in table["rows"][:3]
+        ]
+        values = {
+            "prompt": request.prompt[:4_000],
+            "table_summary": json.dumps(
+                {
+                    "headers": table["headers"],
+                    "column_types": table["column_types"],
+                    "sample_rows": sample,
+                    "sheet": table["sheet"],
+                    "available_sheets": table["available_sheets"],
+                },
+                ensure_ascii=False,
+            ),
+        }
+        system, prompt = self._prompts.render_messages(
+            execution.profile.name, execution.profile.target, values
+        )
+        try:
+            with llm_service.inference_context(inference.model_copy(update={"temperature": 0})):
+                model = llm_service.get_chat_model(
+                    model=inference.model,
+                    temperature=0,
+                    max_tokens=inference.max_output_tokens,
+                    num_ctx=inference.context_window,
+                )
+                raw_plan = await model.with_structured_output(SpreadsheetPlan).ainvoke(
+                    [SystemMessage(content=system), HumanMessage(content=prompt)]
+                )
+            plan = (
+                raw_plan
+                if isinstance(raw_plan, SpreadsheetPlan)
+                else SpreadsheetPlan.model_validate(raw_plan)
+            )
+            if not plan.supported:
+                return AgentResult(
+                    agent=execution.profile.name,
+                    answer="I couldn't safely translate that request into a supported spreadsheet operation.",
+                    artifacts={"asset_id": document.id, "filename": document.filename},
+                    limitations=[
+                        "Try asking for filtering, sorting, grouping, or a numeric aggregate."
+                    ],
+                )
+            result = await asyncio.to_thread(execute_plan, table, plan)
+        except (OutputParserException, ValidationError, TypeError, ValueError):
+            return AgentResult(
+                agent=execution.profile.name,
+                answer="I couldn't safely translate that request into a supported spreadsheet operation.",
+                artifacts={"asset_id": document.id, "filename": document.filename},
+                limitations=[
+                    "Try asking for filtering, sorting, grouping, or a numeric aggregate."
+                ],
+            )
+
+        answer = _render_spreadsheet_answer(request.prompt, result)
+        if table["sheet"]:
+            answer = f"Sheet: {table['sheet']}\n\n{answer}"
+        limitations: list[str] = []
+        if result["evidence_truncated"]:
+            limitations.append("Source row evidence is capped at 20 rows per result group.")
+        if result["cells_truncated"]:
+            limitations.append("Displayed cell values are capped at 500 characters.")
+        if len(result["rows"]) > 20:
+            limitations.append(
+                "The chat answer shows the first 20 rows; the result artifact contains all returned rows."
+            )
+        if result["result_count"] > len(result["rows"]):
+            limitations.append(
+                f"Showing {len(result['rows'])} of {result['result_count']} result rows."
+            )
+        if document.format == DocumentFormat.XLSX.value:
+            limitations.append(
+                "XLSX formulas use cached values from the last spreadsheet recalculation; formulas are not evaluated."
+            )
+        return AgentResult(
+            agent=execution.profile.name,
+            answer=answer,
+            artifacts={
+                "asset_id": document.id,
+                "filename": document.filename,
+                "sheet": table["sheet"],
+                "available_sheets": table["available_sheets"],
+                "row_count": len(table["rows"]),
+                "matched_rows": result["matched_rows"],
+                "headers": result["headers"],
+                "rows": result["rows"],
+                "source_rows": result["source_rows"],
+            },
+            limitations=limitations,
+        )
 
     async def _medical_lab_analysis(
         self, request: TaskRequest, execution: AgentExecution, document: Document | None

@@ -89,6 +89,7 @@ Use `GET /api/v1/agents` to see enabled profiles and whether their approved Olla
 | `rag_v2` | `rag` | Hybrid retrieval with query rewrites and stricter passage-grounded citations |
 | `software_engineer` | `software_engineer` | Read-only review of a mounted workspace |
 | `sql` | `sql` | Generate and explain safe database queries |
+| `spreadsheet_analyst` | `spreadsheet` | Analyze uploaded CSV/XLSX data with validated filters and calculations |
 | `stock_research` | `stock_research` | Combine Finnhub market data with optional supplied context |
 | `web` | `web` | Fetch and summarize user-provided web sources |
 
@@ -101,6 +102,8 @@ them in hiring decisions. `qwen2.5:7b` is a smaller configured alternative; set 
 [local model research](docs/research/resume-rater-slm.md) for model trade-offs.
 
 The general `/api/v1/chat` endpoint can select the `chat`, `sql`, or `web` profile using `agent_name`. Use `/api/v1/tasks` for the other specialist profiles. The task `target` defaults to `auto` and is resolved from the selected profile; when supplied, it must match the profile's target. Model overrides go in `inference.model` and must be allowed for that profile.
+
+In an existing chat, document, spreadsheet, image analysis/fraud, and lab report profiles reuse the most recent uploaded file when a follow-up has no attachment. A new chat still needs its own upload, an explicitly attached file takes precedence, pasted text takes precedence over a reused file, and redaction always requires an explicit file. If the prior upload was deleted, attach it again.
 
 ### Medical lab report evaluation
 
@@ -145,6 +148,21 @@ Supply text directly with `context`, or upload a file using the command above an
 
 ```bash
 task '{"agent_name":"document_analytics","prompt":"Extract the invoice total and due date.","context":"Invoice 1042. Total: $84.25. Due: November 15, 2026.","inference":{"model":"qwen2.5:7b"}}'
+```
+
+### Spreadsheet analysis
+
+Select **Spreadsheet Analyst** in Chat, attach exactly one CSV or XLSX file, and ask for a filter,
+sort, grouping, or numeric calculation. XLSX analysis uses the first sheet and reports the available
+sheet names. Results include source row numbers; formulas are not recalculated (XLSX uses cached
+values). The agent uses a local model only to create a validated operation plan; application code
+performs the calculations. Filters can compare a column with a literal or another column. Ready-made
+examples and suggested questions live in [`samples/spreadsheet/`](samples/spreadsheet/).
+
+```bash
+curl -sS -F 'file=@./sales.csv' "$API/documents/upload"
+# Copy the returned id into DOCUMENT_ID.
+task '{"agent_name":"spreadsheet_analyst","asset_id":"<DOCUMENT_ID>","prompt":"Total revenue by team, highest first."}'
 ```
 
 ### Image analysis

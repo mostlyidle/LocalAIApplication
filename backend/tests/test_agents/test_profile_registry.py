@@ -24,6 +24,7 @@ def test_catalog_has_a_default_for_every_agent_domain(registry: AgentRegistry) -
         "chat",
         "sql",
         "document",
+        "spreadsheet",
         "rag",
         "web",
         "image_analysis",

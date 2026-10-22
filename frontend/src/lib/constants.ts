@@ -32,6 +32,7 @@ export const AGENT_LABELS: Record<string, string> = {
   software_engineer: "Software Engineer",
   image_generation: "Image Generation",
   document_analytics: "Document Analytics",
+  spreadsheet_analyst: "Spreadsheet Analyst",
   medical_lab_explainer: "Lab Report Explainer",
 };
 
@@ -49,4 +50,5 @@ export const AGENT_COLORS: Record<string, string> = {
   software_engineer: "bg-muted text-muted-foreground",
   image_generation: "bg-violet-soft text-violet-ink",
   document_analytics: "bg-peach-soft text-peach-ink",
+  spreadsheet_analyst: "bg-mint-soft text-mint-ink",
 };

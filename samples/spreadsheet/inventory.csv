@@ -1,0 +1,9 @@
+Item,Category,On_Hand,Reorder_Level,Unit_Cost
+Desk Lamp,Lighting,18,20,24.50
+LED Bulb,Lighting,140,100,4.25
+Office Chair,Furniture,7,10,189.00
+Standing Desk,Furniture,4,5,425.00
+Notebook,Stationery,220,150,2.75
+Printer Paper,Stationery,32,50,7.50
+USB Hub,Electronics,14,12,18.00
+Webcam,Electronics,6,8,64.00

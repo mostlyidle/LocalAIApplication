@@ -1,0 +1,13 @@
+Month,Region,Product,Units,Revenue
+2026-01,North,Atlas,12,600
+2026-01,South,Beacon,8,320
+2026-01,East,Atlas,10,500
+2026-02,North,Beacon,15,750
+2026-02,South,Atlas,9,450
+2026-02,East,Beacon,11,550
+2026-03,North,Atlas,14,700
+2026-03,South,Beacon,13,650
+2026-03,East,Atlas,7,350
+2026-03,North,Beacon,6,300
+2026-04,South,Beacon,16,800
+2026-04,East,Atlas,12,600

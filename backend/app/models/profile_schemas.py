@@ -10,6 +10,7 @@ RoutableTarget = Literal[
     "chat",
     "sql",
     "document",
+    "spreadsheet",
     "rag",
     "web",
     "image_analysis",

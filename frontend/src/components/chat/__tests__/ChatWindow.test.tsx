@@ -418,6 +418,61 @@ describe("ChatWindow", () => {
     expect(screen.getByRole("option", { name: /Image Analysis/ })).toBeInTheDocument();
   });
 
+  it("requires one CSV or XLSX and submits spreadsheet profile with the uploaded asset", async () => {
+    const user = userEvent.setup();
+    mockGetAgentCatalog.mockResolvedValue({ agents: [{
+      name: "spreadsheet_analyst",
+      display_name: "Spreadsheet Analyst",
+      target: "spreadsheet",
+      description: "Analyze uploaded tables",
+      default_for_target: true,
+      inference: { allowed_models: ["qwen2.5:7b"], defaults: { model: "qwen2.5:7b", temperature: 0 }, limits: { temperature: { minimum: 0, maximum: 2 } } },
+    }] });
+    render(<ChatWindow />);
+    await user.click(screen.getByRole("combobox", { name: "Agent profile" }));
+    await user.click(await screen.findByRole("option", { name: /Spreadsheet Analyst/ }));
+    const textarea = screen.getByPlaceholderText("Type a message... (Shift+Enter for new line)");
+    fireEvent.change(textarea, { target: { value: "Total revenue by team" } });
+    fireEvent.submit(textarea.closest("form")!);
+    expect(screen.getByText("Attach exactly one uploaded CSV or XLSX file for spreadsheet analysis.")).toBeInTheDocument();
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [new File(["Team,Revenue\\nWest,12"], "sales.csv", { type: "text/csv" })] } });
+    await waitFor(() => expect(screen.getByText("Ready")).toBeInTheDocument());
+    fireEvent.submit(textarea.closest("form")!);
+
+    expect(mockSendMessage).toHaveBeenCalledWith("Total revenue by team", ["uploaded-doc-1"], {
+      agent_name: "spreadsheet_analyst",
+      inference: { model: "qwen2.5:7b", temperature: 0 },
+    });
+  });
+
+  it.each([
+    { name: "spreadsheet_analyst", target: "spreadsheet", model: "qwen2.5:7b", label: /Spreadsheet Analyst/ },
+    { name: "image_analysis", target: "image_analysis", model: "qwen3-vl:4b", label: /Image Analysis/ },
+    { name: "image_fraud", target: "image_fraud", model: "qwen2.5:7b", label: /Image Fraud Triage/ },
+  ])("allows $name follow-up without another upload in an existing chat", async ({ name, target, model, label }) => {
+    mockChatState.conversationId = "existing-chat";
+    mockGetAgentCatalog.mockResolvedValue({ agents: [{
+      name,
+      target,
+      description: "Analyze the uploaded asset",
+      default_for_target: true,
+      inference: { allowed_models: [model], defaults: { model, temperature: 0.1 }, limits: { temperature: { minimum: 0, maximum: 2 } } },
+    }] });
+    render(<ChatWindow />);
+    await userEvent.click(screen.getByRole("combobox", { name: "Agent profile" }));
+    await userEvent.click(await screen.findByRole("option", { name: label }));
+    const textarea = screen.getByRole("textbox", { name: "Your message" });
+    fireEvent.change(textarea, { target: { value: "Follow up about that file" } });
+    fireEvent.submit(textarea.closest("form")!);
+
+    expect(mockSendMessage).toHaveBeenCalledWith("Follow up about that file", [], {
+      agent_name: name,
+      inference: { model, temperature: 0.1 },
+    });
+  });
+
   it("sends profile-specific ticker and inference settings with chat", async () => {
     mockGetAgentCatalog.mockResolvedValue({ agents: [
       {

@@ -57,14 +57,31 @@ export function MarkdownContent({ content, className }: MarkdownContentProps) {
               </SyntaxHighlighter>
             );
           },
-          // Tighten up table styling
+          // Keep data tables readable at narrow chat-bubble widths.
           table({ children, ...rest }: ComponentPropsWithoutRef<"table">) {
             return (
-              <div className="overflow-x-auto">
-                <table className="text-xs" {...rest}>
+              <div className="my-3 max-w-full overflow-x-auto rounded-lg border border-border/60">
+                <table className="w-full min-w-max border-collapse text-sm" {...rest}>
                   {children}
                 </table>
               </div>
+            );
+          },
+          th({ children, ...rest }: ComponentPropsWithoutRef<"th">) {
+            return (
+              <th
+                className="whitespace-nowrap border-b bg-muted/60 px-3 py-2 text-left font-semibold"
+                {...rest}
+              >
+                {children}
+              </th>
+            );
+          },
+          td({ children, ...rest }: ComponentPropsWithoutRef<"td">) {
+            return (
+              <td className="border-b border-border/50 px-3 py-2 align-top" {...rest}>
+                {children}
+              </td>
             );
           },
           // Ensure links open in new tabs

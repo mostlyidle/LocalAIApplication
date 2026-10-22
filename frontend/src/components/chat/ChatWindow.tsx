@@ -490,9 +490,23 @@ export function ChatWindow() {
           attachment.uploadedPath && !attachment.error &&
           IMAGE_TYPES.includes(`.${attachment.file.name.split(".").pop()?.toLowerCase()}`),
         );
-        if (!hasUploadedImage) {
+        if (!hasUploadedImage && !(conversationId && attachments.length === 0)) {
           setProfileError("Attach an uploaded image for this profile.");
           return;
+        }
+      }
+      if (selectedProfile.target === "spreadsheet") {
+        const spreadsheetFormats = ["csv", "xlsx"];
+        if (!(attachments.length === 0 && conversationId)) {
+          if (attachments.length !== 1 || uploadedIds.length !== 1) {
+            setProfileError("Attach exactly one uploaded CSV or XLSX file for spreadsheet analysis.");
+            return;
+          }
+          const extension = attachments[0].file.name.split(".").pop()?.toLowerCase() ?? "";
+          if (!spreadsheetFormats.includes(extension)) {
+            setProfileError("Use a CSV or XLSX file for spreadsheet analysis.");
+            return;
+          }
         }
       }
       if (selectedProfile.target === "document_redaction") {

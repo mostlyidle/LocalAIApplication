@@ -763,6 +763,17 @@ async def _execute_selected_profile(
                     agent_name=profile.name,
                 ),
             )
+        reused_asset = False
+        if (
+            task.asset_id is None
+            and body.conversation_id
+            and not task.context
+            and profile.target in {"document", "spreadsheet", "image_analysis", "image_fraud"}
+        ):
+            task.asset_id = await _recent_conversation_asset_id(
+                body.conversation_id, owner_id, db=db
+            )
+            reused_asset = task.asset_id is not None
         inference = registry.resolve_inference(profile, task)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -839,7 +850,11 @@ async def _execute_selected_profile(
             for message in history[-8:]
             if getattr(message, "content", None)
         ]
-        if prior_turns and profile.target != "rag" and profile.name != MEDICAL_LAB_PROFILE:
+        if (
+            prior_turns
+            and profile.target not in {"rag", "spreadsheet"}
+            and profile.name != MEDICAL_LAB_PROFILE
+        ):
             history_header = "Prior conversation:\n"
             current_request = "\n\nCurrent request:\n" + body.content
             history_limit = max(0, 32_000 - len(history_header) - len(current_request) - 1)
@@ -853,6 +868,11 @@ async def _execute_selected_profile(
         documents = await _load_uploaded_documents([task.asset_id], owner_id, db=db)
         document = documents.get(task.asset_id)
         if document is None:
+            if reused_asset:
+                raise HTTPException(
+                    status_code=422,
+                    detail="The previous attachment is no longer available. Attach it again.",
+                )
             raise HTTPException(status_code=404, detail="Uploaded asset was not found.")
     kwargs = {"history": prior_turns} if profile.target == "rag" else {}
     if on_event is not None:
@@ -861,13 +881,56 @@ async def _execute_selected_profile(
             await on_event({"type": "token", "content": text})
 
         kwargs["on_token"] = emit_token
-    return await app.state.task_runner.run(
+    result = await app.state.task_runner.run(
         task,
         request_id=str(uuid.uuid4()),
         document=document,
         owner_id=owner_id,
         **kwargs,
     )
+    if reused_asset and document is not None:
+        result = result.model_copy(
+            update={
+                "limitations": [
+                    *result.limitations,
+                    f"This turn reused the file uploaded earlier in this chat: {document.filename}.",
+                ]
+            }
+        )
+    return result
+
+
+async def _recent_conversation_asset_id(
+    conversation_id: str, owner_id: str, *, db: AsyncSession | None = None
+) -> str | None:
+    """Find the newest asset referenced by an assistant result in this owned conversation."""
+    if db is None:
+        from app.services.database import get_app_session_factory
+
+        async with get_app_session_factory()() as session:
+            return await _recent_conversation_asset_id(conversation_id, owner_id, db=session)
+
+    stmt = (
+        select(Message.execution_metadata)
+        .join(Conversation, Conversation.id == Message.conversation_id)
+        .where(
+            Message.conversation_id == conversation_id,
+            Conversation.owner_id == owner_id,
+            Message.role == MessageRole.ASSISTANT,
+            Message.execution_metadata.is_not(None),
+        )
+        .order_by(Message.created_at.desc(), Message.id.desc())
+        .limit(50)
+    )
+    for raw_metadata in (await db.scalars(stmt)).all():
+        try:
+            artifacts = json.loads(raw_metadata).get("artifacts", {})
+        except (json.JSONDecodeError, AttributeError, TypeError):
+            continue
+        asset_id = artifacts.get("asset_id") if isinstance(artifacts, dict) else None
+        if isinstance(asset_id, str) and asset_id:
+            return asset_id
+    return None
 
 
 async def _load_uploaded_documents(

@@ -154,6 +154,240 @@ class TestSendMessage:
         assert len(messages) == 1
         assert json.loads(messages[0].execution_metadata)["artifacts"]["prompt_id"] == "job-1"
 
+    async def test_selected_profile_reuses_conversation_upload_and_explicit_file_overrides(
+        self, client: AsyncClient, app: FastAPI, db_session: AsyncSession, tmp_path: Path
+    ) -> None:
+        from app.models.profile_schemas import AgentResult, ExecutionMetadata
+
+        conversation_id = str(uuid4())
+        prior_path = tmp_path / "prior.csv"
+        explicit_path = tmp_path / "replacement.csv"
+        prior_path.write_text("Name\nPrior\n", encoding="utf-8")
+        explicit_path.write_text("Name\nReplacement\n", encoding="utf-8")
+        prior = Document(
+            id="conversation-prior-upload",
+            owner_id=LEGACY_ACCOUNT_ID,
+            filename="prior.csv",
+            format="csv",
+            size_bytes=prior_path.stat().st_size,
+            storage_path=str(prior_path),
+        )
+        explicit = Document(
+            id="conversation-explicit-upload",
+            owner_id=LEGACY_ACCOUNT_ID,
+            filename="replacement.csv",
+            format="csv",
+            size_bytes=explicit_path.stat().st_size,
+            storage_path=str(explicit_path),
+        )
+        db_session.add_all(
+            [
+                prior,
+                explicit,
+                Conversation(id=conversation_id, owner_id=LEGACY_ACCOUNT_ID, title="File chat"),
+                Message(
+                    conversation_id=conversation_id,
+                    role=MessageRole.ASSISTANT,
+                    content="Earlier file summary",
+                    execution_metadata=json.dumps(
+                        {"artifacts": {"asset_id": "older-upload"}}
+                    ),
+                    created_at=datetime(2020, 1, 1, tzinfo=UTC),
+                ),
+                Message(
+                    conversation_id=conversation_id,
+                    role=MessageRole.ASSISTANT,
+                    content="Uploaded file summary",
+                    execution_metadata=json.dumps(
+                        {"artifacts": {"asset_id": prior.id, "filename": prior.filename}}
+                    ),
+                    created_at=datetime(2021, 1, 1, tzinfo=UTC),
+                ),
+            ]
+        )
+        await db_session.commit()
+
+        runner = AsyncMock()
+        runner.run.return_value = AgentResult(
+            agent="document_analytics",
+            answer="Here is the follow-up.",
+            metadata=ExecutionMetadata(
+                request_id="follow-up",
+                target="document",
+                agent_name="document_analytics",
+            ),
+        )
+        app.state.task_runner = runner
+
+        follow_up = await client.post(
+            "/api/v1/chat",
+            json={
+                "content": "Tell me more about it.",
+                "agent_name": "document_analytics",
+                "conversation_id": conversation_id,
+            },
+        )
+        assert follow_up.status_code == 200
+        assert runner.run.await_args.args[0].asset_id == prior.id
+        assert runner.run.await_args.kwargs["document"].id == prior.id
+        assert any("reused the file uploaded earlier" in item for item in follow_up.json()["execution"]["limitations"])
+
+        spreadsheet_follow_up = await client.post(
+            "/api/v1/chat",
+            json={
+                "content": "What is total Revenue for North?",
+                "agent_name": "spreadsheet_analyst",
+                "conversation_id": conversation_id,
+            },
+        )
+        assert spreadsheet_follow_up.status_code == 200
+        assert runner.run.await_args.args[0].prompt == "What is total Revenue for North?"
+        assert runner.run.await_args.args[0].asset_id == prior.id
+
+        replacement_turn = await client.post(
+            "/api/v1/chat",
+            json={
+                "content": "Analyze this replacement.",
+                "agent_name": "document_analytics",
+                "conversation_id": conversation_id,
+                "attachments": [explicit.id],
+            },
+        )
+        assert replacement_turn.status_code == 200
+        assert runner.run.await_args.args[0].asset_id == explicit.id
+        assert runner.run.await_args.kwargs["document"].id == explicit.id
+
+    async def test_new_spreadsheet_chat_still_requires_an_upload(
+        self, client: AsyncClient, app: FastAPI
+    ):
+        from fastapi import HTTPException
+
+        runner = AsyncMock()
+        runner.run.side_effect = HTTPException(
+            status_code=422, detail="Attach one CSV or XLSX file for spreadsheet analysis."
+        )
+        app.state.task_runner = runner
+        response = await client.post(
+            "/api/v1/chat",
+            json={
+                "content": "Summarize this spreadsheet.",
+                "agent_name": "spreadsheet_analyst",
+            },
+        )
+
+        assert response.status_code == 422
+        assert "Attach one CSV or XLSX" in response.json()["detail"]
+        assert runner.run.await_args.args[0].asset_id is None
+
+    async def test_deleted_conversation_upload_prompts_for_reupload(
+        self, client: AsyncClient, db_session: AsyncSession
+    ):
+        conversation_id = str(uuid4())
+        db_session.add_all(
+            [
+                Conversation(id=conversation_id, owner_id=LEGACY_ACCOUNT_ID, title="File chat"),
+                Message(
+                    conversation_id=conversation_id,
+                    role=MessageRole.ASSISTANT,
+                    content="Previous result",
+                    execution_metadata=json.dumps(
+                        {"artifacts": {"asset_id": "deleted-upload"}}
+                    ),
+                ),
+            ]
+        )
+        await db_session.commit()
+
+        response = await client.post(
+            "/api/v1/chat",
+            json={
+                "content": "Follow up about the file.",
+                "agent_name": "document_analytics",
+                "conversation_id": conversation_id,
+            },
+        )
+
+        assert response.status_code == 422
+        assert response.json()["detail"] == "The previous attachment is no longer available. Attach it again."
+
+    async def test_pasted_context_takes_precedence_over_conversation_upload(
+        self, client: AsyncClient, app: FastAPI, db_session: AsyncSession
+    ) -> None:
+        from app.models.profile_schemas import AgentResult, ExecutionMetadata
+
+        conversation_id = str(uuid4())
+        db_session.add_all(
+            [
+                Conversation(id=conversation_id, owner_id=LEGACY_ACCOUNT_ID, title="File chat"),
+                Message(
+                    conversation_id=conversation_id,
+                    role=MessageRole.ASSISTANT,
+                    content="Earlier result",
+                    execution_metadata=json.dumps({"artifacts": {"asset_id": "prior-upload"}}),
+                ),
+            ]
+        )
+        await db_session.commit()
+        runner = AsyncMock()
+        runner.run.return_value = AgentResult(
+            agent="document_analytics",
+            answer="Answered from the pasted text.",
+            metadata=ExecutionMetadata(
+                request_id="pasted",
+                target="document",
+                agent_name="document_analytics",
+            ),
+        )
+        app.state.task_runner = runner
+
+        response = await client.post(
+            "/api/v1/chat",
+            json={
+                "content": "Summarize the pasted report.",
+                "agent_name": "document_analytics",
+                "conversation_id": conversation_id,
+                "context": "Pasted report body.",
+            },
+        )
+
+        assert response.status_code == 200
+        assert runner.run.await_args.args[0].asset_id is None
+        assert runner.run.await_args.kwargs["document"] is None
+
+    async def test_conversation_asset_lookup_is_owner_scoped(
+        self, db_session: AsyncSession
+    ) -> None:
+        from app.api.routes.chat import _recent_conversation_asset_id
+
+        conversation_id = str(uuid4())
+        db_session.add_all(
+            [
+                Conversation(id=conversation_id, owner_id=LEGACY_ACCOUNT_ID, title="Private file"),
+                Message(
+                    conversation_id=conversation_id,
+                    role=MessageRole.ASSISTANT,
+                    content="File summary",
+                    execution_metadata=json.dumps(
+                        {"artifacts": {"asset_id": "owned-upload"}}
+                    ),
+                ),
+            ]
+        )
+        await db_session.commit()
+
+        assert (
+            await _recent_conversation_asset_id(
+                conversation_id, LEGACY_ACCOUNT_ID, db=db_session
+            )
+            == "owned-upload"
+        )
+        assert (
+            await _recent_conversation_asset_id(
+                conversation_id, "another-account", db=db_session
+            )
+            is None
+        )
+
     async def test_renamed_document_profile_keeps_uploaded_asset_context(
         self, client: AsyncClient, app: FastAPI, db_session: AsyncSession, tmp_path: Path
     ) -> None:
